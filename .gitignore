@@ -1,0 +1,8 @@
+bin/
+obj/
+publish_out/
+revert-features.sh
+revert-transfer-modes.sh
+*.user
+*.suo
+.vs/

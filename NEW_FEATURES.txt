@@ -1,0 +1,93 @@
+# Beets Backup -- Changes for 2026-03-21
+
+This document covers all gaps fixed, new features added, and bugs resolved in the 2026-03-21 session.
+
+---
+
+## Gaps Fixed
+
+### 1. All Drives View Wired Up
+
+The `DriveItemTemplate` with circular usage arcs existed in XAML but was never actually applied to any `TreeView`. All three tree views now share a single `HierarchicalDataTemplate` (`FolderTreeTemplate`) that renders drive usage rings (used/total space) for root drive nodes and plain folder names for subfolders. This means the drive capacity visualizations that were already designed are now visible everywhere they should be.
+
+### 2. Scheduled Jobs Persisted to Disk
+
+Scheduled jobs previously lived only in memory and were lost on app close. `SchedulerService` now saves and loads jobs to `%LocalAppData%\Beet's Backup\scheduled_jobs.json`. A custom `NullableTimeSpanConverter` was added to handle `TimeSpan?` serialization, since the default JSON serializer does not round-trip nullable `TimeSpan` values cleanly.
+
+### 3. Delete Confirmation Dialog
+
+`DeleteItem` used to recurse-delete immediately with no user prompt. It now shows a confirmation dialog with Yes/No buttons before proceeding. When multiple items are selected, the dialog displays the count of items that will be deleted.
+
+### 4. Single-Pane Drag and Drop
+
+The `TopPaneList` was missing `AllowDrop` and the corresponding drag/drop event handlers that the split-pane view already had. These have been added so drag-and-drop works identically in both single-pane and split-pane modes.
+
+### 5. Refresh Button
+
+A "Refresh" toolbar button was added, bound to `RefreshDrivesCommand`. It re-enumerates all drives, which is useful after hot-plugging a USB drive without restarting the app.
+
+---
+
+## New Features
+
+### 6. Rename
+
+Right-click context menu now includes a "Rename" option. Selecting it opens `RenameDialog`, a new dialog with a pre-filled text box (name pre-selected for quick typing). `FileSystemService.RenameItem` performs the rename via `Directory.Move` or `File.Move` depending on the item type. Both panes refresh after the operation completes.
+
+**New files:** `Views/RenameDialog.xaml`, `Views/RenameDialog.xaml.cs`
+
+### 7. Search / Filter
+
+A search text box was added to the navigation bar. Typing filters the current folder listing by name using case-insensitive matching. This is implemented through `ICollectionView` filters exposed as `FilteredTopPaneItems` and `FilteredBottomPaneItems` on the view model. Clearing the text box restores the full listing.
+
+### 8. Back / Forward / Up Navigation
+
+The navigation bar now includes Back, Forward, and Up buttons along with a path display. Navigation history is tracked in a list with an index pointer. Navigating to a new folder prunes forward history (standard browser-style behavior). All three buttons have `CanExecute` guards so they disable appropriately when there is nowhere to go.
+
+### 9. Overall Progress Bar with ETA
+
+A `ProgressBar` and ETA label were added to the status bar. During active transfers, progress is reported as a percentage and the remaining time is estimated from elapsed time divided by current progress. Both elements are only visible while a transfer is in progress.
+
+### 10. SHA-256 Checksum Verification
+
+A "Verify Checksums" checkbox was added to the transfer options. When enabled, after each file is copied the app computes SHA-256 hashes of both the source and destination files and compares them. Any mismatches are counted in `TransferResult.ChecksumMismatches` and reported in the status bar summary at the end of the transfer.
+
+### 11. Export Backup Log to CSV
+
+The `LogDialog` now has an "Export CSV" button. Clicking it opens a `SaveFileDialog` and writes all log entries as a CSV file with proper field escaping (quoting fields that contain commas or quotes).
+
+### 12. Rename Dialog (UI)
+
+`RenameDialog` is a simple modal window. The text box is pre-filled with the current item name and the name portion is pre-selected so the user can immediately start typing a replacement. Cancel and Rename buttons close the dialog with the appropriate `DialogResult`.
+
+---
+
+## Bug Fixes
+
+### 13. Cross-Thread ObservableCollection Crash
+
+`BackupLogService.Add` was calling `Entries.Insert` from a background thread, which throws because `ObservableCollection` is not thread-safe for UI-bound collections. Fixed by adding a `Dispatcher.CheckAccess()` guard that marshals the insert onto the UI thread when needed.
+
+### 14. Cross-Thread PropertyChanged in UpdateStatus
+
+`UpdateStatus` was raising `PropertyChanged` from a background thread without dispatching, even though other methods in the same class already used `Dispatcher.BeginInvoke`. The same dispatcher wrapper was added here for consistency and correctness.
+
+---
+
+## Files Changed
+
+| File | Status |
+|------|--------|
+| `Models/ScheduledJob.cs` | Modified |
+| `Models/TransferResult.cs` | Modified |
+| `Services/BackupLogService.cs` | Modified |
+| `Services/FileSystemService.cs` | Modified |
+| `Services/SchedulerService.cs` | Modified |
+| `Services/TransferService.cs` | Modified |
+| `ViewModels/MainViewModel.cs` | Modified |
+| `Views/MainWindow.xaml` | Modified |
+| `Views/MainWindow.xaml.cs` | Modified |
+| `Views/LogDialog.xaml` | Modified |
+| `Views/LogDialog.xaml.cs` | Modified |
+| `Views/RenameDialog.xaml` | **New** |
+| `Views/RenameDialog.xaml.cs` | **New** |

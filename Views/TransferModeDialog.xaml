@@ -1,0 +1,84 @@
+<Window x:Class="BeetsBackup.Views.TransferModeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="How do you want to handle existing files?"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable, Segoe UI"
+        FontSize="14">
+
+    <Window.Resources>
+        <Style x:Key="ModeButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="24">
+        <TextBlock Text="How do you want to handle existing files?"
+                   FontSize="16" FontWeight="SemiBold"
+                   Foreground="{DynamicResource PrimaryTextBrush}"
+                   Margin="0,0,0,16"/>
+
+        <Button Style="{StaticResource ModeButton}" Click="KeepBoth_Click" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="Keep Both" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"/>
+                <TextBlock Text="Copy everything. Rename files with -1, -2 if they already exist."
+                           Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Button>
+
+        <Button Style="{StaticResource ModeButton}" Click="SkipExisting_Click" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="Skip Existing (Merge)" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"/>
+                <TextBlock Text="Merge new files into existing folders. Skips files only if they match in size. Copies new or changed files — never skips an entire folder."
+                           Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Button>
+
+        <Button Style="{StaticResource ModeButton}" Click="Replace_Click" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="Replace" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"/>
+                <TextBlock Text="Overwrite existing files at the destination with the source files."
+                           Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Button>
+
+        <Button Content="Cancel" Click="Cancel_Click"
+                HorizontalAlignment="Left"
+                Foreground="{DynamicResource SecondaryTextBrush}"
+                Background="Transparent" BorderThickness="0"
+                Cursor="Hand" Padding="0"/>
+    </StackPanel>
+</Window>

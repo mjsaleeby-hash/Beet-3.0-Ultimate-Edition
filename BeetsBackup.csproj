@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>BeetsBackup</AssemblyName>
+    <RootNamespace>BeetsBackup</RootNamespace>
+    <ApplicationIcon>Assets\Beets Backup IMG.ico</ApplicationIcon>
+    <!-- Portable single-file publish settings -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo.png"/>
+    <Resource Include="Assets\Beets Backup IMG.ico"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+    <PackageReference Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
+  </ItemGroup>
+
+  <!-- After publish, copy the single-file exe to the parent folder -->
+  <Target Name="CopyExeToRoot" AfterTargets="Publish">
+    <Copy SourceFiles="$(PublishDir)BeetsBackup.exe"
+          DestinationFolder="$(MSBuildProjectDirectory)\.."
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

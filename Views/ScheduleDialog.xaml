@@ -1,0 +1,224 @@
+<Window x:Class="BeetsBackup.Views.ScheduleDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Schedule Backup"
+        Width="520" Height="700"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        FontSize="14"
+        FontFamily="Segoe UI Variable, Segoe UI"
+        Background="#F3F3F3">
+
+    <!-- Dialog always uses light mode for readability -->
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="BorderBrush" Value="#D0D0D0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="BorderBrush" Value="#D0D0D0"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+
+        <Style TargetType="DatePicker">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="BorderBrush" Value="#D0D0D0"/>
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+        </Style>
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+        </Style>
+
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="14"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="10"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Job Name -->
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Job Name" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBox Text="{Binding JobName, UpdateSourceTrigger=PropertyChanged}"/>
+        </StackPanel>
+
+        <!-- Source -->
+        <StackPanel Grid.Row="2">
+            <TextBlock Text="Source Folders / Drives" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <ListBox ItemsSource="{Binding SourcePaths}"
+                     SelectedItem="{Binding SelectedSourcePath}"
+                     Height="80"
+                     Background="White" Foreground="#1A1A1A"
+                     BorderBrush="#D0D0D0" BorderThickness="1"/>
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <Button Content="Add Folder"
+                        Command="{Binding AddSourceCommand}"
+                        Background="#EBEBEB" Foreground="#1A1A1A"
+                        BorderBrush="#D0D0D0" BorderThickness="1"
+                        Padding="14,6" Cursor="Hand" Margin="0,0,8,0"/>
+                <Button Content="Remove"
+                        Command="{Binding RemoveSourceCommand}"
+                        Background="#EBEBEB" Foreground="#1A1A1A"
+                        BorderBrush="#D0D0D0" BorderThickness="1"
+                        Padding="14,6" Cursor="Hand"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Destination -->
+        <StackPanel Grid.Row="4">
+            <TextBlock Text="Destination Folder / Drive" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0"
+                         Text="{Binding DestinationPath, UpdateSourceTrigger=PropertyChanged}"/>
+                <Button Grid.Column="2" Content="Browse"
+                        Command="{Binding BrowseDestinationCommand}"
+                        Background="#EBEBEB" Foreground="#1A1A1A"
+                        BorderBrush="#D0D0D0" BorderThickness="1"
+                        Padding="14,6" Cursor="Hand"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- Date and Time -->
+        <StackPanel Grid.Row="6">
+            <TextBlock Text="Start Date &amp; Time" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <Grid x:Name="TimeGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="72"/>
+                </Grid.ColumnDefinitions>
+                <DatePicker Grid.Column="0" SelectedDate="{Binding ScheduledDate}"/>
+                <ComboBox Grid.Column="2" ItemsSource="{Binding Hours}"
+                          SelectedItem="{Binding ScheduledHour}"/>
+                <ComboBox Grid.Column="4" ItemsSource="{Binding Minutes}"
+                          SelectedItem="{Binding ScheduledMinute}"/>
+                <ComboBox Grid.Column="6" ItemsSource="{Binding AmPmOptions}"
+                          SelectedItem="{Binding SelectedAmPm}"/>
+            </Grid>
+            <!-- Labels aligned to matching columns -->
+            <Grid Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="72"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Date" Foreground="#6B6B6B" FontSize="11"/>
+                <TextBlock Grid.Column="2" Text="Hour" Foreground="#6B6B6B" FontSize="11"/>
+                <TextBlock Grid.Column="4" Text="Minute" Foreground="#6B6B6B" FontSize="11"/>
+                <TextBlock Grid.Column="6" Text="AM / PM" Foreground="#6B6B6B" FontSize="11"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- Recurring -->
+        <StackPanel Grid.Row="8">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <CheckBox IsChecked="{Binding IsRecurring}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="Recurring backup" VerticalAlignment="Center"/>
+            </StackPanel>
+            <ComboBox ItemsSource="{Binding IntervalOptions}"
+                      SelectedItem="{Binding SelectedInterval}"
+                      Visibility="{Binding IsRecurring, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        </StackPanel>
+
+        <!-- Remove Permissions -->
+        <StackPanel Grid.Row="10" Orientation="Horizontal">
+            <CheckBox IsChecked="{Binding StripPermissions}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock Text="Remove permissions on transfer" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Transfer Mode -->
+        <StackPanel Grid.Row="12">
+            <TextBlock Text="If files already exist" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <ComboBox ItemsSource="{Binding TransferModeOptions}"
+                      SelectedItem="{Binding SelectedTransferMode}">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Unknown"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding}" Value="SkipExisting">
+                                            <Setter Property="Text" Value="Skip Existing (Merge)"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding}" Value="KeepBoth">
+                                            <Setter Property="Text" Value="Keep Both"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding}" Value="Replace">
+                                            <Setter Property="Text" Value="Replace"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Text="Warning: Keep Both on a recurring backup will create duplicate files on each run."
+                       Foreground="#D4760A" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                       Visibility="{Binding ShowKeepBothWarning, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        </StackPanel>
+
+        <!-- Buttons -->
+        <Grid Grid.Row="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" Content="Cancel"
+                    Background="#EBEBEB" Foreground="#1A1A1A"
+                    BorderBrush="#D0D0D0" BorderThickness="1"
+                    Padding="0,10" Cursor="Hand"
+                    Click="Cancel_Click"/>
+            <Button Grid.Column="2" Content="Schedule Backup"
+                    Background="#0078D4" Foreground="White"
+                    BorderThickness="0"
+                    Padding="20,10" Cursor="Hand"
+                    Click="Schedule_Click"/>
+        </Grid>
+    </Grid>
+</Window>

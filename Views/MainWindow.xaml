@@ -1,0 +1,653 @@
+<Window x:Class="BeetsBackup.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:BeetsBackup.ViewModels"
+        xmlns:h="clr-namespace:BeetsBackup.Helpers"
+        Title="Beet's Backup"
+        Icon="/Assets/Beets Backup IMG.ico"
+        MinWidth="900" MinHeight="600"
+        Width="1200" Height="750"
+        FontSize="14"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable, Segoe UI">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <h:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+        <h:UsageToArcConverter x:Key="UsageToArcConverter"/>
+
+        <!-- Wider scrollbars for easier grabbing -->
+        <Style TargetType="ScrollBar">
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Width" Value="18"/>
+                </Trigger>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Height" Value="18"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Shared tree template: drive nodes show usage ring, subfolders show plain name -->
+        <HierarchicalDataTemplate x:Key="FolderTreeTemplate" ItemsSource="{Binding Children}">
+            <Grid>
+                <Grid Visibility="{Binding IsDrive, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}"
+                                   Foreground="{DynamicResource PrimaryTextBrush}" FontSize="13"/>
+                        <TextBlock Foreground="{DynamicResource SecondaryTextBrush}" FontSize="10">
+                            <Run Text="{Binding DriveInfo.UsedSpaceDisplay, Mode=OneWay}"/>
+                            <Run Text=" / "/>
+                            <Run Text="{Binding DriveInfo.TotalSizeDisplay, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                    <Grid Grid.Column="1" Width="30" Height="30" Margin="6,0,0,0"
+                          VerticalAlignment="Center" ToolTip="{Binding DriveInfo.FreeSpaceDisplay}">
+                        <Ellipse Width="24" Height="24"
+                                 Stroke="{DynamicResource BorderBrush}" StrokeThickness="3" Fill="Transparent"/>
+                        <Path Stroke="{DynamicResource AccentBrush}" StrokeThickness="3"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Data="{Binding DriveInfo.UsagePercent, Converter={StaticResource UsageToArcConverter}}"
+                              Fill="Transparent"/>
+                    </Grid>
+                </Grid>
+                <TextBlock Text="{Binding Name}"
+                           Foreground="{DynamicResource PrimaryTextBrush}"
+                           Visibility="{Binding IsDrive, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+            </Grid>
+        </HierarchicalDataTemplate>
+
+        <!-- TreeView styling -->
+        <Style TargetType="TreeViewItem">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+            <Style.Resources>
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
+                                 Color="{DynamicResource SelectionColor}"/>
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"
+                                 Color="{DynamicResource PrimaryTextColor}"/>
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                                 Color="{DynamicResource SelectionColor}"/>
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
+                                 Color="{DynamicResource PrimaryTextColor}"/>
+            </Style.Resources>
+        </Style>
+        <Style TargetType="TreeView">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <!-- ListBoxItem -->
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4" Margin="4,2">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ListViewItem
+             Background is {x:Null} (not Transparent) so the dead-zone to the
+             right of the last GridView column is NOT hit-testable.  This stops
+             clicks near the scrollbar from accidentally selecting a row.
+             Selection / hover triggers still paint the full row when active. -->
+        <Style TargetType="ListViewItem">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="Background" Value="{x:Null}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border Background="{TemplateBinding Background}" BorderThickness="0">
+                            <GridViewRowPresenter Margin="0,3"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Themed button -->
+        <Style x:Key="ToolbarButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <!-- GridViewColumnHeader -->
+        <Style TargetType="GridViewColumnHeader">
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- TOOLBAR -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource ToolbarBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="12,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Logo + Title -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image Source="/Assets/logo.png" Width="144" Height="144"
+                           Margin="0,0,12,0" RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <Grid VerticalAlignment="Center">
+                        <TextBlock Text="Beet's Backup"
+                                   FontSize="44" FontWeight="Bold"
+                                   FontFamily="Segoe UI Variable, Segoe UI"
+                                   Foreground="Transparent"/>
+                        <Rectangle>
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#000000" Offset="0"/>
+                                    <GradientStop Color="#0A2A4A" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                            <Rectangle.OpacityMask>
+                                <VisualBrush>
+                                    <VisualBrush.Visual>
+                                        <TextBlock Text="Beet's Backup"
+                                                   FontSize="44" FontWeight="Bold"
+                                                   FontFamily="Segoe UI Variable, Segoe UI"/>
+                                    </VisualBrush.Visual>
+                                </VisualBrush>
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Controls -->
+                <Grid Grid.Column="2" VerticalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Row 1: Main actions -->
+                    <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <Button Margin="0,0,4,0"
+                                Command="{Binding PauseResumeTransferCommand}"
+                                IsEnabled="{Binding IsTransferring}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+                                    <Setter Property="Content" Value="⏸ Pause"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                            <Setter Property="Content" Value="▶ Resume"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Content="⏹ Stop" Margin="0,0,12,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding StopTransferCommand}"
+                                IsEnabled="{Binding IsTransferring}"/>
+
+                        <Button Content="Split Pane" Margin="0,0,12,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding ToggleSplitPaneCommand}"/>
+
+                        <Button Content="🔄 Refresh" Margin="0,0,12,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding RefreshDrivesCommand}"/>
+
+                        <Button Content="＋ Schedule" Margin="0,0,12,0"
+                                Style="{StaticResource AccentButton}"
+                                Command="{Binding OpenScheduleDialogCommand}"/>
+
+                        <Button Content="Jobs" Margin="0,0,12,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding OpenJobsDialogCommand}"/>
+
+                        <Button Content="Log" Margin="0,0,12,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding OpenLogDialogCommand}"/>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                            <CheckBox IsChecked="{Binding RemovePermissions}"
+                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Remove Permissions"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,0">
+                            <CheckBox IsChecked="{Binding VerifyChecksums}"
+                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Verify Checksums"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </WrapPanel>
+
+                    <!-- Row 2: Secondary actions -->
+                    <WrapPanel Grid.Row="1" Orientation="Horizontal">
+                        <Button Content="🌙 Dark / Light" Margin="0,0,12,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding ToggleThemeCommand}"/>
+                    </WrapPanel>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- NAVIGATION BAR -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="200"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Content="◀" Padding="8,4" Margin="0,0,4,0"
+                        Style="{StaticResource ToolbarButton}"
+                        Command="{Binding GoBackCommand}"
+                        ToolTip="Back"/>
+                <Button Grid.Column="1" Content="▶" Padding="8,4" Margin="0,0,4,0"
+                        Style="{StaticResource ToolbarButton}"
+                        Command="{Binding GoForwardCommand}"
+                        ToolTip="Forward"/>
+                <Button Grid.Column="2" Content="▲" Padding="8,4" Margin="0,0,8,0"
+                        Style="{StaticResource ToolbarButton}"
+                        Command="{Binding GoUpCommand}"
+                        ToolTip="Up one level"/>
+
+                <TextBox Grid.Column="3"
+                         Text="{Binding TopCurrentPath, Mode=OneWay}"
+                         IsReadOnly="True"
+                         Background="{DynamicResource SurfaceBrush}"
+                         Foreground="{DynamicResource PrimaryTextBrush}"
+                         BorderBrush="{DynamicResource BorderBrush}"
+                         BorderThickness="1"
+                         Padding="6,4"
+                         VerticalContentAlignment="Center"
+                         FontSize="12"/>
+
+                <TextBlock Grid.Column="4" Text="🔍" VerticalAlignment="Center" Margin="12,0,4,0"
+                           Foreground="{DynamicResource SecondaryTextBrush}"/>
+                <TextBox Grid.Column="5"
+                         Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
+                         Background="{DynamicResource SurfaceBrush}"
+                         Foreground="{DynamicResource PrimaryTextBrush}"
+                         BorderBrush="{DynamicResource BorderBrush}"
+                         BorderThickness="1"
+                         Padding="6,4"
+                         VerticalContentAlignment="Center"
+                         FontSize="12"/>
+            </Grid>
+        </Border>
+
+        <!-- MAIN AREA -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
+                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT COLUMN -->
+            <Border Grid.Column="0"
+                    Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <Grid>
+
+                <!-- Single column (normal mode) -->
+                <DockPanel Visibility="{Binding IsSplitPane, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                    <TextBlock DockPanel.Dock="Top" Text="DRIVES"
+                               FontWeight="SemiBold" FontSize="11"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Margin="12,10,12,6"/>
+                    <TreeView ItemsSource="{Binding TopTreeItems}"
+                              ItemTemplate="{StaticResource FolderTreeTemplate}"
+                              SelectedItemChanged="TopTree_SelectedItemChanged"/>
+                </DockPanel>
+
+                <!-- Split column (split pane mode) -->
+                <Grid Visibility="{Binding IsSplitPane, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="4"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0">
+                        <TextBlock DockPanel.Dock="Top" Text="SOURCE"
+                                   FontWeight="SemiBold" FontSize="11"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Margin="12,10,12,6"/>
+                        <TreeView ItemsSource="{Binding TopTreeItems}"
+                                  ItemTemplate="{StaticResource FolderTreeTemplate}"
+                                  SelectedItemChanged="TopTree_SelectedItemChanged"/>
+                    </DockPanel>
+
+                    <GridSplitter Grid.Row="1" Height="4"
+                                  HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource BorderBrush}"/>
+
+                    <DockPanel Grid.Row="2">
+                        <TextBlock DockPanel.Dock="Top" Text="DESTINATION"
+                                   FontWeight="SemiBold" FontSize="11"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Margin="12,10,12,6"/>
+                        <TreeView ItemsSource="{Binding BottomTreeItems}"
+                                  ItemTemplate="{StaticResource FolderTreeTemplate}"
+                                  SelectedItemChanged="BottomTree_SelectedItemChanged"/>
+                    </DockPanel>
+                </Grid>
+
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="4"
+                          HorizontalAlignment="Stretch"
+                          Background="{DynamicResource BorderBrush}"/>
+
+            <!-- FILE PANE AREA -->
+            <Grid Grid.Column="2">
+
+                <!-- Single pane (visible when NOT split) -->
+                <ListView x:Name="TopPaneList"
+                          Visibility="{Binding IsSplitPane, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                          ItemsSource="{Binding FilteredTopPaneItems}"
+                          Background="{DynamicResource SurfaceBrush}"
+                          Foreground="{DynamicResource PrimaryTextBrush}"
+                          BorderThickness="0"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Pixel"
+                          ScrollViewer.CanContentScroll="True"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          MouseDoubleClick="PaneItem_DoubleClick"
+                          SelectionMode="Extended"
+                          AllowDrop="True"
+                          PreviewMouseLeftButtonDown="Pane_PreviewMouseLeftButtonDown"
+                          PreviewMouseLeftButtonUp="Pane_PreviewMouseLeftButtonUp"
+                          PreviewMouseRightButtonDown="Pane_PreviewMouseRightButtonDown"
+                          PreviewMouseMove="Pane_PreviewMouseMove"
+                          Drop="SinglePane_Drop"
+                          DragOver="Pane_DragOver">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Name" Width="340">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Foreground="{DynamicResource PrimaryTextBrush}">
+                                            <Run Text="{Binding Icon, Mode=OneWay}"/><Run Text=" "/><Run Text="{Binding Name, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Type" Width="120" DisplayMemberBinding="{Binding TypeDisplay}"/>
+                            <GridViewColumn Header="Size" Width="100" DisplayMemberBinding="{Binding SizeDisplay}"/>
+                            <GridViewColumn Header="Modified" Width="160" DisplayMemberBinding="{Binding Modified}"/>
+                            <GridViewColumn Width="60">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ProgressBar IsIndeterminate="True" Height="4" Width="50"
+                                                     Foreground="{DynamicResource AccentBrush}"
+                                                     Background="{DynamicResource BorderBrush}"
+                                                     BorderThickness="0"
+                                                     Visibility="{Binding IsCalculating, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Copy" Click="Copy_Click"/>
+                            <MenuItem Header="Cut" Click="Cut_Click"/>
+                            <MenuItem Header="Paste" Click="Paste_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Rename" Click="Rename_Click"/>
+                            <MenuItem Header="Delete" Click="Delete_Click"/>
+                        </ContextMenu>
+                    </ListView.ContextMenu>
+                </ListView>
+
+                <!-- Split pane (visible when split) -->
+                <Grid Visibility="{Binding IsSplitPane, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="4"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <ListView Grid.Row="0" x:Name="SplitTopList"
+                              ItemsSource="{Binding FilteredTopPaneItems}"
+                              Background="{DynamicResource SurfaceBrush}"
+                              Foreground="{DynamicResource PrimaryTextBrush}"
+                              BorderThickness="0,0,0,1"
+                              BorderBrush="{DynamicResource BorderBrush}"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              ScrollViewer.CanContentScroll="True"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              MouseDoubleClick="SplitTopItem_DoubleClick"
+                              SelectionMode="Extended"
+                              AllowDrop="True"
+                              PreviewMouseLeftButtonDown="Pane_PreviewMouseLeftButtonDown"
+                              PreviewMouseLeftButtonUp="Pane_PreviewMouseLeftButtonUp"
+                              PreviewMouseRightButtonDown="Pane_PreviewMouseRightButtonDown"
+                              PreviewMouseMove="Pane_PreviewMouseMove"
+                              Drop="SplitTop_Drop"
+                              DragOver="Pane_DragOver">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Name (Source)" Width="300">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Foreground="{DynamicResource PrimaryTextBrush}">
+                                                <Run Text="{Binding Icon, Mode=OneWay}"/><Run Text=" "/><Run Text="{Binding Name, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Type" Width="100" DisplayMemberBinding="{Binding TypeDisplay}"/>
+                                <GridViewColumn Header="Size" Width="90" DisplayMemberBinding="{Binding SizeDisplay}"/>
+                                <GridViewColumn Width="50">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ProgressBar IsIndeterminate="True" Height="4" Width="40"
+                                                         Foreground="{DynamicResource AccentBrush}"
+                                                         Background="{DynamicResource BorderBrush}"
+                                                         BorderThickness="0"
+                                                         Visibility="{Binding IsCalculating, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy to Bottom" Click="CopyToBottom_Click"/>
+                                <MenuItem Header="Cut to Bottom" Click="CutToBottom_Click"/>
+                                <Separator/>
+                                <MenuItem Header="Rename" Click="Rename_Click"/>
+                                <MenuItem Header="Delete" Click="Delete_Click"/>
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                    </ListView>
+
+                    <GridSplitter Grid.Row="1" Height="4"
+                                  HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource BorderBrush}"/>
+
+                    <ListView Grid.Row="2" x:Name="SplitBottomList"
+                              ItemsSource="{Binding FilteredBottomPaneItems}"
+                              Background="{DynamicResource SurfaceBrush}"
+                              Foreground="{DynamicResource PrimaryTextBrush}"
+                              BorderThickness="0"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              ScrollViewer.CanContentScroll="True"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              MouseDoubleClick="SplitBottomItem_DoubleClick"
+                              SelectionMode="Extended"
+                              AllowDrop="True"
+                              PreviewMouseLeftButtonDown="Pane_PreviewMouseLeftButtonDown"
+                              PreviewMouseLeftButtonUp="Pane_PreviewMouseLeftButtonUp"
+                              PreviewMouseRightButtonDown="Pane_PreviewMouseRightButtonDown"
+                              PreviewMouseMove="Pane_PreviewMouseMove"
+                              Drop="SplitBottom_Drop"
+                              DragOver="Pane_DragOver">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Name (Destination)" Width="300">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Foreground="{DynamicResource PrimaryTextBrush}">
+                                                <Run Text="{Binding Icon, Mode=OneWay}"/><Run Text=" "/><Run Text="{Binding Name, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Type" Width="100" DisplayMemberBinding="{Binding TypeDisplay}"/>
+                                <GridViewColumn Header="Size" Width="90" DisplayMemberBinding="{Binding SizeDisplay}"/>
+                                <GridViewColumn Width="50">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ProgressBar IsIndeterminate="True" Height="4" Width="40"
+                                                         Foreground="{DynamicResource AccentBrush}"
+                                                         Background="{DynamicResource BorderBrush}"
+                                                         BorderThickness="0"
+                                                         Visibility="{Binding IsCalculating, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy to Top" Click="CopyToTop_Click"/>
+                                <MenuItem Header="Cut to Top" Click="CutToTop_Click"/>
+                                <Separator/>
+                                <MenuItem Header="Rename" Click="Rename_Click"/>
+                                <MenuItem Header="Delete" Click="Delete_Click"/>
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                    </ListView>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- STATUS BAR with progress -->
+        <Border Grid.Row="3"
+                Background="{DynamicResource ToolbarBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid Margin="12,0" Height="28">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{Binding StatusMessage}"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           FontSize="12" VerticalAlignment="Center"/>
+                <ProgressBar Grid.Column="1"
+                             Value="{Binding TransferProgressPercent}"
+                             Maximum="100" Width="160" Height="10"
+                             Margin="12,0"
+                             Foreground="{DynamicResource AccentBrush}"
+                             Background="{DynamicResource BorderBrush}"
+                             BorderThickness="0"
+                             Visibility="{Binding IsTransferring, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBlock Grid.Column="2"
+                           Text="{Binding TransferEta}"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           FontSize="11" VerticalAlignment="Center"
+                           Visibility="{Binding IsTransferring, Converter={StaticResource BoolToVisibilityConverter}}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

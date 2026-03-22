@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\Owner\\\\Test\\\\Test-2.0-main\\\\.claude\\\\agents\")",
+      "Bash(cp \"C:\\\\Users\\\\Owner\\\\Test\\\\.claude\\\\agents/\"*.md \"C:\\\\Users\\\\Owner\\\\Test\\\\Test-2.0-main\\\\.claude\\\\agents/\")",
+      "Bash(ls \"C:/Users/Owner/Test/Test-2.0-main/\"*.csproj)",
+      "Bash(dotnet clean:*)",
+      "Bash(timeout 15 dotnet run --project BeetsBackup.csproj)",
+      "Bash(timeout 12 dotnet run --project BeetsBackup.csproj --)",
+      "Bash(echo \"EXIT CODE: $?\")",
+      "Bash(timeout 10 dotnet run --project BeetsBackup.csproj)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(taskkill /IM BeetsBackup.exe /F)",
+      "Bash(cmd.exe //c \"taskkill /IM BeetsBackup.exe /F\" 2>&1)",
+      "Bash(cp README.md README.txt)",
+      "Bash(cp notes/NEW_FEATURES.md NEW_FEATURES.txt)",
+      "Bash(gh repo:*)"
+    ]
+  }
+}

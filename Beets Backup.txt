@@ -1,0 +1,34 @@
+Features --Beets Backup
+
+-Beets Backup is a windows based file management application, it will have some of the features of file explorer and some new features. Beets backup will have both light and dark mode. Beets Backup should bear some resemblance to file explorer but should have a more modern look. In the top left corner there will be an image that I will provide once we have a mockup and to the right of that it should say "Beets Backup".
+
+-When opened Beets Backup displays a left column, a large pane to the right of that and a tool bar on top.
+
+-In the tool bar there are the following options a "light switch" that changes from dark to light mode. a checkbox that says remove permissions next to it, when selected any files or folders transferred will have the permissions removed so they can be opened on another computer.
+
+-ability to see all drives in the left column, able to select a drive in the left column all items it contains will populate in the pane and each folder is clickable to see the contents, you can open any subfolder to the contents of each, you cannot however open files or launch executables from within Beets Backup, if you try to you will get an error message in a box that reads "Can't do that dummy!" you will have to click "ok" for the error to close.
+
+-a large pane shows the contents of whichever drive is selected from the left column
+
+-has a taskbar at the top which contains different features one of these features is split pane so that the large pane and left column are divided in half. The divide is horizontal so that one pane is above the other, the same with the columns
+
+-in split pane mode the lefthand column displays all of the drives in both the top and bottom column so that you can see the source drive or folder in the top pane/column and the destination in the bottom column/pane
+
+- you can drag files or folders, including being able to select some or all items from either pane and drag to the other pane to start a transfer, we will refer to this as a "manual transfer". When dragging from either pane this will "copy" the files, you can select any or all of the items in either pane and right click and select cut and paste into the other pane if you do not wish to copy.
+
+-when you right click on a file or folder you have the option to copy, cut, paste or delete an item.
+
+-in the left column there will always be at the top an option to select all drives, if selected the disks will be displayed in the pane with information about the disk displayed, it should show, total size, used space, and free space.
+
+-one of the most important features that we need is the ability to schedule backups, I want to be able to choose any drive or folder and set a destination along with a date and time/recurring or one-time. when using this features it's important that the app not transfer duplicates. it needs to scan the destination at some point before moving anything, anything that already exists should be skipped.
+
+--- Clarifications ---
+
+-Split pane mode: both the left column AND the main pane are duplicated. Top half has its own independent column + pane, bottom half has its own independent column + pane. Each can have any drive or folder selected independently (source in one, destination in the other).
+
+-Scheduled backups require the app to be running. Final deployment plan is to place the .exe in the Windows startup folder so it launches automatically on login.
+
+-"Remove permissions" means strip NTFS ACLs (Access Control Lists) from transferred files/folders so they are not tied to a specific user SID and can be opened freely on another PC. Reset security to inherited/default on copy.
+
+-Hidden files and folders must be visible within Beets Backup (shown alongside normal files, clearly marked as hidden). They must be transferable via manual transfer and scheduled backup. Their hidden attribute must be preserved on the destination after transfer.
+
