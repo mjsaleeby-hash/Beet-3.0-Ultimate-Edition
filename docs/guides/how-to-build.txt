@@ -1,0 +1,157 @@
+HOW TO BUILD BeetsBackup.exe FROM SOURCE
+========================================
+
+This guide walks you through building the BeetsBackup executable from the
+downloaded project files using PowerShell. No Visual Studio or VS Code required.
+
+
+WHAT YOU NEED
+-------------
+- Windows 10 or later (64-bit)
+- The .NET 8 SDK (free download from Microsoft)
+
+
+STEP 1: INSTALL THE .NET 8 SDK
+-------------------------------
+1. Open your web browser and go to:
+
+   https://dotnet.microsoft.com/download/dotnet/8.0
+
+2. Under the SDK column, click the Windows x64 installer to download it.
+
+3. Run the installer and follow the prompts. Accept the defaults.
+
+4. When it finishes, close and reopen any PowerShell windows so the new
+   commands are available.
+
+
+STEP 2: DOWNLOAD THE PROJECT
+-----------------------------
+1. Go to the GitHub repository page for Beet's Backup.
+
+2. Click the green "Code" button, then click "Download ZIP".
+
+3. Open your Downloads folder and find the ZIP file
+   (e.g., Beet-3.0-Ultimate-Edition-main.zip).
+
+4. Right-click the ZIP file and select "Extract All..."
+
+5. Extract it to your Downloads folder. You should now have a folder like:
+
+   C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main
+
+
+STEP 3: OPEN POWERSHELL
+------------------------
+1. Press the Windows key on your keyboard.
+
+2. Type "PowerShell" and click on "Windows PowerShell" to open it.
+
+You should see a window with text like:
+
+   PS C:\Users\YourName>
+
+
+STEP 4: NAVIGATE TO THE PROJECT FOLDER
+---------------------------------------
+Type the following command and press Enter:
+
+   cd C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main
+
+NOTE: If your extracted folder has a different name, adjust the path
+accordingly. You can check by opening File Explorer and looking at
+the folder name inside your Downloads folder.
+
+To confirm you are in the right place, type:
+
+   dir *.csproj
+
+You should see "BeetsBackup.csproj" in the output. If you don't, you
+may need to go one folder deeper:
+
+   cd Beet-3.0-Ultimate-Edition-main
+
+Then try "dir *.csproj" again.
+
+
+STEP 5: BUILD THE EXECUTABLE
+-----------------------------
+Type the following command and press Enter:
+
+   dotnet publish -c Release
+
+This will download any required packages and compile the project into a
+single .exe file. The first time you run this, it may take a couple of
+minutes.
+
+When it finishes, you should see a message like:
+
+   BeetsBackup -> C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main\bin\Release\net8.0-windows\win-x64\publish\
+
+
+STEP 6: FIND YOUR EXECUTABLE
+-----------------------------
+When the build finishes, your BeetsBackup.exe file will be located here:
+
+   C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main\bin\Release\net8.0-windows\win-x64\publish\BeetsBackup.exe
+
+To find it using File Explorer:
+
+1. Open File Explorer (the folder icon on your taskbar, or press
+   Windows key + E).
+
+2. In the address bar at the top, paste the following path and press Enter:
+
+   C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main\bin\Release\net8.0-windows\win-x64\publish
+
+3. You should see BeetsBackup.exe in that folder.
+
+A second copy is also placed one level above the project folder:
+
+   C:\Users\Downloads\BeetsBackup.exe
+
+
+COPY IT TO YOUR DESKTOP (OPTIONAL)
+-----------------------------------
+If you want easy access, you can copy the exe to your Desktop.
+
+Option A - Using PowerShell, type this and press Enter:
+
+   copy bin\Release\net8.0-windows\win-x64\publish\BeetsBackup.exe "$HOME\Desktop\"
+
+Option B - Using File Explorer:
+   1. Right-click BeetsBackup.exe and select "Copy"
+   2. Go to your Desktop
+   3. Right-click an empty area and select "Paste"
+
+
+STEP 7: RUN IT
+---------------
+Double-click BeetsBackup.exe to launch the application. No installer or
+additional setup is needed -- everything is bundled into that single file.
+
+
+TROUBLESHOOTING
+---------------
+
+"dotnet is not recognized"
+   The .NET SDK was not installed correctly, or PowerShell was not restarted
+   after installation. Close PowerShell, reopen it, and try again. If it
+   still doesn't work, reinstall the .NET 8 SDK.
+
+"The term 'cd' could not be found" or path errors
+   Make sure the folder path is correct. Open File Explorer, navigate to the
+   extracted folder, and check the exact path shown in the address bar.
+
+Build errors about missing files
+   Make sure you extracted the full ZIP file and did not just open it without
+   extracting. Windows lets you browse ZIP files without extracting, but the
+   build requires all files to be fully extracted.
+
+
+QUICK REFERENCE (ALL COMMANDS)
+------------------------------
+
+   cd C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main
+   dotnet publish -c Release
+   copy bin\Release\net8.0-windows\win-x64\publish\BeetsBackup.exe "$HOME\Desktop\"
