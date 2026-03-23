@@ -47,7 +47,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _topCurrentPath = string.Empty;
     [ObservableProperty] private string _bottomCurrentPath = string.Empty;
 
-    // --- Search ---
+    // --- Search (live filter) ---
     private string _searchFilter = string.Empty;
     public string SearchFilter
     {
@@ -62,10 +62,21 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    // --- Navigation history ---
+    // --- Deep search ---
+    [ObservableProperty] private bool _isSearching;
+    [ObservableProperty] private string _deepSearchQuery = string.Empty;
+    [ObservableProperty] private bool _hasSearchResults;
+    private CancellationTokenSource? _searchCts;
+
+    // --- Navigation history (top) ---
     private readonly List<string> _topHistory = new();
     private int _topHistoryIndex = -1;
     private bool _isNavigatingHistory;
+
+    // --- Navigation history (bottom) ---
+    private readonly List<string> _bottomHistory = new();
+    private int _bottomHistoryIndex = -1;
+    private bool _isNavigatingBottomHistory;
 
     // --- Status ---
     [ObservableProperty] private string _statusMessage = "Ready";
@@ -198,6 +209,12 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void NavigateTop(string path)
     {
+        // Cancel any in-progress deep search so results don't interleave
+        // with the new folder contents.
+        _searchCts?.Cancel();
+        HasSearchResults = false;
+        IsSearching = false;
+
         _topSizeCts?.Cancel();
         _topSizeCts = new CancellationTokenSource();
         TopCurrentPath = path;
@@ -230,6 +247,17 @@ public partial class MainViewModel : ObservableObject
             BottomPaneItems.Add(item);
         _filteredBottomView?.Refresh();
         _ = CalculateFolderSizesAsync(BottomPaneItems, _bottomSizeCts.Token);
+
+        if (!_isNavigatingBottomHistory)
+        {
+            if (_bottomHistoryIndex < _bottomHistory.Count - 1)
+                _bottomHistory.RemoveRange(_bottomHistoryIndex + 1, _bottomHistory.Count - _bottomHistoryIndex - 1);
+            _bottomHistory.Add(path);
+            _bottomHistoryIndex = _bottomHistory.Count - 1;
+        }
+        GoBackBottomCommand.NotifyCanExecuteChanged();
+        GoForwardBottomCommand.NotifyCanExecuteChanged();
+        GoUpBottomCommand.NotifyCanExecuteChanged();
     }
 
     private static async Task CalculateFolderSizesAsync(ObservableCollection<FileSystemItem> items, CancellationToken cancellationToken)
@@ -278,6 +306,158 @@ public partial class MainViewModel : ObservableObject
         var parent = Directory.GetParent(TopCurrentPath);
         if (parent != null)
             NavigateTop(parent.FullName);
+    }
+
+    // --- Bottom navigation history ---
+    private bool CanGoBackBottom() => _bottomHistoryIndex > 0;
+    [RelayCommand(CanExecute = nameof(CanGoBackBottom))]
+    private void GoBackBottom()
+    {
+        _bottomHistoryIndex--;
+        _isNavigatingBottomHistory = true;
+        NavigateBottom(_bottomHistory[_bottomHistoryIndex]);
+        _isNavigatingBottomHistory = false;
+    }
+
+    private bool CanGoForwardBottom() => _bottomHistoryIndex < _bottomHistory.Count - 1;
+    [RelayCommand(CanExecute = nameof(CanGoForwardBottom))]
+    private void GoForwardBottom()
+    {
+        _bottomHistoryIndex++;
+        _isNavigatingBottomHistory = true;
+        NavigateBottom(_bottomHistory[_bottomHistoryIndex]);
+        _isNavigatingBottomHistory = false;
+    }
+
+    private bool CanGoUpBottom() => !string.IsNullOrEmpty(BottomCurrentPath) && Directory.GetParent(BottomCurrentPath) != null;
+    [RelayCommand(CanExecute = nameof(CanGoUpBottom))]
+    private void GoUpBottom()
+    {
+        var parent = Directory.GetParent(BottomCurrentPath);
+        if (parent != null)
+            NavigateBottom(parent.FullName);
+    }
+
+    // --- Deep search ---
+    [RelayCommand]
+    private async Task ExecuteDeepSearchAsync()
+    {
+        // Cancel and dispose any in-progress search
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = null;
+
+        if (string.IsNullOrWhiteSpace(DeepSearchQuery))
+        {
+            HasSearchResults = false;
+            IsSearching = false;
+            // Re-navigate to current folder to restore normal view
+            if (!string.IsNullOrEmpty(TopCurrentPath))
+                NavigateTop(TopCurrentPath);
+            return;
+        }
+
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+        IsSearching = true;
+        HasSearchResults = true;
+
+        var query = DeepSearchQuery.Trim();
+        bool isExtensionSearch = query.StartsWith('.');
+
+        // Clear pane for results
+        TopPaneItems.Clear();
+        _filteredTopView?.Refresh();
+
+        var dispatcher = System.Windows.Application.Current.Dispatcher;
+
+        await Task.Run(() =>
+        {
+            // Determine root paths to search
+            var roots = new List<string>();
+            if (!string.IsNullOrEmpty(TopCurrentPath) && Directory.Exists(TopCurrentPath))
+                roots.Add(TopCurrentPath);
+            else
+            {
+                foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
+                    roots.Add(drive.RootDirectory.FullName);
+            }
+
+            foreach (var root in roots)
+            {
+                if (token.IsCancellationRequested) return;
+                SearchDirectoryRecursive(root, query, isExtensionSearch, token, dispatcher);
+            }
+        }, token).ContinueWith(_ => { }, TaskScheduler.Default);
+
+        IsSearching = false;
+    }
+
+    private void SearchDirectoryRecursive(string directory, string query, bool isExtensionSearch, CancellationToken token, System.Windows.Threading.Dispatcher dispatcher)
+    {
+        if (token.IsCancellationRequested) return;
+
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                AttributesToSkip = FileAttributes.None,
+                IgnoreInaccessible = true,
+                RecurseSubdirectories = false
+            };
+
+            // Check files in current directory
+            foreach (var filePath in Directory.EnumerateFiles(directory, "*", options))
+            {
+                if (token.IsCancellationRequested) return;
+                var fileName = Path.GetFileName(filePath);
+                bool matches;
+                if (isExtensionSearch)
+                    matches = Path.GetExtension(fileName).Equals(query, StringComparison.OrdinalIgnoreCase);
+                else
+                    matches = fileName.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+                if (matches)
+                {
+                    var item = new FileSystemItem(new FileInfo(filePath));
+                    dispatcher.Invoke(() => TopPaneItems.Add(item));
+                }
+            }
+
+            // Check subdirectories (names match too for non-extension searches)
+            foreach (var dirPath in Directory.EnumerateDirectories(directory, "*", options))
+            {
+                if (token.IsCancellationRequested) return;
+
+                if (!isExtensionSearch)
+                {
+                    var dirName = Path.GetFileName(dirPath);
+                    if (dirName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var item = new FileSystemItem(new DirectoryInfo(dirPath));
+                        dispatcher.Invoke(() => TopPaneItems.Add(item));
+                    }
+                }
+
+                // Recurse into subdirectory
+                SearchDirectoryRecursive(dirPath, query, isExtensionSearch, token, dispatcher);
+            }
+        }
+        catch (UnauthorizedAccessException) { }
+        catch (IOException) { }
+    }
+
+    [RelayCommand]
+    private void ClearSearch()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = null;
+        DeepSearchQuery = string.Empty;
+        HasSearchResults = false;
+        IsSearching = false;
+        if (!string.IsNullOrEmpty(TopCurrentPath))
+            NavigateTop(TopCurrentPath);
     }
 
     [RelayCommand]
@@ -449,7 +629,32 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void RefreshDrives() => LoadDrives();
+    private void RefreshDrives()
+    {
+        LoadDrives();
+        if (!string.IsNullOrEmpty(TopCurrentPath))
+        {
+            if (Directory.Exists(TopCurrentPath))
+                NavigateTop(TopCurrentPath);
+            else
+            {
+                TopPaneItems.Clear();
+                TopCurrentPath = string.Empty;
+                StatusMessage = "Top pane path no longer exists.";
+            }
+        }
+        if (!string.IsNullOrEmpty(BottomCurrentPath))
+        {
+            if (Directory.Exists(BottomCurrentPath))
+                NavigateBottom(BottomCurrentPath);
+            else
+            {
+                BottomPaneItems.Clear();
+                BottomCurrentPath = string.Empty;
+                StatusMessage = "Bottom pane path no longer exists.";
+            }
+        }
+    }
 
     [RelayCommand]
     private void OpenScheduleDialog()

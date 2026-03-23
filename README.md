@@ -16,9 +16,11 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 - **Copy, cut, paste, delete** via right-click context menus
 - **Drag-and-drop transfers** in both single and split pane modes
 - **File and folder rename** via right-click context menu
-- **Back / forward / up navigation** with full history tracking
-- **Search and filter** textbox to filter the current folder by name
-- **Async folder size calculation** with progress indicators
+- **Back / forward / up navigation** with full history tracking for both panes
+- **Deep recursive file search** — press Enter or click the magnifying glass in the top nav bar to search the current folder tree recursively; extension-aware (`.exe` matches by extension, `exe` matches by name substring); results populate inline with a cancel button to return to normal view
+- **Search and filter** textbox provides a secondary live filter on top of search results or the current folder listing
+- **Bottom pane navigation bar** — split pane mode includes a dedicated full-width nav bar between the two halves with Back, Forward, Up, and path display, symmetric with the top nav bar
+- **Async folder size calculation** with progress indicators; Refresh button reloads pane contents and recalculates folder sizes
 - **Hidden file support** — visible, transferable, and attributes preserved
 - **GridSplitter resizable panes** for flexible layout
 - **No file launching** — double-clicking a file shows a reminder that this is a backup tool, not a file explorer
@@ -52,7 +54,8 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 
 - **Dark and light theme** toggle
 - **Custom logo** with gradient "Beet's Backup" branding
-- **Navigation bar** with back, forward, up buttons and current path display
+- **Navigation bars** — top pane nav bar with back, forward, up, path display, search, and refresh; bottom pane nav bar in split mode with symmetric back, forward, up, and path display
+- **Restructured split pane layout** — top half (source tree + file list), full-width bottom nav bar, bottom half (destination tree + file list)
 - **Themed toolbar** with all primary controls
 
 ---
@@ -92,7 +95,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 2. **Select a drive** from the sidebar to browse its contents.
 3. **Enable split mode** to open a second pane and select a destination drive.
 4. **Navigate** using back, forward, and up buttons or by double-clicking folders.
-5. **Search** the current folder using the filter textbox in the toolbar.
+5. **Search recursively** by typing a term in the search box on the top nav bar and pressing Enter or clicking the magnifying glass. Use the "X" button to cancel and return to the folder view. The filter textbox applies a secondary live filter on top of any search results.
 6. **Transfer files** between panes using toolbar buttons, the right-click context menu, or drag-and-drop.
 7. **Choose a transfer mode** (Skip Existing, Keep Both, or Replace) before starting a transfer.
 8. **Enable checksum verification** or **permission stripping** via the toolbar checkboxes as needed.

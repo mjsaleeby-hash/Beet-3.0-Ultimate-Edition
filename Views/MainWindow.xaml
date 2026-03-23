@@ -348,56 +348,53 @@
                          VerticalContentAlignment="Center"
                          FontSize="12"/>
 
-                <TextBlock Grid.Column="4" Text="🔍" VerticalAlignment="Center" Margin="12,0,4,0"
-                           Foreground="{DynamicResource SecondaryTextBrush}"/>
-                <TextBox Grid.Column="5"
-                         Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}"
-                         Background="{DynamicResource SurfaceBrush}"
-                         Foreground="{DynamicResource PrimaryTextBrush}"
-                         BorderBrush="{DynamicResource BorderBrush}"
-                         BorderThickness="1"
-                         Padding="6,4"
-                         VerticalContentAlignment="Center"
-                         FontSize="12"/>
+                <Button Grid.Column="4" Content="🔍" Padding="8,4" Margin="12,0,4,0"
+                        Style="{StaticResource ToolbarButton}"
+                        Command="{Binding ExecuteDeepSearchCommand}"
+                        ToolTip="Search"/>
+                <Grid Grid.Column="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             x:Name="SearchBox"
+                             Text="{Binding DeepSearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                             Background="{DynamicResource SurfaceBrush}"
+                             Foreground="{DynamicResource PrimaryTextBrush}"
+                             BorderBrush="{DynamicResource BorderBrush}"
+                             BorderThickness="1"
+                             Padding="6,4"
+                             VerticalContentAlignment="Center"
+                             FontSize="12"
+                             KeyDown="SearchBox_KeyDown"/>
+                    <Button Grid.Column="1" Content="X" Padding="4,2" Margin="2,0,0,0"
+                            Style="{StaticResource ToolbarButton}"
+                            Command="{Binding ClearSearchCommand}"
+                            Visibility="{Binding HasSearchResults, Converter={StaticResource BoolToVisibilityConverter}}"
+                            ToolTip="Clear search"/>
+                </Grid>
             </Grid>
         </Border>
 
         <!-- MAIN AREA -->
         <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
-                <ColumnDefinition Width="4"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
 
-            <!-- LEFT COLUMN -->
-            <Border Grid.Column="0"
-                    Background="{DynamicResource PanelBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="0,0,1,0">
-                <Grid>
+            <!-- ===== NORMAL (single pane) MODE ===== -->
+            <Grid Visibility="{Binding IsSplitPane, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
+                    <ColumnDefinition Width="4"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-                <!-- Single column (normal mode) -->
-                <DockPanel Visibility="{Binding IsSplitPane, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                    <TextBlock DockPanel.Dock="Top" Text="DRIVES"
-                               FontWeight="SemiBold" FontSize="11"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
-                               Margin="12,10,12,6"/>
-                    <TreeView ItemsSource="{Binding TopTreeItems}"
-                              ItemTemplate="{StaticResource FolderTreeTemplate}"
-                              SelectedItemChanged="TopTree_SelectedItemChanged"/>
-                </DockPanel>
-
-                <!-- Split column (split pane mode) -->
-                <Grid Visibility="{Binding IsSplitPane, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="4"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <DockPanel Grid.Row="0">
-                        <TextBlock DockPanel.Dock="Top" Text="SOURCE"
+                <!-- Left: Drive tree -->
+                <Border Grid.Column="0"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,0,1,0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="DRIVES"
                                    FontWeight="SemiBold" FontSize="11"
                                    Foreground="{DynamicResource SecondaryTextBrush}"
                                    Margin="12,10,12,6"/>
@@ -405,35 +402,14 @@
                                   ItemTemplate="{StaticResource FolderTreeTemplate}"
                                   SelectedItemChanged="TopTree_SelectedItemChanged"/>
                     </DockPanel>
+                </Border>
 
-                    <GridSplitter Grid.Row="1" Height="4"
-                                  HorizontalAlignment="Stretch"
-                                  Background="{DynamicResource BorderBrush}"/>
+                <GridSplitter Grid.Column="1" Width="4"
+                              HorizontalAlignment="Stretch"
+                              Background="{DynamicResource BorderBrush}"/>
 
-                    <DockPanel Grid.Row="2">
-                        <TextBlock DockPanel.Dock="Top" Text="DESTINATION"
-                                   FontWeight="SemiBold" FontSize="11"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                   Margin="12,10,12,6"/>
-                        <TreeView ItemsSource="{Binding BottomTreeItems}"
-                                  ItemTemplate="{StaticResource FolderTreeTemplate}"
-                                  SelectedItemChanged="BottomTree_SelectedItemChanged"/>
-                    </DockPanel>
-                </Grid>
-
-                </Grid>
-            </Border>
-
-            <GridSplitter Grid.Column="1" Width="4"
-                          HorizontalAlignment="Stretch"
-                          Background="{DynamicResource BorderBrush}"/>
-
-            <!-- FILE PANE AREA -->
-            <Grid Grid.Column="2">
-
-                <!-- Single pane (visible when NOT split) -->
-                <ListView x:Name="TopPaneList"
-                          Visibility="{Binding IsSplitPane, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                <!-- Right: File list -->
+                <ListView Grid.Column="2" x:Name="TopPaneList"
                           ItemsSource="{Binding FilteredTopPaneItems}"
                           Background="{DynamicResource SurfaceBrush}"
                           Foreground="{DynamicResource PrimaryTextBrush}"
@@ -490,16 +466,45 @@
                         </ContextMenu>
                     </ListView.ContextMenu>
                 </ListView>
+            </Grid>
 
-                <!-- Split pane (visible when split) -->
-                <Grid Visibility="{Binding IsSplitPane, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="4"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
+            <!-- ===== SPLIT PANE MODE ===== -->
+            <Grid Visibility="{Binding IsSplitPane, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="4"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                    <ListView Grid.Row="0" x:Name="SplitTopList"
+                <!-- TOP HALF: source tree + source file list -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
+                        <ColumnDefinition Width="4"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,0,1,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="SOURCE"
+                                       FontWeight="SemiBold" FontSize="11"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="12,10,12,6"/>
+                            <TreeView ItemsSource="{Binding TopTreeItems}"
+                                      ItemTemplate="{StaticResource FolderTreeTemplate}"
+                                      SelectedItemChanged="TopTree_SelectedItemChanged"/>
+                        </DockPanel>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="4"
+                                  HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource BorderBrush}"/>
+
+                    <ListView Grid.Column="2" x:Name="SplitTopList"
                               ItemsSource="{Binding FilteredTopPaneItems}"
                               Background="{DynamicResource SurfaceBrush}"
                               Foreground="{DynamicResource PrimaryTextBrush}"
@@ -555,12 +560,81 @@
                             </ContextMenu>
                         </ListView.ContextMenu>
                     </ListView>
+                </Grid>
 
-                    <GridSplitter Grid.Row="1" Height="4"
+                <!-- SPLITTER between top and bottom halves -->
+                <GridSplitter Grid.Row="1" Height="4"
+                              HorizontalAlignment="Stretch"
+                              Background="{DynamicResource BorderBrush}"/>
+
+                <!-- BOTTOM NAVIGATION BAR (full width, mirrors top nav bar) -->
+                <Border Grid.Row="2"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="8,4">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0" Content="◀" Padding="8,4" Margin="0,0,4,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding GoBackBottomCommand}"
+                                ToolTip="Back"/>
+                        <Button Grid.Column="1" Content="▶" Padding="8,4" Margin="0,0,4,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding GoForwardBottomCommand}"
+                                ToolTip="Forward"/>
+                        <Button Grid.Column="2" Content="▲" Padding="8,4" Margin="0,0,8,0"
+                                Style="{StaticResource ToolbarButton}"
+                                Command="{Binding GoUpBottomCommand}"
+                                ToolTip="Up one level"/>
+
+                        <TextBox Grid.Column="3"
+                                 Text="{Binding BottomCurrentPath, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 Background="{DynamicResource SurfaceBrush}"
+                                 Foreground="{DynamicResource PrimaryTextBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}"
+                                 BorderThickness="1"
+                                 Padding="6,4"
+                                 VerticalContentAlignment="Center"
+                                 FontSize="12"/>
+                    </Grid>
+                </Border>
+
+                <!-- BOTTOM HALF: destination tree + destination file list -->
+                <Grid Grid.Row="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
+                        <ColumnDefinition Width="4"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="0,0,1,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="DESTINATION"
+                                       FontWeight="SemiBold" FontSize="11"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="12,10,12,6"/>
+                            <TreeView ItemsSource="{Binding BottomTreeItems}"
+                                      ItemTemplate="{StaticResource FolderTreeTemplate}"
+                                      SelectedItemChanged="BottomTree_SelectedItemChanged"/>
+                        </DockPanel>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="4"
                                   HorizontalAlignment="Stretch"
                                   Background="{DynamicResource BorderBrush}"/>
 
-                    <ListView Grid.Row="2" x:Name="SplitBottomList"
+                    <ListView Grid.Column="2" x:Name="SplitBottomList"
                               ItemsSource="{Binding FilteredBottomPaneItems}"
                               Background="{DynamicResource SurfaceBrush}"
                               Foreground="{DynamicResource PrimaryTextBrush}"
@@ -617,6 +691,7 @@
                     </ListView>
                 </Grid>
             </Grid>
+
         </Grid>
 
         <!-- STATUS BAR with progress -->

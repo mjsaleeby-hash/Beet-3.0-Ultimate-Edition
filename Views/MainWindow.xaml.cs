@@ -323,6 +323,13 @@ public partial class MainWindow : Window
         await Vm.MoveToTopCommand.ExecuteAsync(items);
     }
 
+    // -- Search --
+    private void SearchBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+            Vm.ExecuteDeepSearchCommand.Execute(null);
+    }
+
     // -- Helpers --
     private static List<FileSystemItem> GetSelectedItems(ListView list) =>
         list.SelectedItems.Cast<FileSystemItem>().ToList();
