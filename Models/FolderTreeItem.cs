@@ -107,7 +107,14 @@ public class FolderTreeItem : INotifyPropertyChanged
                 try
                 {
                     foreach (var dir in Directory.EnumerateDirectories(FullPath, "*", EnumOptions))
+                    {
+                        // Skip NTFS junction points and symbolic links to match
+                        // Windows Explorer behavior and avoid enumeration loops.
+                        var attr = File.GetAttributes(dir);
+                        if (attr.HasFlag(FileAttributes.ReparsePoint))
+                            continue;
                         result.Add(dir);
+                    }
                 }
                 catch (UnauthorizedAccessException) { }
                 catch (IOException) { }

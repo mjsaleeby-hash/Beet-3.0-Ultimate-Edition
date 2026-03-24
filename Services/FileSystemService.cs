@@ -29,7 +29,14 @@ public class FileSystemService
         try
         {
             foreach (var dir in Directory.EnumerateDirectories(path, "*", EnumOptions))
-                items.Add(new FileSystemItem(new DirectoryInfo(dir)));
+            {
+                var dirInfo = new DirectoryInfo(dir);
+                // Skip NTFS junction points and symbolic links (e.g. "Documents and Settings").
+                // These are hidden by Windows Explorer and following them can cause loops.
+                if (dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    continue;
+                items.Add(new FileSystemItem(dirInfo));
+            }
 
             foreach (var file in Directory.EnumerateFiles(path, "*", EnumOptions))
                 items.Add(new FileSystemItem(new FileInfo(file)));

@@ -94,6 +94,8 @@ public partial class MainViewModel : ObservableObject
 
     private CancellationTokenSource? _topSizeCts;
     private CancellationTokenSource? _bottomSizeCts;
+    private CancellationTokenSource? _topNavCts;
+    private CancellationTokenSource? _bottomNavCts;
 
     public MainViewModel(ThemeService theme, FileSystemService fs, TransferService transfer, SchedulerService scheduler, BackupLogService log)
     {
@@ -216,12 +218,20 @@ public partial class MainViewModel : ObservableObject
         HasSearchResults = false;
         IsSearching = false;
 
+        // Cancel any previous in-flight navigation to prevent duplicate entries
+        // when NavigateTop is called rapidly (e.g. tree selection events).
+        _topNavCts?.Cancel();
+        var navCts = new CancellationTokenSource();
+        _topNavCts = navCts;
+
         _topSizeCts?.Cancel();
         _topSizeCts = new CancellationTokenSource();
         TopCurrentPath = path;
         TopPaneItems.Clear();
 
         var children = await Task.Run(() => _fs.GetChildren(path).ToList());
+        // If a newer navigation has started, discard these results.
+        if (navCts.IsCancellationRequested) return;
         foreach (var item in children)
             TopPaneItems.Add(item);
         _filteredTopView?.Refresh();
@@ -242,12 +252,19 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task NavigateBottom(string path)
     {
+        // Cancel any previous in-flight navigation to prevent duplicate entries.
+        _bottomNavCts?.Cancel();
+        var navCts = new CancellationTokenSource();
+        _bottomNavCts = navCts;
+
         _bottomSizeCts?.Cancel();
         _bottomSizeCts = new CancellationTokenSource();
         BottomCurrentPath = path;
         BottomPaneItems.Clear();
 
         var children = await Task.Run(() => _fs.GetChildren(path).ToList());
+        // If a newer navigation has started, discard these results.
+        if (navCts.IsCancellationRequested) return;
         foreach (var item in children)
             BottomPaneItems.Add(item);
         _filteredBottomView?.Refresh();
@@ -442,6 +459,16 @@ public partial class MainViewModel : ObservableObject
             foreach (var dirPath in Directory.EnumerateDirectories(directory, "*", options))
             {
                 if (token.IsCancellationRequested) return;
+
+                // Skip junction points / symbolic links to avoid infinite recursion
+                // and to match Windows Explorer behavior.
+                try
+                {
+                    var dirAttr = File.GetAttributes(dirPath);
+                    if (dirAttr.HasFlag(FileAttributes.ReparsePoint))
+                        continue;
+                }
+                catch { continue; }
 
                 if (!isExtensionSearch)
                 {
