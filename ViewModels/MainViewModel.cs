@@ -66,6 +66,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private string _deepSearchQuery = string.Empty;
     [ObservableProperty] private bool _hasSearchResults;
+    [ObservableProperty] private bool _showNoResults;
     private CancellationTokenSource? _searchCts;
 
     // --- Navigation history (top) ---
@@ -361,6 +362,7 @@ public partial class MainViewModel : ObservableObject
         var token = _searchCts.Token;
         IsSearching = true;
         HasSearchResults = true;
+        ShowNoResults = false;
 
         var query = DeepSearchQuery.Trim();
         bool isExtensionSearch = query.StartsWith('.');
@@ -391,6 +393,7 @@ public partial class MainViewModel : ObservableObject
         }, token).ContinueWith(_ => { }, TaskScheduler.Default);
 
         IsSearching = false;
+        ShowNoResults = !token.IsCancellationRequested && TopPaneItems.Count == 0;
     }
 
     private void SearchDirectoryRecursive(string directory, string query, bool isExtensionSearch, CancellationToken token, System.Windows.Threading.Dispatcher dispatcher)
@@ -456,6 +459,7 @@ public partial class MainViewModel : ObservableObject
         DeepSearchQuery = string.Empty;
         HasSearchResults = false;
         IsSearching = false;
+        ShowNoResults = false;
         if (!string.IsNullOrEmpty(TopCurrentPath))
             NavigateTop(TopCurrentPath);
     }

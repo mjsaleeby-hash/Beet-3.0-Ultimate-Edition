@@ -409,7 +409,8 @@
                               Background="{DynamicResource BorderBrush}"/>
 
                 <!-- Right: File list -->
-                <ListView Grid.Column="2" x:Name="TopPaneList"
+                <Grid Grid.Column="2">
+                <ListView x:Name="TopPaneList"
                           ItemsSource="{Binding FilteredTopPaneItems}"
                           Background="{DynamicResource SurfaceBrush}"
                           Foreground="{DynamicResource PrimaryTextBrush}"
@@ -420,6 +421,7 @@
                           ScrollViewer.CanContentScroll="True"
                           ScrollViewer.HorizontalScrollBarVisibility="Auto"
                           MouseDoubleClick="PaneItem_DoubleClick"
+                          GridViewColumnHeader.Click="ColumnHeader_Click"
                           SelectionMode="Extended"
                           AllowDrop="True"
                           PreviewMouseLeftButtonDown="Pane_PreviewMouseLeftButtonDown"
@@ -466,6 +468,23 @@
                         </ContextMenu>
                     </ListView.ContextMenu>
                 </ListView>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibilityConverter}}"
+                            IsHitTestVisible="False">
+                    <ProgressBar IsIndeterminate="True" Width="120" Height="6"
+                                 Foreground="{DynamicResource AccentBrush}"
+                                 Background="{DynamicResource BorderBrush}"
+                                 BorderThickness="0" Margin="0,0,0,8"/>
+                    <TextBlock Text="Searching..." FontSize="16"
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource SecondaryTextBrush}"/>
+                </StackPanel>
+                <TextBlock Text="No results found."
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="16" Foreground="{DynamicResource SecondaryTextBrush}"
+                           Visibility="{Binding ShowNoResults, Converter={StaticResource BoolToVisibilityConverter}}"
+                           IsHitTestVisible="False"/>
+                </Grid>
             </Grid>
 
             <!-- ===== SPLIT PANE MODE ===== -->
@@ -504,7 +523,8 @@
                                   HorizontalAlignment="Stretch"
                                   Background="{DynamicResource BorderBrush}"/>
 
-                    <ListView Grid.Column="2" x:Name="SplitTopList"
+                    <Grid Grid.Column="2">
+                    <ListView x:Name="SplitTopList"
                               ItemsSource="{Binding FilteredTopPaneItems}"
                               Background="{DynamicResource SurfaceBrush}"
                               Foreground="{DynamicResource PrimaryTextBrush}"
@@ -516,6 +536,7 @@
                               ScrollViewer.CanContentScroll="True"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto"
                               MouseDoubleClick="SplitTopItem_DoubleClick"
+                              GridViewColumnHeader.Click="ColumnHeader_Click"
                               SelectionMode="Extended"
                               AllowDrop="True"
                               PreviewMouseLeftButtonDown="Pane_PreviewMouseLeftButtonDown"
@@ -560,6 +581,23 @@
                             </ContextMenu>
                         </ListView.ContextMenu>
                     </ListView>
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibilityConverter}}"
+                                IsHitTestVisible="False">
+                        <ProgressBar IsIndeterminate="True" Width="120" Height="6"
+                                     Foreground="{DynamicResource AccentBrush}"
+                                     Background="{DynamicResource BorderBrush}"
+                                     BorderThickness="0" Margin="0,0,0,8"/>
+                        <TextBlock Text="Searching..." FontSize="16"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
+                    </StackPanel>
+                    <TextBlock Text="No results found."
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="16" Foreground="{DynamicResource SecondaryTextBrush}"
+                               Visibility="{Binding ShowNoResults, Converter={StaticResource BoolToVisibilityConverter}}"
+                               IsHitTestVisible="False"/>
+                    </Grid>
                 </Grid>
 
                 <!-- SPLITTER between top and bottom halves -->
@@ -645,6 +683,7 @@
                               ScrollViewer.CanContentScroll="True"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto"
                               MouseDoubleClick="SplitBottomItem_DoubleClick"
+                              GridViewColumnHeader.Click="ColumnHeader_Click"
                               SelectionMode="Extended"
                               AllowDrop="True"
                               PreviewMouseLeftButtonDown="Pane_PreviewMouseLeftButtonDown"

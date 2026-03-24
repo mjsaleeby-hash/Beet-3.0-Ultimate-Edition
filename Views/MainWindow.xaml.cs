@@ -1,5 +1,6 @@
 using BeetsBackup.Models;
 using BeetsBackup.ViewModels;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -22,6 +23,9 @@ public partial class MainWindow : Window
     private Point _dragStartPoint;
     private bool _isDragging;
     private System.Windows.Controls.ListViewItem? _deferredSelectItem;
+
+    // Column sorting state per ListView
+    private readonly Dictionary<ListView, (GridViewColumnHeader header, ListSortDirection direction)> _sortState = new();
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -328,6 +332,74 @@ public partial class MainWindow : Window
     {
         if (e.Key == Key.Enter)
             Vm.ExecuteDeepSearchCommand.Execute(null);
+    }
+
+    // -- Column sorting --
+    private void ColumnHeader_Click(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not GridViewColumnHeader header) return;
+        if (header.Role == GridViewColumnHeaderRole.Padding) return;
+        if (sender is not ListView listView) return;
+
+        var propertyName = GetSortProperty(header);
+        if (propertyName == null) return;
+
+        // Determine the ICollectionView for this ListView
+        var view = listView == SplitBottomList
+            ? Vm.FilteredBottomPaneItems
+            : Vm.FilteredTopPaneItems;
+
+        // Toggle direction or set ascending for new column
+        var direction = ListSortDirection.Ascending;
+        if (_sortState.TryGetValue(listView, out var prev))
+        {
+            // Remove indicator from previous header
+            StripSortIndicator(prev.header);
+            if (prev.header == header)
+                direction = prev.direction == ListSortDirection.Ascending
+                    ? ListSortDirection.Descending
+                    : ListSortDirection.Ascending;
+        }
+
+        _sortState[listView] = (header, direction);
+
+        // Apply sort: folders first, then by chosen column
+        using (view.DeferRefresh())
+        {
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new SortDescription(nameof(FileSystemItem.IsDirectory), ListSortDirection.Descending));
+            view.SortDescriptions.Add(new SortDescription(propertyName, direction));
+        }
+
+        // Update header text with indicator
+        var arrow = direction == ListSortDirection.Ascending ? " \u25B2" : " \u25BC";
+        var baseText = GetBaseHeaderText(header);
+        header.Content = baseText + arrow;
+    }
+
+    private static string? GetSortProperty(GridViewColumnHeader header)
+    {
+        var text = GetBaseHeaderText(header);
+        return text switch
+        {
+            "Name" or "Name (Source)" or "Name (Destination)" => nameof(FileSystemItem.Name),
+            "Type" => nameof(FileSystemItem.TypeDisplay),
+            "Size" => nameof(FileSystemItem.Size),
+            "Modified" => nameof(FileSystemItem.Modified),
+            _ => null
+        };
+    }
+
+    private static string GetBaseHeaderText(GridViewColumnHeader header)
+    {
+        var text = header.Content?.ToString() ?? "";
+        // Strip any existing sort indicator
+        return text.TrimEnd(' ', '\u25B2', '\u25BC');
+    }
+
+    private static void StripSortIndicator(GridViewColumnHeader header)
+    {
+        header.Content = GetBaseHeaderText(header);
     }
 
     // -- Helpers --
