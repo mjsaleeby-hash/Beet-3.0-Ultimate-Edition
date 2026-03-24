@@ -78,7 +78,7 @@ STEP 5: BUILD THE EXECUTABLE
 -----------------------------
 Type the following command and press Enter:
 
-   dotnet publish -c Release
+   dotnet publish BeetsBackup.csproj -c Release
 
 This will download any required packages and compile the project into a
 single .exe file. The first time you run this, it may take a couple of
@@ -153,5 +153,5 @@ QUICK REFERENCE (ALL COMMANDS)
 ------------------------------
 
    cd C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main
-   dotnet publish -c Release
+   dotnet publish BeetsBackup.csproj -c Release
    copy bin\Release\net8.0-windows\win-x64\publish\BeetsBackup.exe "$HOME\Desktop\"
