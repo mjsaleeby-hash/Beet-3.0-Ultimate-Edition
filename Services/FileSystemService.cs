@@ -1,4 +1,5 @@
 using BeetsBackup.Models;
+using Microsoft.VisualBasic.FileIO;
 using System.IO;
 using System.Security.AccessControl;
 using System.Runtime.Versioning;
@@ -99,9 +100,9 @@ public class FileSystemService
     {
         var attr = File.GetAttributes(path);
         if (attr.HasFlag(FileAttributes.Directory))
-            Directory.Delete(path, recursive: true);
+            FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
         else
-            File.Delete(path);
+            FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
     }
 
     public void RenameItem(string path, string newName)

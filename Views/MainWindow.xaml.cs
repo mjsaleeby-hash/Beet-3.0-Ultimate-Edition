@@ -79,7 +79,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            MessageBox.Show("Can't do that dummy!", "Beet's Backup",
+            MessageBox.Show("Files cannot be opened from within Beet's Backup. Please use Windows Explorer to open files.", "Beet's Backup",
                             MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }

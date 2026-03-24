@@ -32,7 +32,7 @@ public class FolderTreeItem : INotifyPropertyChanged
                 _isExpanded = value;
                 OnPropertyChanged();
                 if (value && _hasPlaceholder)
-                    LoadChildren();
+                    _ = LoadChildrenAsync();
             }
         }
     }
@@ -94,19 +94,29 @@ public class FolderTreeItem : INotifyPropertyChanged
         _hasPlaceholder = false;
     }
 
-    private void LoadChildren()
+    private async Task LoadChildrenAsync()
     {
         _hasPlaceholder = false;
         Children.Clear();
 
         try
         {
-            foreach (var dir in Directory.EnumerateDirectories(FullPath, "*", EnumOptions))
+            var dirs = await Task.Run(() =>
             {
+                var result = new List<string>();
+                try
+                {
+                    foreach (var dir in Directory.EnumerateDirectories(FullPath, "*", EnumOptions))
+                        result.Add(dir);
+                }
+                catch (UnauthorizedAccessException) { }
+                catch (IOException) { }
+                return result;
+            });
+
+            foreach (var dir in dirs)
                 Children.Add(new FolderTreeItem(dir));
-            }
         }
-        catch (UnauthorizedAccessException) { }
-        catch (IOException) { }
+        catch { }
     }
 }

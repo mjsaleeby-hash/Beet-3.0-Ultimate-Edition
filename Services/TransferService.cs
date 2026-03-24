@@ -10,10 +10,20 @@ public class InsufficientSpaceException : Exception
     public long AvailableBytes { get; }
 
     public InsufficientSpaceException(long required, long available)
-        : base("Not enough space on destination dummy!")
+        : base($"Not enough disk space. Required: {FormatBytes(required)}, Available: {FormatBytes(available)}")
     {
         RequiredBytes = required;
         AvailableBytes = available;
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes == 0) return "0 B";
+        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+        double value = bytes;
+        int i = 0;
+        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
+        return $"{value:0.#} {suffixes[i]}";
     }
 }
 
@@ -91,8 +101,13 @@ public class TransferService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
+                    var failedBefore = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
                     CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums);
-                    _fs.DeleteItem(source);
+                    var failedDuring = (result.FilesFailed + result.DiskFullErrors + result.FilesLocked) - failedBefore;
+                    if (failedDuring == 0)
+                        _fs.DeleteItem(source);
+                    else
+                        progress?.Report($"Skipped delete of {Path.GetFileName(source)} — {failedDuring} file(s) failed to copy");
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -145,6 +160,16 @@ public class TransferService
                     CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums);
                 }
                 catch (OperationCanceledException) { throw; }
+                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
+                {
+                    result.DiskFullErrors++;
+                    progress?.Report($"DISK FULL: {Path.GetFileName(file)} — not enough space");
+                }
+                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+                {
+                    result.FilesLocked++;
+                    progress?.Report($"LOCKED: {Path.GetFileName(file)} — file is in use");
+                }
                 catch (Exception ex)
                 {
                     result.FilesFailed++;
@@ -159,9 +184,19 @@ public class TransferService
                     CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums);
                 }
                 catch (OperationCanceledException) { throw; }
+                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
+                {
+                    result.DiskFullErrors++;
+                    progress?.Report($"DISK FULL: {Path.GetFileName(dir)} — not enough space");
+                }
+                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+                {
+                    result.FilesLocked++;
+                    progress?.Report($"LOCKED: {Path.GetFileName(dir)} — file is in use");
+                }
                 catch (Exception ex)
                 {
-                    result.FilesFailed++;
+                    result.DirectoriesFailed++;
                     progress?.Report($"ERROR: {Path.GetFileName(dir)} — {ex.Message}");
                 }
             }
@@ -175,15 +210,13 @@ public class TransferService
                 switch (mode)
                 {
                     case TransferMode.SkipExisting:
-                        // Compare file sizes — if sizes differ the destination is
-                        // incomplete or outdated, so replace it instead of skipping.
-                        var sourceSize = new FileInfo(sourcePath).Length;
-                        var destSize = new FileInfo(destFile).Length;
-                        if (sourceSize != destSize)
+                        var sourceInfo = new FileInfo(sourcePath);
+                        var destInfo = new FileInfo(destFile);
+                        if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
                         {
                             File.Delete(destFile);
                             CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress);
-                            progress?.Report($"Updated (size changed): {name}");
+                            progress?.Report($"Updated (changed): {name}");
                         }
                         else
                         {
@@ -213,7 +246,7 @@ public class TransferService
 
             if (result.TotalFiles > 0)
             {
-                var percent = (result.FilesCopied + result.FilesSkipped + result.FilesFailed) * 100 / result.TotalFiles;
+                var percent = (result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.DiskFullErrors + result.FilesLocked) * 100 / result.TotalFiles;
                 progressPercent?.Report(Math.Min(percent, 100));
             }
         }

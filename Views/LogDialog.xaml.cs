@@ -20,7 +20,7 @@ public partial class LogDialog : Window
 
     private void ClearLog_Click(object sender, RoutedEventArgs e)
     {
-        _log.Entries.Clear();
+        _log.Clear();
     }
 
     private void ExportCsv_Click(object sender, RoutedEventArgs e)

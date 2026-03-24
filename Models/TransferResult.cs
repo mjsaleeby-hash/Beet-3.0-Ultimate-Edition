@@ -8,4 +8,7 @@ public class TransferResult
     public long BytesTransferred { get; set; }
     public int TotalFiles { get; set; }
     public int ChecksumMismatches { get; set; }
+    public int DiskFullErrors { get; set; }
+    public int FilesLocked { get; set; }
+    public int DirectoriesFailed { get; set; }
 }

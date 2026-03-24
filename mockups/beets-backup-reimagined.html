@@ -1,0 +1,2004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beet's Backup - Reimagined UI Mockup</title>
+<style>
+/* ============================================================
+   BEET'S BACKUP - MODERNIZED UI MOCKUP
+   All design choices here are achievable in WPF/.NET 8
+   ============================================================ */
+
+/* --- CSS Custom Properties (Theme System) --- */
+:root {
+  /* Dark theme (default) */
+  --bg: #1a1a2e;
+  --surface: #242438;
+  --panel: #1e1e30;
+  --panel-hover: #2a2a42;
+  --border: #35354a;
+  --border-subtle: #2a2a3e;
+  --text-primary: #eaeaef;
+  --text-secondary: #8888a0;
+  --text-tertiary: #5a5a72;
+  --accent: #4CC2FF;
+  --accent-hover: #60CDFF;
+  --accent-dim: rgba(76, 194, 255, 0.12);
+  --accent-glow: rgba(76, 194, 255, 0.06);
+  --selection: #1a3a52;
+  --selection-hover: #223e58;
+  --toolbar: #222236;
+  --success: #4ade80;
+  --warning: #f59e0b;
+  --danger: #f87171;
+  --danger-dim: rgba(248, 113, 113, 0.12);
+  --scrollbar-track: #1e1e30;
+  --scrollbar-thumb: #3a3a50;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+  --mica: rgba(26, 26, 46, 0.85);
+  --ring-bg: #35354a;
+  --breadcrumb-sep: #4a4a60;
+  --tab-active-bg: var(--surface);
+  --dialog-overlay: rgba(0,0,0,0.5);
+}
+
+[data-theme="light"] {
+  --bg: #f0f0f5;
+  --surface: #ffffff;
+  --panel: #e8e8f0;
+  --panel-hover: #dddde8;
+  --border: #d0d0dc;
+  --border-subtle: #e0e0ea;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b6b80;
+  --text-tertiary: #9999aa;
+  --accent: #0078D4;
+  --accent-hover: #106EBE;
+  --accent-dim: rgba(0, 120, 212, 0.08);
+  --accent-glow: rgba(0, 120, 212, 0.04);
+  --selection: #d0e4f7;
+  --selection-hover: #bdd8f0;
+  --toolbar: #f6f6fa;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --danger-dim: rgba(220, 38, 38, 0.08);
+  --scrollbar-track: #f0f0f5;
+  --scrollbar-thumb: #c0c0cc;
+  --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  --mica: rgba(240, 240, 245, 0.9);
+  --ring-bg: #d0d0dc;
+  --breadcrumb-sep: #b0b0c0;
+  --tab-active-bg: var(--surface);
+  --dialog-overlay: rgba(0,0,0,0.3);
+}
+
+/* --- Reset & Base --- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* --- Scrollbar Styling (WPF supports custom scrollbar templates) --- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* --- Application Shell --- */
+.app-shell {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100vh;
+  background: var(--bg);
+}
+
+/* ============================================================
+   TITLE BAR (WPF custom chrome)
+   ============================================================ */
+.title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--border-subtle);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.title-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-icon {
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, var(--accent), #a855f7);
+  border-radius: 4px;
+}
+
+.app-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+}
+
+.window-controls {
+  display: flex;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.win-btn {
+  width: 46px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.win-btn:hover { background: var(--panel-hover); color: var(--text-primary); }
+.win-btn.close:hover { background: #c42b1c; color: white; }
+
+/* ============================================================
+   TOOLBAR (Ribbon-style, achievable with WPF ToolBar + panels)
+   ============================================================ */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 12px;
+  border-right: 1px solid var(--border-subtle);
+  margin-right: 6px;
+}
+.toolbar-group:last-child { border-right: none; margin-right: 0; padding-right: 0; }
+
+.tb-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.tb-btn:hover {
+  background: var(--panel-hover);
+  border-color: var(--border);
+}
+.tb-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tb-btn.accent {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 600;
+}
+.tb-btn.accent:hover { background: var(--accent-hover); }
+
+.tb-btn .icon {
+  font-size: 15px;
+  width: 18px;
+  text-align: center;
+}
+
+.tb-separator {
+  width: 1px;
+  height: 24px;
+  background: var(--border-subtle);
+  margin: 0 4px;
+}
+
+/* Toggle switch (WPF ToggleButton with custom template) */
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.toggle-track {
+  width: 36px;
+  height: 20px;
+  background: var(--border);
+  border-radius: 10px;
+  position: relative;
+  transition: background 0.2s;
+}
+.toggle-track.on { background: var(--accent); }
+.toggle-dot {
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: transform 0.2s;
+}
+.toggle-track.on .toggle-dot { transform: translateX(16px); }
+
+/* ============================================================
+   NAVIGATION BAR (Breadcrumb-style, achievable in WPF)
+   ============================================================ */
+.nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.nav-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.nav-btn:hover { background: var(--panel-hover); border-color: var(--border); color: var(--text-primary); }
+.nav-btn.disabled { opacity: 0.3; cursor: default; }
+
+/* Breadcrumb path bar */
+.breadcrumb-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0 12px;
+  height: 32px;
+  overflow: hidden;
+}
+.breadcrumb-bar .crumb {
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.breadcrumb-bar .crumb:hover { color: var(--accent); background: var(--accent-dim); }
+.breadcrumb-bar .crumb.current { color: var(--text-primary); font-weight: 500; cursor: default; }
+.breadcrumb-bar .crumb.current:hover { background: transparent; color: var(--text-primary); }
+.breadcrumb-bar .sep { color: var(--breadcrumb-sep); margin: 0 2px; font-size: 11px; }
+
+/* Search box */
+.search-box {
+  display: flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0 10px;
+  height: 32px;
+  width: 220px;
+  transition: border-color 0.2s, width 0.3s;
+}
+.search-box:focus-within {
+  border-color: var(--accent);
+  width: 280px;
+}
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+.search-box input::placeholder { color: var(--text-tertiary); }
+.search-box .search-icon { color: var(--text-tertiary); font-size: 14px; margin-right: 8px; }
+.search-box .clear-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  border-radius: 3px;
+  display: none;
+}
+.search-box .clear-btn:hover { color: var(--text-primary); background: var(--panel-hover); }
+
+/* ============================================================
+   MAIN CONTENT AREA
+   ============================================================ */
+.main-content {
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* --- Sidebar (Drive Tree) --- */
+.sidebar {
+  width: 240px;
+  min-width: 180px;
+  max-width: 360px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 12px 16px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-tertiary);
+}
+
+/* Drive item in sidebar */
+.drive-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-radius: 6px;
+  margin: 2px 8px;
+}
+.drive-item:hover { background: var(--panel-hover); }
+.drive-item.selected { background: var(--selection); }
+
+/* Drive usage ring (SVG, achievable with WPF Path/Ellipse) */
+.drive-ring {
+  width: 36px;
+  height: 36px;
+  position: relative;
+  flex-shrink: 0;
+}
+.drive-ring svg { width: 36px; height: 36px; }
+.drive-ring .ring-bg { fill: none; stroke: var(--ring-bg); stroke-width: 3; }
+.drive-ring .ring-fill { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 0.6s; }
+.drive-ring .ring-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.drive-info { flex: 1; min-width: 0; }
+.drive-name { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drive-space { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+/* Folder tree */
+.folder-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 16px;
+  padding-left: calc(16px + var(--depth, 0) * 20px);
+  cursor: pointer;
+  transition: background 0.12s;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: 4px;
+  margin: 1px 6px;
+}
+.tree-item:hover { background: var(--panel-hover); }
+.tree-item.selected { background: var(--selection); }
+.tree-item .expand-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  transition: transform 0.2s;
+}
+.tree-item .expand-icon.open { transform: rotate(90deg); }
+.tree-item .folder-icon { font-size: 14px; }
+
+/* Splitter handle (WPF GridSplitter) */
+.splitter {
+  width: 4px;
+  background: var(--border);
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+.splitter:hover { background: var(--accent); }
+
+/* ============================================================
+   FILE LIST (ListView with GridView)
+   ============================================================ */
+.file-list-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/* Column headers */
+.file-list-header {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 110px 100px 160px;
+  padding: 0 16px;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.col-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.col-header:hover { color: var(--text-primary); }
+.col-header .sort-arrow { font-size: 10px; color: var(--accent); }
+
+/* File rows */
+.file-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+}
+
+.file-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 110px 100px 160px;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+  align-items: center;
+}
+.file-row:hover { background: var(--panel-hover); }
+.file-row.selected { background: var(--selection); }
+.file-row.selected:hover { background: var(--selection-hover); }
+
+.file-cell {
+  padding: 7px 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-cell.secondary { color: var(--text-secondary); }
+
+.file-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* File icons (WPF can use Segoe Fluent Icons or custom drawings) */
+.file-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+/* Folder icon style */
+.file-icon.folder {
+  color: #f0c040;
+}
+
+/* File type icon colors */
+.file-icon.image { color: #e879a0; }
+.file-icon.document { color: #60a0e0; }
+.file-icon.video { color: #a070e0; }
+.file-icon.audio { color: #50c090; }
+.file-icon.archive { color: #e0a050; }
+.file-icon.code { color: #70d0a0; }
+.file-icon.default { color: var(--text-tertiary); }
+
+/* Calculating shimmer (WPF DoubleAnimation on Opacity) */
+.calculating {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--text-tertiary) 25%, var(--text-secondary) 50%, var(--text-tertiary) 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 1.5s infinite;
+  font-size: 12px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ============================================================
+   SPLIT PANE MODE
+   ============================================================ */
+.split-content {
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+}
+.split-content.active { display: flex; }
+.single-content { display: flex; flex: 1; overflow: hidden; }
+.single-content.hidden { display: none; }
+
+.pane-label {
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.split-pane {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.split-divider {
+  height: 4px;
+  background: var(--border);
+  cursor: row-resize;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.split-divider:hover { background: var(--accent); }
+
+/* Bottom pane nav bar (simplified) */
+.bottom-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 16px;
+  background: var(--toolbar);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ============================================================
+   STATUS BAR
+   ============================================================ */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: var(--toolbar);
+  border-top: 1px solid var(--border);
+  gap: 16px;
+}
+
+.status-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-items-count {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Transfer progress in status bar */
+.transfer-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.progress-bar-container {
+  width: 180px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  border-radius: 3px;
+  transition: width 0.3s;
+  width: 67%;
+}
+.progress-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   DIALOG OVERLAYS (WPF Window with overlay)
+   ============================================================ */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--dialog-overlay);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.dialog-overlay.active { display: flex; }
+
+.dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.dialog-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.dialog-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dialog-close:hover { background: var(--danger-dim); color: var(--danger); }
+
+.dialog-body { padding: 24px; overflow-y: auto; flex: 1; }
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Dialog buttons */
+.btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-primary);
+}
+.btn:hover { background: var(--panel-hover); }
+.btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover { background: var(--danger-dim); }
+
+/* Form elements in dialogs */
+.form-group { margin-bottom: 20px; }
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.form-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  outline: none;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-select {
+  appearance: none;
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  background: var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' stroke='%238888a0' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 12px center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.form-select:focus { border-color: var(--accent); }
+
+/* Checkbox (WPF CheckBox with custom template) */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.checkbox-box {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.checkbox-row:hover .checkbox-box { border-color: var(--accent); }
+.checkbox-box.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.checkbox-box.checked::after {
+  content: '✓';
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+}
+.checkbox-label { font-size: 13px; color: var(--text-primary); }
+
+/* ============================================================
+   SCHEDULE DIALOG
+   ============================================================ */
+#scheduleDialog .dialog { width: 520px; }
+
+.source-list {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  min-height: 60px;
+  margin-bottom: 8px;
+}
+.source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+.source-item:hover { background: var(--panel-hover); }
+.source-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.source-remove:hover { color: var(--danger); background: var(--danger-dim); }
+
+.form-row {
+  display: flex;
+  gap: 8px;
+}
+.form-row > * { flex: 1; }
+
+.time-inputs {
+  display: grid;
+  grid-template-columns: 1fr 72px 72px 72px;
+  gap: 8px;
+}
+.time-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.warning-text {
+  font-size: 12px;
+  color: var(--warning);
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: 6px;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+/* ============================================================
+   JOBS DIALOG
+   ============================================================ */
+#jobsDialog .dialog { width: 720px; }
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.jobs-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.jobs-table td {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.jobs-table tr:hover td { background: var(--panel-hover); }
+.jobs-table tr.selected td { background: var(--selection); }
+
+.job-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-dot.active { background: var(--success); }
+.status-dot.paused { background: var(--warning); }
+
+/* ============================================================
+   LOG DIALOG
+   ============================================================ */
+#logDialog .dialog { width: 920px; max-height: 500px; }
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.log-table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.log-table td {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.log-status { font-weight: 500; }
+.log-status.complete { color: var(--success); }
+.log-status.failed { color: var(--danger); }
+.log-status.running { color: var(--accent); }
+.log-status.scheduled { color: var(--text-secondary); }
+
+/* Mini progress bar for running entries */
+.mini-progress {
+  width: 100px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.mini-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* ============================================================
+   TRANSFER MODE DIALOG
+   ============================================================ */
+#transferModeDialog .dialog { width: 460px; }
+
+.mode-option {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 10px;
+}
+.mode-option:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.mode-option .mode-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.mode-option .mode-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ============================================================
+   CONTEXT MENU (WPF ContextMenu with custom template)
+   ============================================================ */
+.context-menu {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 180px;
+  z-index: 200;
+  display: none;
+}
+.context-menu.active { display: block; }
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ctx-item:hover { background: var(--accent-dim); color: var(--accent); }
+.ctx-shortcut { font-size: 12px; color: var(--text-tertiary); }
+.ctx-separator {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 8px;
+}
+
+/* ============================================================
+   VIEW SWITCHER (tabs at the top of sidebar in mockup)
+   ============================================================ */
+.view-switcher {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  margin-bottom: 8px;
+}
+
+/* ============================================================
+   DEMO CONTROLS (not part of the app, just for this mockup)
+   ============================================================ */
+.mockup-controls {
+  position: fixed;
+  bottom: 48px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 300;
+}
+.mockup-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.mockup-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
+.mockup-btn.active-view { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+
+.mockup-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-tertiary);
+  text-align: right;
+  padding-right: 4px;
+}
+</style>
+</head>
+<body data-theme="dark">
+
+<!-- ============================================================
+     APPLICATION SHELL
+     ============================================================ -->
+<div class="app-shell">
+
+  <!-- ========== TITLE BAR ========== -->
+  <!-- WPF: Custom WindowChrome with integrated title bar -->
+  <div class="title-bar">
+    <div class="title-bar-left">
+      <div class="app-icon"></div>
+      <span class="app-title">Beet's Backup</span>
+    </div>
+    <div class="window-controls">
+      <button class="win-btn" title="Minimize">&#x2500;</button>
+      <button class="win-btn" title="Maximize">&#x25A1;</button>
+      <button class="win-btn close" title="Close">&#x2715;</button>
+    </div>
+  </div>
+
+  <!-- ========== TOOLBAR ========== -->
+  <!-- WPF: ToolBar or custom panel with styled buttons -->
+  <div class="toolbar">
+    <!-- Transfer controls -->
+    <div class="toolbar-group">
+      <button class="tb-btn" title="Pause transfer" style="opacity:0.4;cursor:default">
+        <span class="icon">&#x23F8;</span> Pause
+      </button>
+      <button class="tb-btn" title="Stop transfer" style="opacity:0.4;cursor:default">
+        <span class="icon">&#x23F9;</span> Stop
+      </button>
+    </div>
+
+    <!-- View controls -->
+    <div class="toolbar-group">
+      <button class="tb-btn" id="splitPaneBtn" onclick="toggleSplitPane()" title="Toggle split pane">
+        <span class="icon">&#x229E;</span> Split Pane
+      </button>
+      <button class="tb-btn" title="Refresh drives">
+        <span class="icon">&#x21BB;</span> Refresh
+      </button>
+    </div>
+
+    <!-- Backup controls -->
+    <div class="toolbar-group">
+      <button class="tb-btn accent" title="Schedule a new backup" onclick="showDialog('scheduleDialog')">
+        <span class="icon">+</span> Schedule
+      </button>
+      <button class="tb-btn" title="View scheduled jobs" onclick="showDialog('jobsDialog')">
+        <span class="icon">&#x1F4CB;</span> Jobs
+      </button>
+      <button class="tb-btn" title="View backup log" onclick="showDialog('logDialog')">
+        <span class="icon">&#x1F4C4;</span> Log
+      </button>
+    </div>
+
+    <!-- Options -->
+    <div class="toolbar-group">
+      <label class="checkbox-row" title="Remove NTFS permissions during transfer">
+        <div class="checkbox-box"></div>
+        <span class="checkbox-label">Remove Permissions</span>
+      </label>
+      <label class="checkbox-row" title="Verify files with SHA256 after copy">
+        <div class="checkbox-box checked"></div>
+        <span class="checkbox-label">Verify Checksums</span>
+      </label>
+    </div>
+
+    <!-- Theme toggle -->
+    <div class="toolbar-group" style="border-right:none">
+      <div class="toggle-switch" onclick="toggleTheme()">
+        <div class="toggle-track on" id="themeToggle">
+          <div class="toggle-dot"></div>
+        </div>
+        <span id="themeLabel">Dark</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== NAVIGATION BAR ========== -->
+  <!-- WPF: Custom panel with breadcrumb-style path display -->
+  <div class="nav-bar" id="topNavBar">
+    <button class="nav-btn disabled" title="Back">&#x25C0;</button>
+    <button class="nav-btn disabled" title="Forward">&#x25B6;</button>
+    <button class="nav-btn" title="Up one level">&#x25B2;</button>
+
+    <!-- Breadcrumb path (WPF: ItemsControl with clickable segments) -->
+    <div class="breadcrumb-bar">
+      <span class="crumb" title="Navigate to C:">C:</span>
+      <span class="sep">&#x203A;</span>
+      <span class="crumb" title="Navigate to Users">Users</span>
+      <span class="sep">&#x203A;</span>
+      <span class="crumb" title="Navigate to Owner">Owner</span>
+      <span class="sep">&#x203A;</span>
+      <span class="crumb current">Documents</span>
+    </div>
+
+    <div class="search-box">
+      <span class="search-icon">&#x1F50D;</span>
+      <input type="text" placeholder="Search files..." />
+      <button class="clear-btn">&#x2715;</button>
+    </div>
+  </div>
+
+  <!-- ========== MAIN CONTENT ========== -->
+  <div class="main-content">
+
+    <!-- ===== SINGLE PANE MODE ===== -->
+    <div class="single-content" id="singlePane">
+
+      <!-- Sidebar: Drive tree -->
+      <div class="sidebar">
+        <div class="sidebar-header">Drives</div>
+
+        <!-- Drive: C: -->
+        <div class="drive-item selected">
+          <div class="drive-ring">
+            <svg viewBox="0 0 36 36">
+              <circle class="ring-bg" cx="18" cy="18" r="14" />
+              <circle class="ring-fill" cx="18" cy="18" r="14"
+                stroke-dasharray="88" stroke-dashoffset="26"
+                transform="rotate(-90 18 18)" />
+            </svg>
+            <span class="ring-label">70%</span>
+          </div>
+          <div class="drive-info">
+            <div class="drive-name">Local Disk (C:)</div>
+            <div class="drive-space">142.3 GB free of 476.9 GB</div>
+          </div>
+        </div>
+
+        <!-- Drive: D: -->
+        <div class="drive-item">
+          <div class="drive-ring">
+            <svg viewBox="0 0 36 36">
+              <circle class="ring-bg" cx="18" cy="18" r="14" />
+              <circle class="ring-fill" cx="18" cy="18" r="14"
+                stroke-dasharray="88" stroke-dashoffset="62"
+                transform="rotate(-90 18 18)" />
+            </svg>
+            <span class="ring-label">30%</span>
+          </div>
+          <div class="drive-info">
+            <div class="drive-name">Data (D:)</div>
+            <div class="drive-space">1.3 TB free of 1.8 TB</div>
+          </div>
+        </div>
+
+        <!-- Drive: E: (USB) -->
+        <div class="drive-item">
+          <div class="drive-ring">
+            <svg viewBox="0 0 36 36">
+              <circle class="ring-bg" cx="18" cy="18" r="14" />
+              <circle class="ring-fill" cx="18" cy="18" r="14"
+                stroke-dasharray="88" stroke-dashoffset="79"
+                transform="rotate(-90 18 18)" />
+            </svg>
+            <span class="ring-label">10%</span>
+          </div>
+          <div class="drive-info">
+            <div class="drive-name">Backup USB (E:)</div>
+            <div class="drive-space">114.2 GB free of 128.0 GB</div>
+          </div>
+        </div>
+
+        <div class="sidebar-header" style="margin-top:8px">Folders</div>
+
+        <!-- Folder tree -->
+        <div class="folder-tree">
+          <div class="tree-item" style="--depth:0">
+            <span class="expand-icon open">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Users
+          </div>
+          <div class="tree-item" style="--depth:1">
+            <span class="expand-icon open">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Owner
+          </div>
+          <div class="tree-item selected" style="--depth:2">
+            <span class="expand-icon open">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Documents
+          </div>
+          <div class="tree-item" style="--depth:3">
+            <span class="expand-icon">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Projects
+          </div>
+          <div class="tree-item" style="--depth:3">
+            <span class="expand-icon">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Financial
+          </div>
+          <div class="tree-item" style="--depth:3">
+            <span class="expand-icon">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Photos
+          </div>
+          <div class="tree-item" style="--depth:2">
+            <span class="expand-icon">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Desktop
+          </div>
+          <div class="tree-item" style="--depth:2">
+            <span class="expand-icon">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Downloads
+          </div>
+          <div class="tree-item" style="--depth:2">
+            <span class="expand-icon">&#x25B6;</span>
+            <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+            Music
+          </div>
+        </div>
+      </div>
+
+      <div class="splitter"></div>
+
+      <!-- File list -->
+      <div class="file-list-container">
+        <div class="file-list-header">
+          <div class="col-header">Name <span class="sort-arrow">&#x25B2;</span></div>
+          <div class="col-header">Type</div>
+          <div class="col-header">Size <span class="sort-arrow" style="visibility:hidden">&#x25B2;</span></div>
+          <div class="col-header">Modified</div>
+        </div>
+        <div class="file-list">
+          <!-- Folders first -->
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> Projects</div></div>
+            <div class="file-cell secondary">Folder</div>
+            <div class="file-cell secondary"><span class="calculating">Calculating...</span></div>
+            <div class="file-cell secondary">2026-03-20 14:32</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> Financial</div></div>
+            <div class="file-cell secondary">Folder</div>
+            <div class="file-cell secondary">2.4 GB</div>
+            <div class="file-cell secondary">2026-03-18 09:15</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> Photos</div></div>
+            <div class="file-cell secondary">Folder</div>
+            <div class="file-cell secondary">18.7 GB</div>
+            <div class="file-cell secondary">2026-03-15 22:45</div>
+          </div>
+          <div class="file-row selected">
+            <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> Music</div></div>
+            <div class="file-cell secondary">Folder</div>
+            <div class="file-cell secondary">4.1 GB</div>
+            <div class="file-cell secondary">2026-02-28 11:20</div>
+          </div>
+          <!-- Files -->
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon document">&#x1F4C4;</span> Budget 2026.xlsx</div></div>
+            <div class="file-cell secondary">XLSX File</div>
+            <div class="file-cell secondary">2.3 MB</div>
+            <div class="file-cell secondary">2026-03-22 16:40</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon document">&#x1F4C4;</span> Meeting Notes.docx</div></div>
+            <div class="file-cell secondary">DOCX File</div>
+            <div class="file-cell secondary">458 KB</div>
+            <div class="file-cell secondary">2026-03-21 10:12</div>
+          </div>
+          <div class="file-row selected">
+            <div class="file-cell"><div class="file-name"><span class="file-icon image">&#x1F5BC;</span> Screenshot 2026-03-20.png</div></div>
+            <div class="file-cell secondary">PNG File</div>
+            <div class="file-cell secondary">3.8 MB</div>
+            <div class="file-cell secondary">2026-03-20 15:33</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon video">&#x1F3AC;</span> Presentation Recording.mp4</div></div>
+            <div class="file-cell secondary">MP4 File</div>
+            <div class="file-cell secondary">847.2 MB</div>
+            <div class="file-cell secondary">2026-03-19 13:05</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon archive">&#x1F4E6;</span> project-backup.zip</div></div>
+            <div class="file-cell secondary">ZIP File</div>
+            <div class="file-cell secondary">156.4 MB</div>
+            <div class="file-cell secondary">2026-03-17 08:22</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon audio">&#x1F3B5;</span> podcast-episode-42.mp3</div></div>
+            <div class="file-cell secondary">MP3 File</div>
+            <div class="file-cell secondary">68.9 MB</div>
+            <div class="file-cell secondary">2026-03-16 19:50</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon document">&#x1F4C4;</span> Resume - Final.pdf</div></div>
+            <div class="file-cell secondary">PDF File</div>
+            <div class="file-cell secondary">1.2 MB</div>
+            <div class="file-cell secondary">2026-03-14 21:18</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon code">&#x1F4DD;</span> config.json</div></div>
+            <div class="file-cell secondary">JSON File</div>
+            <div class="file-cell secondary">4.2 KB</div>
+            <div class="file-cell secondary">2026-03-12 07:45</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon default">&#x1F4C4;</span> notes.txt</div></div>
+            <div class="file-cell secondary">TXT File</div>
+            <div class="file-cell secondary">12 KB</div>
+            <div class="file-cell secondary">2026-03-10 14:30</div>
+          </div>
+          <div class="file-row">
+            <div class="file-cell"><div class="file-name"><span class="file-icon image">&#x1F5BC;</span> vacation-photo.jpg</div></div>
+            <div class="file-cell secondary">JPG File</div>
+            <div class="file-cell secondary">5.6 MB</div>
+            <div class="file-cell secondary">2026-03-08 18:20</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SPLIT PANE MODE ===== -->
+    <div class="split-content" id="splitPane">
+      <!-- TOP PANE: SOURCE -->
+      <div class="pane-label">&#x25B2; Source</div>
+      <div class="split-pane">
+        <div class="sidebar" style="width:200px">
+          <div class="sidebar-header">Source Drives</div>
+          <div class="drive-item selected">
+            <div class="drive-ring">
+              <svg viewBox="0 0 36 36">
+                <circle class="ring-bg" cx="18" cy="18" r="14" />
+                <circle class="ring-fill" cx="18" cy="18" r="14"
+                  stroke-dasharray="88" stroke-dashoffset="26"
+                  transform="rotate(-90 18 18)" />
+              </svg>
+              <span class="ring-label">70%</span>
+            </div>
+            <div class="drive-info">
+              <div class="drive-name">Local Disk (C:)</div>
+              <div class="drive-space">142.3 GB free</div>
+            </div>
+          </div>
+          <div class="folder-tree">
+            <div class="tree-item" style="--depth:0">
+              <span class="expand-icon open">&#x25B6;</span>
+              <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+              Users
+            </div>
+            <div class="tree-item selected" style="--depth:1">
+              <span class="expand-icon open">&#x25B6;</span>
+              <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+              Documents
+            </div>
+          </div>
+        </div>
+        <div class="splitter"></div>
+        <div class="file-list-container">
+          <div class="file-list-header">
+            <div class="col-header">Name (Source) <span class="sort-arrow">&#x25B2;</span></div>
+            <div class="col-header">Type</div>
+            <div class="col-header">Size</div>
+            <div class="col-header">Modified</div>
+          </div>
+          <div class="file-list">
+            <div class="file-row selected">
+              <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> Projects</div></div>
+              <div class="file-cell secondary">Folder</div>
+              <div class="file-cell secondary">1.8 GB</div>
+              <div class="file-cell secondary">2026-03-20 14:32</div>
+            </div>
+            <div class="file-row selected">
+              <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> Financial</div></div>
+              <div class="file-cell secondary">Folder</div>
+              <div class="file-cell secondary">2.4 GB</div>
+              <div class="file-cell secondary">2026-03-18 09:15</div>
+            </div>
+            <div class="file-row">
+              <div class="file-cell"><div class="file-name"><span class="file-icon document">&#x1F4C4;</span> Budget 2026.xlsx</div></div>
+              <div class="file-cell secondary">XLSX File</div>
+              <div class="file-cell secondary">2.3 MB</div>
+              <div class="file-cell secondary">2026-03-22 16:40</div>
+            </div>
+            <div class="file-row">
+              <div class="file-cell"><div class="file-name"><span class="file-icon image">&#x1F5BC;</span> Screenshot.png</div></div>
+              <div class="file-cell secondary">PNG File</div>
+              <div class="file-cell secondary">3.8 MB</div>
+              <div class="file-cell secondary">2026-03-20 15:33</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SPLIT DIVIDER -->
+      <div class="split-divider"></div>
+
+      <!-- BOTTOM NAV -->
+      <div class="bottom-nav">
+        <button class="nav-btn" title="Back">&#x25C0;</button>
+        <button class="nav-btn" title="Forward">&#x25B6;</button>
+        <button class="nav-btn" title="Up">&#x25B2;</button>
+        <div class="breadcrumb-bar">
+          <span class="crumb">E:</span>
+          <span class="sep">&#x203A;</span>
+          <span class="crumb current">Backups</span>
+        </div>
+      </div>
+
+      <!-- BOTTOM PANE: DESTINATION -->
+      <div class="pane-label">&#x25BC; Destination</div>
+      <div class="split-pane">
+        <div class="sidebar" style="width:200px">
+          <div class="sidebar-header">Dest. Drives</div>
+          <div class="drive-item selected">
+            <div class="drive-ring">
+              <svg viewBox="0 0 36 36">
+                <circle class="ring-bg" cx="18" cy="18" r="14" />
+                <circle class="ring-fill" cx="18" cy="18" r="14"
+                  stroke-dasharray="88" stroke-dashoffset="79"
+                  transform="rotate(-90 18 18)" />
+              </svg>
+              <span class="ring-label">10%</span>
+            </div>
+            <div class="drive-info">
+              <div class="drive-name">Backup USB (E:)</div>
+              <div class="drive-space">114.2 GB free</div>
+            </div>
+          </div>
+          <div class="folder-tree">
+            <div class="tree-item selected" style="--depth:0">
+              <span class="expand-icon open">&#x25B6;</span>
+              <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+              Backups
+            </div>
+            <div class="tree-item" style="--depth:1">
+              <span class="expand-icon">&#x25B6;</span>
+              <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+              2026-03-15
+            </div>
+            <div class="tree-item" style="--depth:1">
+              <span class="expand-icon">&#x25B6;</span>
+              <span class="folder-icon" style="color:#f0c040">&#x1F4C1;</span>
+              2026-03-01
+            </div>
+          </div>
+        </div>
+        <div class="splitter"></div>
+        <div class="file-list-container">
+          <div class="file-list-header">
+            <div class="col-header">Name (Destination) <span class="sort-arrow">&#x25B2;</span></div>
+            <div class="col-header">Type</div>
+            <div class="col-header">Size</div>
+            <div class="col-header">Modified</div>
+          </div>
+          <div class="file-list">
+            <div class="file-row">
+              <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> 2026-03-15</div></div>
+              <div class="file-cell secondary">Folder</div>
+              <div class="file-cell secondary">8.2 GB</div>
+              <div class="file-cell secondary">2026-03-15 23:00</div>
+            </div>
+            <div class="file-row">
+              <div class="file-cell"><div class="file-name"><span class="file-icon folder">&#x1F4C1;</span> 2026-03-01</div></div>
+              <div class="file-cell secondary">Folder</div>
+              <div class="file-cell secondary">7.9 GB</div>
+              <div class="file-cell secondary">2026-03-01 23:00</div>
+            </div>
+            <div class="file-row">
+              <div class="file-cell"><div class="file-name"><span class="file-icon archive">&#x1F4E6;</span> documents-snapshot.zip</div></div>
+              <div class="file-cell secondary">ZIP File</div>
+              <div class="file-cell secondary">3.1 GB</div>
+              <div class="file-cell secondary">2026-02-15 22:30</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== STATUS BAR ========== -->
+  <!-- WPF: Border/Grid at bottom with bindings -->
+  <div class="status-bar">
+    <div class="status-left">
+      <span class="status-text" id="statusText">Copying Projects to E:\Backups... (1,247 of 1,860 files)</span>
+      <span class="status-items-count">14 items &middot; 2 selected</span>
+    </div>
+    <div class="status-right">
+      <div class="transfer-progress" id="transferProgress">
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" style="width: 67%"></div>
+        </div>
+        <span class="progress-text">67% &middot; ~4:32 remaining</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     CONTEXT MENU (right-click)
+     ============================================================ -->
+<div class="context-menu" id="contextMenu">
+  <div class="ctx-item">Copy <span class="ctx-shortcut">Ctrl+C</span></div>
+  <div class="ctx-item">Cut <span class="ctx-shortcut">Ctrl+X</span></div>
+  <div class="ctx-item">Paste <span class="ctx-shortcut">Ctrl+V</span></div>
+  <div class="ctx-separator"></div>
+  <div class="ctx-item">Rename <span class="ctx-shortcut">F2</span></div>
+  <div class="ctx-item" style="color:var(--danger)">Delete <span class="ctx-shortcut">Del</span></div>
+</div>
+
+<!-- ============================================================
+     DIALOG: SCHEDULE BACKUP
+     ============================================================ -->
+<div class="dialog-overlay" id="scheduleDialog" onclick="if(event.target===this)hideDialogs()">
+  <div class="dialog">
+    <div class="dialog-header">
+      <span class="dialog-title">Schedule Backup</span>
+      <button class="dialog-close" onclick="hideDialogs()">&#x2715;</button>
+    </div>
+    <div class="dialog-body">
+      <div class="form-group">
+        <label class="form-label">Job Name</label>
+        <input class="form-input" value="Weekly Documents Backup" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Source Folders / Drives</label>
+        <div class="source-list">
+          <div class="source-item">
+            <span>C:\Users\Owner\Documents</span>
+            <button class="source-remove">&#x2715;</button>
+          </div>
+          <div class="source-item">
+            <span>C:\Users\Owner\Desktop</span>
+            <button class="source-remove">&#x2715;</button>
+          </div>
+        </div>
+        <button class="btn" style="font-size:12px;padding:5px 12px">+ Add Folder</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Destination Folder / Drive</label>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" value="E:\Backups" style="flex:1" />
+          <button class="btn">Browse</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Start Date & Time</label>
+        <div class="time-inputs">
+          <div>
+            <input class="form-input" type="date" value="2026-03-25" />
+            <div class="time-label">Date</div>
+          </div>
+          <div>
+            <select class="form-select"><option>10</option><option>11</option><option selected>12</option></select>
+            <div class="time-label">Hour</div>
+          </div>
+          <div>
+            <select class="form-select"><option selected>00</option><option>15</option><option>30</option><option>45</option></select>
+            <div class="time-label">Min</div>
+          </div>
+          <div>
+            <select class="form-select"><option selected>AM</option><option>PM</option></select>
+            <div class="time-label">AM/PM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="checkbox-row">
+          <div class="checkbox-box checked"></div>
+          <span class="checkbox-label">Recurring backup</span>
+        </label>
+        <select class="form-select" style="margin-top:8px;width:200px">
+          <option>Daily</option>
+          <option selected>Weekly</option>
+          <option>Every 6 Hours</option>
+          <option>Every 12 Hours</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="checkbox-row">
+          <div class="checkbox-box"></div>
+          <span class="checkbox-label">Remove permissions on transfer</span>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">If files already exist</label>
+        <select class="form-select">
+          <option selected>Skip Existing (Merge)</option>
+          <option>Keep Both</option>
+          <option>Replace</option>
+        </select>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn" onclick="hideDialogs()">Cancel</button>
+      <button class="btn primary" onclick="hideDialogs()">Schedule Backup</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     DIALOG: SCHEDULED JOBS
+     ============================================================ -->
+<div class="dialog-overlay" id="jobsDialog" onclick="if(event.target===this)hideDialogs()">
+  <div class="dialog">
+    <div class="dialog-header">
+      <span class="dialog-title">Scheduled Jobs</span>
+      <button class="dialog-close" onclick="hideDialogs()">&#x2715;</button>
+    </div>
+    <div class="dialog-body" style="padding:0">
+      <table class="jobs-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Source</th>
+            <th>Destination</th>
+            <th>Next Run</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="selected">
+            <td>Weekly Documents</td>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="C:\Users\Owner\Documents; C:\Users\Owner\Desktop">C:\Users\Owner\Documents; ...</td>
+            <td>E:\Backups</td>
+            <td>2026-03-25 12:00 AM</td>
+            <td><span class="job-status"><span class="status-dot active"></span> Active</span></td>
+          </tr>
+          <tr>
+            <td>Daily Photos Sync</td>
+            <td>D:\Photos</td>
+            <td>E:\Photos-Mirror</td>
+            <td>2026-03-25 02:00 AM</td>
+            <td><span class="job-status"><span class="status-dot active"></span> Active</span></td>
+          </tr>
+          <tr>
+            <td>Monthly Full Backup</td>
+            <td>C:\; D:\</td>
+            <td>\\NAS\Backups</td>
+            <td>2026-04-01 11:00 PM</td>
+            <td><span class="job-status"><span class="status-dot paused"></span> Paused</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn danger" style="margin-right:auto">Delete Selected</button>
+      <button class="btn primary" onclick="hideDialogs()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     DIALOG: BACKUP LOG
+     ============================================================ -->
+<div class="dialog-overlay" id="logDialog" onclick="if(event.target===this)hideDialogs()">
+  <div class="dialog">
+    <div class="dialog-header">
+      <span class="dialog-title">Backup Log</span>
+      <button class="dialog-close" onclick="hideDialogs()">&#x2715;</button>
+    </div>
+    <div class="dialog-body" style="padding:0;overflow-y:auto">
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Job</th>
+            <th>Status</th>
+            <th>Source</th>
+            <th>Stats</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2026-03-24 14:32:10</td>
+            <td>Weekly Documents</td>
+            <td>
+              <span class="log-status running">Running</span>
+              <div class="mini-progress"><div class="mini-progress-fill" style="width:67%"></div></div>
+            </td>
+            <td>C:\Users\Owner\Documents</td>
+            <td>1,247 / 1,860 files</td>
+            <td>Copying Projects\src\...</td>
+          </tr>
+          <tr>
+            <td>2026-03-23 02:00:05</td>
+            <td>Daily Photos Sync</td>
+            <td><span class="log-status complete">Complete</span></td>
+            <td>D:\Photos</td>
+            <td>342 copied, 1,208 skipped</td>
+            <td>2.1 GB transferred</td>
+          </tr>
+          <tr>
+            <td>2026-03-22 02:00:03</td>
+            <td>Daily Photos Sync</td>
+            <td><span class="log-status complete">Complete</span></td>
+            <td>D:\Photos</td>
+            <td>18 copied, 1,532 skipped</td>
+            <td>89.4 MB transferred</td>
+          </tr>
+          <tr>
+            <td>2026-03-21 12:00:00</td>
+            <td>Weekly Documents</td>
+            <td><span class="log-status complete">Complete</span></td>
+            <td>C:\Users\Owner\Documents</td>
+            <td>1,860 copied, 0 skipped</td>
+            <td>4.2 GB transferred</td>
+          </tr>
+          <tr>
+            <td>2026-03-20 02:00:02</td>
+            <td>Daily Photos Sync</td>
+            <td><span class="log-status failed">Failed</span></td>
+            <td>D:\Photos</td>
+            <td>0 copied, 0 skipped</td>
+            <td>Drive E:\ not connected</td>
+          </tr>
+          <tr>
+            <td>2026-03-01 23:00:00</td>
+            <td>Monthly Full Backup</td>
+            <td><span class="log-status scheduled">Scheduled</span></td>
+            <td>C:\; D:\</td>
+            <td>&mdash;</td>
+            <td>Waiting for next run</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn">Export CSV</button>
+      <button class="btn">Clear Log</button>
+      <button class="btn primary" onclick="hideDialogs()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     DIALOG: TRANSFER MODE
+     ============================================================ -->
+<div class="dialog-overlay" id="transferModeDialog" onclick="if(event.target===this)hideDialogs()">
+  <div class="dialog">
+    <div class="dialog-header">
+      <span class="dialog-title">How do you want to handle existing files?</span>
+      <button class="dialog-close" onclick="hideDialogs()">&#x2715;</button>
+    </div>
+    <div class="dialog-body">
+      <div class="mode-option" onclick="hideDialogs()">
+        <div class="mode-title">Keep Both</div>
+        <div class="mode-desc">Copy everything. Rename files with -1, -2 if they already exist.</div>
+      </div>
+      <div class="mode-option" onclick="hideDialogs()">
+        <div class="mode-title">Skip Existing (Merge)</div>
+        <div class="mode-desc">Merge new files into existing folders. Skips files only if they match in size. Copies new or changed files &mdash; never skips an entire folder.</div>
+      </div>
+      <div class="mode-option" onclick="hideDialogs()">
+        <div class="mode-title">Replace</div>
+        <div class="mode-desc">Overwrite existing files at the destination with the source files.</div>
+      </div>
+      <div style="text-align:center;margin-top:4px">
+        <button class="btn" style="border:none;color:var(--text-secondary)" onclick="hideDialogs()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MOCKUP INTERACTIVE CONTROLS (for demo purposes)
+     ============================================================ -->
+<div class="mockup-controls">
+  <div class="mockup-label">Mockup Views</div>
+  <button class="mockup-btn active-view" onclick="showView('single')">Single Pane</button>
+  <button class="mockup-btn" onclick="showView('split')">Split Pane</button>
+  <button class="mockup-btn" onclick="showDialog('scheduleDialog')">Schedule Dialog</button>
+  <button class="mockup-btn" onclick="showDialog('jobsDialog')">Jobs Dialog</button>
+  <button class="mockup-btn" onclick="showDialog('logDialog')">Log Dialog</button>
+  <button class="mockup-btn" onclick="showDialog('transferModeDialog')">Transfer Mode</button>
+  <button class="mockup-btn" onclick="showContextMenu(event)">Context Menu</button>
+</div>
+
+<script>
+/* ============================================================
+   MOCKUP INTERACTIVITY (just for demo, not part of the app)
+   ============================================================ */
+
+// Theme toggle
+function toggleTheme() {
+  const body = document.body;
+  const toggle = document.getElementById('themeToggle');
+  const label = document.getElementById('themeLabel');
+  if (body.dataset.theme === 'dark') {
+    body.dataset.theme = 'light';
+    toggle.classList.remove('on');
+    label.textContent = 'Light';
+  } else {
+    body.dataset.theme = 'dark';
+    toggle.classList.add('on');
+    label.textContent = 'Dark';
+  }
+}
+
+// Split pane toggle
+function toggleSplitPane() {
+  const btn = document.getElementById('splitPaneBtn');
+  const isSplit = btn.classList.toggle('active');
+  showView(isSplit ? 'split' : 'single');
+}
+
+function showView(view) {
+  const single = document.getElementById('singlePane');
+  const split = document.getElementById('splitPane');
+  const btn = document.getElementById('splitPaneBtn');
+  const btns = document.querySelectorAll('.mockup-btn');
+
+  if (view === 'split') {
+    single.classList.add('hidden');
+    split.classList.add('active');
+    btn.classList.add('active');
+  } else {
+    single.classList.remove('hidden');
+    split.classList.remove('active');
+    btn.classList.remove('active');
+  }
+
+  // Update mockup control buttons
+  btns.forEach(b => b.classList.remove('active-view'));
+  btns.forEach(b => {
+    if ((view === 'single' && b.textContent === 'Single Pane') ||
+        (view === 'split' && b.textContent === 'Split Pane'))
+      b.classList.add('active-view');
+  });
+}
+
+// Dialog management
+function showDialog(id) {
+  hideDialogs();
+  document.getElementById(id).classList.add('active');
+}
+
+function hideDialogs() {
+  document.querySelectorAll('.dialog-overlay').forEach(d => d.classList.remove('active'));
+}
+
+// Context menu
+function showContextMenu(event) {
+  event.stopPropagation();
+  const menu = document.getElementById('contextMenu');
+  menu.style.left = (event.clientX - 200) + 'px';
+  menu.style.top = (event.clientY - 180) + 'px';
+  menu.classList.add('active');
+}
+
+// Close context menu on click anywhere
+document.addEventListener('click', () => {
+  document.getElementById('contextMenu').classList.remove('active');
+});
+
+// Close dialogs on Escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideDialogs();
+});
+
+// Checkbox toggling
+document.querySelectorAll('.checkbox-row').forEach(row => {
+  row.addEventListener('click', (e) => {
+    e.preventDefault();
+    const box = row.querySelector('.checkbox-box');
+    box.classList.toggle('checked');
+  });
+});
+
+// File row right-click context menu
+document.querySelectorAll('.file-row').forEach(row => {
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const menu = document.getElementById('contextMenu');
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    menu.classList.add('active');
+  });
+});
+
+// File row selection
+document.querySelectorAll('.file-row').forEach(row => {
+  row.addEventListener('click', (e) => {
+    if (!e.ctrlKey) {
+      row.closest('.file-list').querySelectorAll('.file-row').forEach(r => r.classList.remove('selected'));
+    }
+    row.classList.toggle('selected');
+  });
+});
+</script>
+
+</body>
+</html>

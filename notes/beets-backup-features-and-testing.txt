@@ -1,0 +1,191 @@
+Beets Backup — Feature List, Known Limitations, and Critical Testing Areas
+Last updated: 2026-03-24
+
+================================================================================
+SECTION 1: COMPLETE FEATURE LIST
+================================================================================
+
+FILE MANAGER — LAYOUT AND NAVIGATION
+- Dual-pane file manager (single pane and split pane modes)
+- Source/Destination paradigm for file transfers
+- Drive tree sidebar with lazy-loading folder expansion
+- Drive usage rings showing percentage used, free space, total space
+- Back/Forward/Up navigation with full history (browser-style)
+- Breadcrumb-style path display
+- Drive refresh button (hot-plug USB support)
+
+FILE LIST
+- File list with columns: Name (with icon), Type, Size, Modified
+- Column sorting (ascending/descending) with folders always first
+- Multi-select file support (Ctrl+Click, Shift+Click)
+- Context menus (right-click) with keyboard shortcuts shown
+- Folder size calculation (async, with "Calculating..." indicator)
+- Hidden file support (preserved during copy)
+
+SEARCH
+- Deep recursive search across entire directory trees
+- Extension-based search (prefix with .)
+- Live filter search on current folder
+- Search status indicators (Searching..., No results found)
+- Clear search to restore normal view
+
+FILE OPERATIONS
+- Copy files/folders between panes
+- Move (cut) files/folders between panes
+- Delete files/folders (sends to Recycle Bin)
+- Rename files/folders via dialog
+- Clipboard operations (Copy, Cut, Paste) in single pane mode
+- Drag and drop between panes
+
+TRANSFER OPTIONS
+- Transfer mode selection: Skip Existing (Merge), Keep Both, Replace
+- Skip Existing compares both file size AND last modified timestamp
+- Keep Both auto-renames with -1, -2 suffixes
+- Remove NTFS permissions option during transfer
+- Verify checksums (SHA256) after copy option
+- Pre-transfer free space check
+
+TRANSFER PROGRESS
+- Transfer progress bar with percentage and ETA
+- Pause/Resume active transfers
+- Stop (cancel) active transfers
+- Disk-full detection with specific error reporting
+- Locked-file detection with specific error reporting
+- Directory failure tracking (separate from file failures)
+
+SCHEDULED BACKUP JOBS
+- Scheduled backup jobs with custom names
+- Multiple source folders per scheduled job
+- Recurring backups: Daily, Weekly, Every 6 Hours, Every 12 Hours
+- One-time scheduled backups
+- Per-job transfer mode selection
+- Per-job permission stripping option
+- Scheduled Jobs dialog to view/manage/delete jobs
+- Background scheduler with 1-minute resolution
+- Thread-safe job scheduler with failure recovery
+
+BACKUP LOG
+- Backup log with detailed history (timestamp, job, status, source, stats, details)
+- Log statuses: Scheduled, Running, Complete, Failed
+- Running jobs show progress bar in log
+- Export log to CSV
+- Clear log (persists to disk)
+- Log capped at 500 entries (oldest dropped)
+- Stale "Running" entries auto-marked as Failed on startup
+
+APPLICATION
+- Dark and Light theme support with runtime toggle
+- Theme preference persisted to settings
+- Single-instance enforcement (prevents duplicate app instances)
+- Crash logging to %LocalAppData%\Beet's Backup\crash.log
+- Operational logging to %LocalAppData%\Beet's Backup\operational.log (10MB rotation)
+- Atomic JSON saves (settings, jobs, log) — crash-safe
+- Portable single-file self-contained deployment (win-x64)
+- Custom window with Segoe UI Variable font
+- Assembly version 3.0.0
+
+================================================================================
+SECTION 2: KNOWN LIMITATIONS
+================================================================================
+
+- No Volume Shadow Copy (VSS) — locked files are detected and reported but not backed up
+- No cloud backup support (local/USB/network drives only)
+- No bidirectional sync (one-way copy/move only)
+- No incremental/differential backup (always full comparison)
+- Cannot open files from within the app (files must be opened via Windows Explorer)
+- No file preview/thumbnail support
+- No built-in auto-updater
+- UNC path free space check may fail (DriveInfo only accepts drive letters)
+- Recycle Bin delete called from thread pool — COM dialog could fail on non-STA thread (rare edge case)
+- BackupLogEntry.Id is get-only — deserialized entries get new GUIDs (doesn't affect current functionality)
+- No file filtering by date range or size range
+- No compression/encryption for backups
+- No backup verification/restore workflow
+- No email/notification on backup completion or failure
+- Scheduler requires app to be running (no Windows Service mode)
+- No bandwidth/throttle control for transfers
+- Windows only (WPF, .NET 8)
+
+================================================================================
+SECTION 3: CRITICAL TESTING AREAS
+================================================================================
+
+MOVE OPERATION (highest risk — data loss)
+- Move operation: Verify source is NOT deleted when files fail to copy (test with read-only dest, locked files, disk full simulation)
+- Move operation: Verify source IS deleted when all files copy successfully
+
+ATOMIC SAVES
+- Atomic saves: Kill the app mid-save and verify JSON files are not corrupted on next launch
+
+SCHEDULER
+- Scheduler: Run multiple scheduled jobs simultaneously, verify no crashes or data corruption
+- Scheduler: Verify scheduler recovers after an exception (doesn't die silently)
+- Recurring job: Set a 6-hour recurring job, verify it fires on schedule and reschedules
+
+SINGLE INSTANCE
+- Single-instance: Launch two copies, verify second shows message and exits
+
+TRANSFER MODES
+- Skip Existing: Test with same-size files that have different timestamps — should copy
+- Skip Existing: Test with same-size, same-timestamp files — should skip
+- Keep Both: Verify files get -1, -2 suffixes correctly
+- Replace: Verify existing files are overwritten
+
+DELETE / RECYCLE BIN
+- Recycle Bin: Verify deleted files appear in Windows Recycle Bin, not permanently deleted
+
+SEARCH
+- Deep search: Search a large directory (10,000+ files) and verify UI stays responsive
+- Deep search: Cancel mid-search and verify clean cancellation
+
+FOLDER TREE
+- Folder tree: Expand a folder on a slow USB drive, verify UI doesn't freeze
+- Folder tree: Expand a folder on a network drive, verify no hang
+
+TRANSFER PROGRESS
+- Transfer progress: Verify progress bar reaches 100% on completion
+- Transfer progress: Verify ETA is reasonable
+- Pause/Resume: Pause mid-transfer, resume, verify completion is correct
+- Stop: Cancel mid-transfer, verify partial files are handled cleanly
+
+ERROR HANDLING
+- Disk full: Fill destination drive mid-transfer, verify error reporting
+- Locked files: Copy a folder containing a file locked by another process, verify it's reported
+
+COPY OPTIONS
+- Checksum verify: Copy files with verify enabled, confirm SHA256 matches
+- Permission stripping: Copy files with permissions option, verify ACLs are reset
+- Hidden files: Copy hidden files/folders, verify hidden attribute preserved at destination
+
+SETTINGS / PERSISTENCE
+- Theme toggle: Switch themes, close app, reopen — verify theme persisted
+
+LOG
+- Log cap: Generate 600+ log entries, verify oldest are dropped at 500
+- Stale entries: Force-kill app during a transfer, reopen — verify "Running" entry shows as "Failed"
+- Clear log: Clear log, close app, reopen — verify log stays cleared
+- Export CSV: Export log, open in Excel — verify formatting
+
+SCHEDULER DIALOG
+- Schedule dialog: Create job with multiple sources, verify all sources backed up
+
+LARGE TRANSFERS
+- Large transfer: Copy 50GB+ of data, verify completion and accurate stats
+
+DRIVE MANAGEMENT
+- Drive refresh: Plug/unplug USB drive, click Refresh — verify drives update
+
+FILE LIST / SORTING
+- Column sorting: Sort by each column, verify folders stay on top
+
+DRAG AND DROP
+- Drag and drop: Drag files from top to bottom pane, verify copy works
+
+CONTEXT MENUS AND MULTI-SELECT
+- Context menu: Right-click multi-selected files, verify context menu appears without deselecting
+
+RENAME
+- Rename: Rename a file, verify it appears with new name
+
+NAVIGATION
+- Navigation history: Navigate through 5+ folders, use Back/Forward, verify correct paths

@@ -24,6 +24,16 @@ public class BackupLogService
             if (loaded == null) return;
             foreach (var entry in loaded.OrderByDescending(e => e.Timestamp))
                 Entries.Add(entry);
+
+            // Mark any entries left in Running state as interrupted
+            bool anyStale = false;
+            foreach (var entry in Entries.Where(e => e.Status == BackupStatus.Running).ToList())
+            {
+                entry.Status = BackupStatus.Failed;
+                entry.Message = "Interrupted — the application closed while this job was running.";
+                anyStale = true;
+            }
+            if (anyStale) Save();
         }
         catch { }
     }
@@ -32,7 +42,10 @@ public class BackupLogService
     {
         RunOnUiThread(() =>
         {
-            Entries.Insert(0, entry); // newest first
+            Entries.Insert(0, entry);
+            // Cap log at 500 entries
+            while (Entries.Count > 500)
+                Entries.RemoveAt(Entries.Count - 1);
             Save();
         });
     }
@@ -78,6 +91,12 @@ public class BackupLogService
         });
     }
 
+    public void Clear()
+    {
+        Entries.Clear();
+        Save();
+    }
+
     private static void RunOnUiThread(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
@@ -92,8 +111,15 @@ public class BackupLogService
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-            File.WriteAllText(LogPath, JsonSerializer.Serialize(Entries.ToList()));
+            var dir = Path.GetDirectoryName(LogPath)!;
+            Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(Entries.ToList());
+            var tmpPath = LogPath + ".tmp";
+            File.WriteAllText(tmpPath, json);
+            if (File.Exists(LogPath))
+                File.Replace(tmpPath, LogPath, LogPath + ".bak");
+            else
+                File.Move(tmpPath, LogPath);
         }
         catch { }
     }

@@ -208,7 +208,7 @@ public partial class MainViewModel : ObservableObject
     private void ToggleSplitPane() => IsSplitPane = !IsSplitPane;
 
     [RelayCommand]
-    private void NavigateTop(string path)
+    private async Task NavigateTop(string path)
     {
         // Cancel any in-progress deep search so results don't interleave
         // with the new folder contents.
@@ -220,7 +220,9 @@ public partial class MainViewModel : ObservableObject
         _topSizeCts = new CancellationTokenSource();
         TopCurrentPath = path;
         TopPaneItems.Clear();
-        foreach (var item in _fs.GetChildren(path))
+
+        var children = await Task.Run(() => _fs.GetChildren(path).ToList());
+        foreach (var item in children)
             TopPaneItems.Add(item);
         _filteredTopView?.Refresh();
         _ = CalculateFolderSizesAsync(TopPaneItems, _topSizeCts.Token);
@@ -238,13 +240,15 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void NavigateBottom(string path)
+    private async Task NavigateBottom(string path)
     {
         _bottomSizeCts?.Cancel();
         _bottomSizeCts = new CancellationTokenSource();
         BottomCurrentPath = path;
         BottomPaneItems.Clear();
-        foreach (var item in _fs.GetChildren(path))
+
+        var children = await Task.Run(() => _fs.GetChildren(path).ToList());
+        foreach (var item in children)
             BottomPaneItems.Add(item);
         _filteredBottomView?.Refresh();
         _ = CalculateFolderSizesAsync(BottomPaneItems, _bottomSizeCts.Token);
@@ -282,61 +286,61 @@ public partial class MainViewModel : ObservableObject
     // --- Navigation history ---
     private bool CanGoBack() => _topHistoryIndex > 0;
     [RelayCommand(CanExecute = nameof(CanGoBack))]
-    private void GoBack()
+    private async Task GoBack()
     {
         _topHistoryIndex--;
         _isNavigatingHistory = true;
-        NavigateTop(_topHistory[_topHistoryIndex]);
+        await NavigateTop(_topHistory[_topHistoryIndex]);
         _isNavigatingHistory = false;
     }
 
     private bool CanGoForward() => _topHistoryIndex < _topHistory.Count - 1;
     [RelayCommand(CanExecute = nameof(CanGoForward))]
-    private void GoForward()
+    private async Task GoForward()
     {
         _topHistoryIndex++;
         _isNavigatingHistory = true;
-        NavigateTop(_topHistory[_topHistoryIndex]);
+        await NavigateTop(_topHistory[_topHistoryIndex]);
         _isNavigatingHistory = false;
     }
 
     private bool CanGoUp() => !string.IsNullOrEmpty(TopCurrentPath) && Directory.GetParent(TopCurrentPath) != null;
     [RelayCommand(CanExecute = nameof(CanGoUp))]
-    private void GoUp()
+    private async Task GoUp()
     {
         var parent = Directory.GetParent(TopCurrentPath);
         if (parent != null)
-            NavigateTop(parent.FullName);
+            await NavigateTop(parent.FullName);
     }
 
     // --- Bottom navigation history ---
     private bool CanGoBackBottom() => _bottomHistoryIndex > 0;
     [RelayCommand(CanExecute = nameof(CanGoBackBottom))]
-    private void GoBackBottom()
+    private async Task GoBackBottom()
     {
         _bottomHistoryIndex--;
         _isNavigatingBottomHistory = true;
-        NavigateBottom(_bottomHistory[_bottomHistoryIndex]);
+        await NavigateBottom(_bottomHistory[_bottomHistoryIndex]);
         _isNavigatingBottomHistory = false;
     }
 
     private bool CanGoForwardBottom() => _bottomHistoryIndex < _bottomHistory.Count - 1;
     [RelayCommand(CanExecute = nameof(CanGoForwardBottom))]
-    private void GoForwardBottom()
+    private async Task GoForwardBottom()
     {
         _bottomHistoryIndex++;
         _isNavigatingBottomHistory = true;
-        NavigateBottom(_bottomHistory[_bottomHistoryIndex]);
+        await NavigateBottom(_bottomHistory[_bottomHistoryIndex]);
         _isNavigatingBottomHistory = false;
     }
 
     private bool CanGoUpBottom() => !string.IsNullOrEmpty(BottomCurrentPath) && Directory.GetParent(BottomCurrentPath) != null;
     [RelayCommand(CanExecute = nameof(CanGoUpBottom))]
-    private void GoUpBottom()
+    private async Task GoUpBottom()
     {
         var parent = Directory.GetParent(BottomCurrentPath);
         if (parent != null)
-            NavigateBottom(parent.FullName);
+            await NavigateBottom(parent.FullName);
     }
 
     // --- Deep search ---
@@ -354,7 +358,7 @@ public partial class MainViewModel : ObservableObject
             IsSearching = false;
             // Re-navigate to current folder to restore normal view
             if (!string.IsNullOrEmpty(TopCurrentPath))
-                NavigateTop(TopCurrentPath);
+                await NavigateTop(TopCurrentPath);
             return;
         }
 
@@ -409,25 +413,32 @@ public partial class MainViewModel : ObservableObject
                 RecurseSubdirectories = false
             };
 
-            // Check files in current directory
+            var batch = new List<FileSystemItem>();
+
             foreach (var filePath in Directory.EnumerateFiles(directory, "*", options))
             {
                 if (token.IsCancellationRequested) return;
                 var fileName = Path.GetFileName(filePath);
-                bool matches;
-                if (isExtensionSearch)
-                    matches = Path.GetExtension(fileName).Equals(query, StringComparison.OrdinalIgnoreCase);
-                else
-                    matches = fileName.Contains(query, StringComparison.OrdinalIgnoreCase);
+                bool matches = isExtensionSearch
+                    ? Path.GetExtension(fileName).Equals(query, StringComparison.OrdinalIgnoreCase)
+                    : fileName.Contains(query, StringComparison.OrdinalIgnoreCase);
 
                 if (matches)
                 {
-                    var item = new FileSystemItem(new FileInfo(filePath));
-                    dispatcher.Invoke(() => TopPaneItems.Add(item));
+                    batch.Add(new FileSystemItem(new FileInfo(filePath)));
+                    if (batch.Count >= 50)
+                    {
+                        var items = batch.ToList();
+                        batch.Clear();
+                        dispatcher.BeginInvoke(() =>
+                        {
+                            foreach (var item in items)
+                                TopPaneItems.Add(item);
+                        });
+                    }
                 }
             }
 
-            // Check subdirectories (names match too for non-extension searches)
             foreach (var dirPath in Directory.EnumerateDirectories(directory, "*", options))
             {
                 if (token.IsCancellationRequested) return;
@@ -437,13 +448,32 @@ public partial class MainViewModel : ObservableObject
                     var dirName = Path.GetFileName(dirPath);
                     if (dirName.Contains(query, StringComparison.OrdinalIgnoreCase))
                     {
-                        var item = new FileSystemItem(new DirectoryInfo(dirPath));
-                        dispatcher.Invoke(() => TopPaneItems.Add(item));
+                        batch.Add(new FileSystemItem(new DirectoryInfo(dirPath)));
+                        if (batch.Count >= 50)
+                        {
+                            var items = batch.ToList();
+                            batch.Clear();
+                            dispatcher.BeginInvoke(() =>
+                            {
+                                foreach (var item in items)
+                                    TopPaneItems.Add(item);
+                            });
+                        }
                     }
                 }
 
-                // Recurse into subdirectory
                 SearchDirectoryRecursive(dirPath, query, isExtensionSearch, token, dispatcher);
+            }
+
+            // Flush remaining batch
+            if (batch.Count > 0)
+            {
+                var remaining = batch.ToList();
+                dispatcher.BeginInvoke(() =>
+                {
+                    foreach (var item in remaining)
+                        TopPaneItems.Add(item);
+                });
             }
         }
         catch (UnauthorizedAccessException) { }
@@ -451,7 +481,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ClearSearch()
+    private async Task ClearSearch()
     {
         _searchCts?.Cancel();
         _searchCts?.Dispose();
@@ -461,37 +491,37 @@ public partial class MainViewModel : ObservableObject
         IsSearching = false;
         ShowNoResults = false;
         if (!string.IsNullOrEmpty(TopCurrentPath))
-            NavigateTop(TopCurrentPath);
+            await NavigateTop(TopCurrentPath);
     }
 
     [RelayCommand]
-    private void SelectTopDrive(DriveItem? drive)
+    private async Task SelectTopDrive(DriveItem? drive)
     {
         if (drive == null) return;
         SelectedTopDrive = drive;
-        NavigateTop(drive.RootPath);
+        await NavigateTop(drive.RootPath);
     }
 
     [RelayCommand]
-    private void SelectBottomDrive(DriveItem? drive)
+    private async Task SelectBottomDrive(DriveItem? drive)
     {
         if (drive == null) return;
         SelectedBottomDrive = drive;
-        NavigateBottom(drive.RootPath);
+        await NavigateBottom(drive.RootPath);
     }
 
     [RelayCommand]
-    private void SelectTopTreeFolder(FolderTreeItem? folder)
+    private async Task SelectTopTreeFolder(FolderTreeItem? folder)
     {
         if (folder == null) return;
-        NavigateTop(folder.FullPath);
+        await NavigateTop(folder.FullPath);
     }
 
     [RelayCommand]
-    private void SelectBottomTreeFolder(FolderTreeItem? folder)
+    private async Task SelectBottomTreeFolder(FolderTreeItem? folder)
     {
         if (folder == null) return;
-        NavigateBottom(folder.FullPath);
+        await NavigateBottom(folder.FullPath);
     }
 
     private static TransferMode? AskTransferMode()
@@ -516,7 +546,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
-            NavigateBottom(BottomCurrentPath);
+            await NavigateBottom(BottomCurrentPath);
             EndTransfer(FormatTransferResult(result));
         }
         catch (OperationCanceledException)
@@ -526,7 +556,7 @@ public partial class MainViewModel : ObservableObject
         catch (InsufficientSpaceException)
         {
             EndTransfer("Transfer aborted — not enough space.");
-            System.Windows.MessageBox.Show("Not enough space on destination dummy!", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
 
@@ -543,7 +573,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
-            NavigateTop(TopCurrentPath);
+            await NavigateTop(TopCurrentPath);
             EndTransfer(FormatTransferResult(result));
         }
         catch (OperationCanceledException)
@@ -553,7 +583,7 @@ public partial class MainViewModel : ObservableObject
         catch (InsufficientSpaceException)
         {
             EndTransfer("Transfer aborted — not enough space.");
-            System.Windows.MessageBox.Show("Not enough space on destination dummy!", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
 
@@ -570,8 +600,8 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
-            NavigateTop(TopCurrentPath);
-            NavigateBottom(BottomCurrentPath);
+            await NavigateTop(TopCurrentPath);
+            await NavigateBottom(BottomCurrentPath);
             EndTransfer(FormatTransferResult(result));
         }
         catch (OperationCanceledException)
@@ -581,7 +611,7 @@ public partial class MainViewModel : ObservableObject
         catch (InsufficientSpaceException)
         {
             EndTransfer("Transfer aborted — not enough space.");
-            System.Windows.MessageBox.Show("Not enough space on destination dummy!", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
 
@@ -598,8 +628,8 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
-            NavigateTop(TopCurrentPath);
-            NavigateBottom(BottomCurrentPath);
+            await NavigateTop(TopCurrentPath);
+            await NavigateBottom(BottomCurrentPath);
             EndTransfer(FormatTransferResult(result));
         }
         catch (OperationCanceledException)
@@ -609,7 +639,7 @@ public partial class MainViewModel : ObservableObject
         catch (InsufficientSpaceException)
         {
             EndTransfer("Transfer aborted — not enough space.");
-            System.Windows.MessageBox.Show("Not enough space on destination dummy!", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
 
@@ -622,24 +652,24 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void RenameItem((FileSystemItem item, string newName) args)
+    private async Task RenameItem((FileSystemItem item, string newName) args)
     {
         var (item, newName) = args;
         _fs.RenameItem(item.FullPath, newName);
         if (!string.IsNullOrEmpty(TopCurrentPath))
-            NavigateTop(TopCurrentPath);
+            await NavigateTop(TopCurrentPath);
         if (!string.IsNullOrEmpty(BottomCurrentPath))
-            NavigateBottom(BottomCurrentPath);
+            await NavigateBottom(BottomCurrentPath);
     }
 
     [RelayCommand]
-    private void RefreshDrives()
+    private async Task RefreshDrives()
     {
         LoadDrives();
         if (!string.IsNullOrEmpty(TopCurrentPath))
         {
             if (Directory.Exists(TopCurrentPath))
-                NavigateTop(TopCurrentPath);
+                await NavigateTop(TopCurrentPath);
             else
             {
                 TopPaneItems.Clear();
@@ -650,7 +680,7 @@ public partial class MainViewModel : ObservableObject
         if (!string.IsNullOrEmpty(BottomCurrentPath))
         {
             if (Directory.Exists(BottomCurrentPath))
-                NavigateBottom(BottomCurrentPath);
+                await NavigateBottom(BottomCurrentPath);
             else
             {
                 BottomPaneItems.Clear();
@@ -700,6 +730,9 @@ public partial class MainViewModel : ObservableObject
         if (result.FilesCopied > 0) parts.Add($"{result.FilesCopied} copied");
         if (result.FilesSkipped > 0) parts.Add($"{result.FilesSkipped} skipped");
         if (result.FilesFailed > 0) parts.Add($"{result.FilesFailed} failed");
+        if (result.DirectoriesFailed > 0) parts.Add($"{result.DirectoriesFailed} folders failed");
+        if (result.FilesLocked > 0) parts.Add($"{result.FilesLocked} locked");
+        if (result.DiskFullErrors > 0) parts.Add($"{result.DiskFullErrors} disk full errors");
         if (result.ChecksumMismatches > 0) parts.Add($"{result.ChecksumMismatches} checksum mismatches!");
         return parts.Count > 0 ? $"Done — {string.Join(", ", parts)}" : "Done.";
     }

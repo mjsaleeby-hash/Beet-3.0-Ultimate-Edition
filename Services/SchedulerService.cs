@@ -11,12 +11,20 @@ public class SchedulerService : IDisposable
     private readonly List<ScheduledJob> _jobs = new();
     private readonly PeriodicTimer _ticker;
     private readonly CancellationTokenSource _cts = new();
+    private readonly object _jobsLock = new();
+    private Task? _runTask;
+
+    public string? LastSchedulerError { get; private set; }
 
     private static readonly string JobsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Beet's Backup", "scheduled_jobs.json");
 
-    public IReadOnlyList<ScheduledJob> Jobs => _jobs.AsReadOnly();
+    public IReadOnlyList<ScheduledJob> Jobs
+    {
+        get { lock (_jobsLock) { return _jobs.ToList().AsReadOnly(); } }
+    }
+
     public event Action? JobsChanged;
 
     public SchedulerService(TransferService transfer, BackupLogService log)
@@ -25,13 +33,16 @@ public class SchedulerService : IDisposable
         _log = log;
         LoadJobs();
         _ticker = new PeriodicTimer(TimeSpan.FromMinutes(1));
-        _ = RunAsync(_cts.Token);
+        _runTask = RunAsync(_cts.Token);
     }
 
     public void AddJob(ScheduledJob job)
     {
-        _jobs.Add(job);
-        SaveJobs();
+        lock (_jobsLock)
+        {
+            _jobs.Add(job);
+            SaveJobs();
+        }
 
         _log.Add(new BackupLogEntry
         {
@@ -47,8 +58,11 @@ public class SchedulerService : IDisposable
 
     public void RemoveJob(Guid id)
     {
-        _jobs.RemoveAll(j => j.Id == id);
-        SaveJobs();
+        lock (_jobsLock)
+        {
+            _jobs.RemoveAll(j => j.Id == id);
+            SaveJobs();
+        }
         JobsChanged?.Invoke();
     }
 
@@ -56,14 +70,31 @@ public class SchedulerService : IDisposable
     {
         while (await _ticker.WaitForNextTickAsync(ct))
         {
-            var now = DateTime.Now;
-            foreach (var job in _jobs.Where(j => j.IsEnabled && j.NextRun <= now).ToList())
+            try
             {
-                _ = ExecuteJobAsync(job);
-                job.UpdateNextRun();
-                if (!job.IsRecurring)
-                    job.IsEnabled = false;
-                SaveJobs();
+                List<ScheduledJob> dueJobs;
+                var now = DateTime.Now;
+                lock (_jobsLock)
+                {
+                    dueJobs = _jobs.Where(j => j.IsEnabled && j.NextRun <= now).ToList();
+                }
+
+                foreach (var job in dueJobs)
+                {
+                    _ = ExecuteJobAsync(job);
+                    lock (_jobsLock)
+                    {
+                        job.UpdateNextRun();
+                        if (!job.IsRecurring)
+                            job.IsEnabled = false;
+                        SaveJobs();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LastSchedulerError = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Scheduler error: {ex.Message}";
+                System.Diagnostics.Debug.WriteLine($"Scheduler error: {ex}");
             }
         }
     }
@@ -97,7 +128,7 @@ public class SchedulerService : IDisposable
         }
         catch (InsufficientSpaceException)
         {
-            _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, "Not enough space on destination dummy!");
+            _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, "Not enough disk space on the destination drive.");
         }
         catch (Exception ex)
         {
@@ -113,7 +144,12 @@ public class SchedulerService : IDisposable
             var json = File.ReadAllText(JobsPath);
             var loaded = JsonSerializer.Deserialize<List<ScheduledJob>>(json);
             if (loaded != null)
-                _jobs.AddRange(loaded);
+            {
+                lock (_jobsLock)
+                {
+                    _jobs.AddRange(loaded);
+                }
+            }
         }
         catch { }
     }
@@ -122,8 +158,15 @@ public class SchedulerService : IDisposable
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(JobsPath)!);
-            File.WriteAllText(JobsPath, JsonSerializer.Serialize(_jobs));
+            var dir = Path.GetDirectoryName(JobsPath)!;
+            Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(_jobs);
+            var tmpPath = JobsPath + ".tmp";
+            File.WriteAllText(tmpPath, json);
+            if (File.Exists(JobsPath))
+                File.Replace(tmpPath, JobsPath, JobsPath + ".bak");
+            else
+                File.Move(tmpPath, JobsPath);
         }
         catch { }
     }

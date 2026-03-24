@@ -6,7 +6,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>BeetsBackup</AssemblyName>
     <RootNamespace>BeetsBackup</RootNamespace>
     <ApplicationIcon>Assets\Beets Backup IMG.ico</ApplicationIcon>
@@ -17,6 +16,14 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <AssemblyVersion>3.0.0.0</AssemblyVersion>
+    <FileVersion>3.0.0.0</FileVersion>
+    <Version>3.0.0</Version>
+    <Product>Beet's Backup</Product>
+    <Company>Beet Software</Company>
+    <Copyright>Copyright © 2026 Beet Software. All rights reserved.</Copyright>
+    <Description>A lightweight dual-pane file manager and backup tool for Windows.</Description>
+    <NeutralLanguage>en-US</NeutralLanguage>
   </PropertyGroup>
 
   <ItemGroup>

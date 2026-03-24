@@ -2,7 +2,7 @@ using BeetsBackup.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
-using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace BeetsBackup.ViewModels;
 
@@ -43,13 +43,12 @@ public partial class ScheduleDialogViewModel : ObservableObject
     [RelayCommand]
     private void AddSource()
     {
-        using var dialog = new FolderBrowserDialog
+        var dialog = new OpenFolderDialog
         {
-            Description = "Select source folder or drive",
-            UseDescriptionForTitle = true
+            Title = "Select source folder or drive"
         };
-        if (dialog.ShowDialog() == DialogResult.OK && !SourcePaths.Contains(dialog.SelectedPath))
-            SourcePaths.Add(dialog.SelectedPath);
+        if (dialog.ShowDialog() == true && !SourcePaths.Contains(dialog.FolderName))
+            SourcePaths.Add(dialog.FolderName);
     }
 
     [RelayCommand]
@@ -62,13 +61,12 @@ public partial class ScheduleDialogViewModel : ObservableObject
     [RelayCommand]
     private void BrowseDestination()
     {
-        using var dialog = new FolderBrowserDialog
+        var dialog = new OpenFolderDialog
         {
-            Description = "Select destination folder or drive",
-            UseDescriptionForTitle = true
+            Title = "Select destination folder or drive"
         };
-        if (dialog.ShowDialog() == DialogResult.OK)
-            DestinationPath = dialog.SelectedPath;
+        if (dialog.ShowDialog() == true)
+            DestinationPath = dialog.FolderName;
     }
 
     public ScheduledJob BuildJob()
