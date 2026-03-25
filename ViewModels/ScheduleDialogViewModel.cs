@@ -45,10 +45,17 @@ public partial class ScheduleDialogViewModel : ObservableObject
     {
         var dialog = new OpenFolderDialog
         {
-            Title = "Select source folder or drive"
+            Title = "Select source folder(s) or drive(s)",
+            Multiselect = true
         };
-        if (dialog.ShowDialog() == true && !SourcePaths.Contains(dialog.FolderName))
-            SourcePaths.Add(dialog.FolderName);
+        if (dialog.ShowDialog() == true)
+        {
+            foreach (var folder in dialog.FolderNames)
+            {
+                if (!SourcePaths.Contains(folder))
+                    SourcePaths.Add(folder);
+            }
+        }
     }
 
     [RelayCommand]
