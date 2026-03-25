@@ -7,6 +7,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Windows.Data;
+using System.Windows.Media;
 
 namespace BeetsBackup.ViewModels;
 
@@ -78,6 +79,14 @@ public partial class MainViewModel : ObservableObject
     private readonly List<string> _bottomHistory = new();
     private int _bottomHistoryIndex = -1;
     private bool _isNavigatingBottomHistory;
+
+    // --- Visual mode (pie chart) ---
+    [ObservableProperty] private bool _isTopVisualMode;
+    [ObservableProperty] private bool _isBottomVisualMode;
+    [ObservableProperty] private string _topTotalSize = "";
+    [ObservableProperty] private string _bottomTotalSize = "";
+    public ObservableCollection<PieSlice> TopPieSlices { get; } = new();
+    public ObservableCollection<PieSlice> BottomPieSlices { get; } = new();
 
     // --- Status ---
     [ObservableProperty] private string _statusMessage = "Ready";
@@ -235,7 +244,9 @@ public partial class MainViewModel : ObservableObject
         foreach (var item in children)
             TopPaneItems.Add(item);
         _filteredTopView?.Refresh();
-        _ = CalculateFolderSizesAsync(TopPaneItems, _topSizeCts.Token);
+        _ = CalculateFolderSizesAsync(TopPaneItems, _topSizeCts.Token)
+            .ContinueWith(_ => System.Windows.Application.Current?.Dispatcher.BeginInvoke(RebuildPieSlicesIfNeeded),
+                CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
 
         if (!_isNavigatingHistory)
         {
@@ -268,7 +279,9 @@ public partial class MainViewModel : ObservableObject
         foreach (var item in children)
             BottomPaneItems.Add(item);
         _filteredBottomView?.Refresh();
-        _ = CalculateFolderSizesAsync(BottomPaneItems, _bottomSizeCts.Token);
+        _ = CalculateFolderSizesAsync(BottomPaneItems, _bottomSizeCts.Token)
+            .ContinueWith(_ => System.Windows.Application.Current?.Dispatcher.BeginInvoke(RebuildPieSlicesIfNeeded),
+                CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
 
         if (!_isNavigatingBottomHistory)
         {
@@ -290,14 +303,10 @@ public partial class MainViewModel : ObservableObject
             MaxDegreeOfParallelism = Environment.ProcessorCount,
             CancellationToken = cancellationToken
         };
-        try
+        await Parallel.ForEachAsync(directories, parallelOptions, async (dir, ct) =>
         {
-            await Parallel.ForEachAsync(directories, parallelOptions, async (dir, ct) =>
-            {
-                await dir.CalculateDirectorySizeAsync(ct);
-            });
-        }
-        catch (OperationCanceledException) { }
+            await dir.CalculateDirectorySizeAsync(ct);
+        });
     }
 
     // --- Navigation history ---
@@ -762,5 +771,110 @@ public partial class MainViewModel : ObservableObject
         if (result.DiskFullErrors > 0) parts.Add($"{result.DiskFullErrors} disk full errors");
         if (result.ChecksumMismatches > 0) parts.Add($"{result.ChecksumMismatches} checksum mismatches!");
         return parts.Count > 0 ? $"Done — {string.Join(", ", parts)}" : "Done.";
+    }
+
+    // --- Pie chart (data distribution) ---
+
+    private static readonly Color[] PieColors =
+    [
+        Color.FromRgb(0x4C, 0xC2, 0xFF), // blue
+        Color.FromRgb(0xFF, 0x6B, 0x8A), // rose
+        Color.FromRgb(0x4A, 0xDE, 0x80), // green
+        Color.FromRgb(0xF5, 0x9E, 0x0B), // amber
+        Color.FromRgb(0xA7, 0x8B, 0xFA), // violet
+        Color.FromRgb(0xF8, 0x71, 0x71), // red
+        Color.FromRgb(0x38, 0xBD, 0xF8), // sky
+        Color.FromRgb(0xFB, 0x92, 0x3C), // orange
+        Color.FromRgb(0x34, 0xD3, 0x99), // emerald
+        Color.FromRgb(0xE8, 0x79, 0xF9), // fuchsia
+    ];
+
+    [RelayCommand]
+    private void ToggleTopVisualMode()
+    {
+        IsTopVisualMode = !IsTopVisualMode;
+        if (IsTopVisualMode)
+            BuildPieSlices(TopPaneItems, TopPieSlices, true);
+    }
+
+    [RelayCommand]
+    private void ToggleBottomVisualMode()
+    {
+        IsBottomVisualMode = !IsBottomVisualMode;
+        if (IsBottomVisualMode)
+            BuildPieSlices(BottomPaneItems, BottomPieSlices, false);
+    }
+
+    private void BuildPieSlices(ObservableCollection<FileSystemItem> items, ObservableCollection<PieSlice> slices, bool isTop)
+    {
+        slices.Clear();
+
+        var sorted = items
+            .Where(i => i.Size > 0)
+            .OrderByDescending(i => i.Size)
+            .Take(10)
+            .ToList();
+
+        if (sorted.Count == 0)
+        {
+            if (isTop) TopTotalSize = "";
+            else BottomTotalSize = "";
+            return;
+        }
+
+        long totalSize = items.Where(i => i.Size > 0).Sum(i => i.Size);
+        if (totalSize <= 0) return;
+
+        if (isTop) TopTotalSize = FileSystemItem.FormatBytes(totalSize);
+        else BottomTotalSize = FileSystemItem.FormatBytes(totalSize);
+
+        double angle = 0;
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            double pct = (double)sorted[i].Size / totalSize * 100.0;
+            double sweep = pct / 100.0 * 360.0;
+            slices.Add(new PieSlice
+            {
+                Name = sorted[i].Name,
+                Icon = sorted[i].Icon,
+                SizeBytes = sorted[i].Size,
+                SizeDisplay = sorted[i].SizeDisplay,
+                Percentage = pct,
+                StartAngle = angle,
+                SweepAngle = sweep,
+                FillColor = PieColors[i % PieColors.Length],
+                Index = i,
+            });
+            angle += sweep;
+        }
+
+        // Add an "Other" slice for remaining items not in top 10
+        long top10Size = sorted.Sum(i => i.Size);
+        long otherSize = totalSize - top10Size;
+        if (otherSize > 0)
+        {
+            double otherPct = (double)otherSize / totalSize * 100.0;
+            double otherSweep = otherPct / 100.0 * 360.0;
+            slices.Add(new PieSlice
+            {
+                Name = "Other",
+                Icon = "\u2026",
+                SizeBytes = otherSize,
+                SizeDisplay = FileSystemItem.FormatBytes(otherSize),
+                Percentage = otherPct,
+                StartAngle = angle,
+                SweepAngle = otherSweep,
+                FillColor = Color.FromRgb(0x60, 0x60, 0x70),
+                Index = sorted.Count,
+            });
+        }
+    }
+
+    private void RebuildPieSlicesIfNeeded()
+    {
+        if (IsTopVisualMode)
+            BuildPieSlices(TopPaneItems, TopPieSlices, true);
+        if (IsBottomVisualMode)
+            BuildPieSlices(BottomPaneItems, BottomPieSlices, false);
     }
 }

@@ -1,0 +1,97 @@
+<UserControl x:Class="BeetsBackup.Views.PieChartControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:h="clr-namespace:BeetsBackup.Helpers">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Grid Background="{DynamicResource SurfaceBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Pie chart canvas -->
+        <Grid Grid.Column="0" Width="280" Height="280" Margin="24">
+            <Canvas x:Name="PieCanvas" Width="280" Height="280"/>
+            <!-- Center label -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                <TextBlock x:Name="TotalSizeText"
+                           HorizontalAlignment="Center"
+                           FontSize="20" FontWeight="Bold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"/>
+                <TextBlock Text="total size"
+                           HorizontalAlignment="Center"
+                           FontSize="11"
+                           Foreground="{DynamicResource SecondaryTextBrush}"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Legend -->
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled" Margin="0,16,16,16">
+            <StackPanel>
+                <TextBlock Text="Space Distribution" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                <TextBlock x:Name="SubtitleText" FontSize="11"
+                           Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,12"/>
+                <ItemsControl x:Name="LegendList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border x:Name="LegendBorder" CornerRadius="4" Padding="8,6" Margin="0,1"
+                                    Background="Transparent" Cursor="Hand"
+                                    MouseEnter="Legend_MouseEnter" MouseLeave="Legend_MouseLeave">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="20"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="70"/>
+                                        <ColumnDefinition Width="52"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Rectangle Grid.Column="0" Width="12" Height="12" RadiusX="2" RadiusY="2">
+                                        <Rectangle.Fill>
+                                            <SolidColorBrush Color="{Binding FillColor}"/>
+                                        </Rectangle.Fill>
+                                    </Rectangle>
+
+                                    <TextBlock Grid.Column="1" Text="{Binding Icon}" FontSize="13"
+                                               VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Column="2" Text="{Binding Name}" FontSize="13"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+
+                                    <TextBlock Grid.Column="3" Text="{Binding SizeDisplay}" FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Column="4" FontSize="12" FontWeight="SemiBold"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Text="{Binding Percentage, StringFormat={}{0:0.0}%}">
+                                        <TextBlock.Foreground>
+                                            <SolidColorBrush Color="{Binding FillColor}"/>
+                                        </TextBlock.Foreground>
+                                    </TextBlock>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                    <Setter TargetName="LegendBorder" Property="Background"
+                                            Value="{DynamicResource SelectionBrush}"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <!-- Empty state -->
+                <TextBlock x:Name="EmptyText" Text="Navigate to a folder to see size distribution."
+                           FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}"
+                           Margin="0,20,0,0" Visibility="Collapsed"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

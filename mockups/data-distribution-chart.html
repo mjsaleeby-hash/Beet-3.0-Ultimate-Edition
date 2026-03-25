@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beet's Backup - Data Distribution View</title>
+<style>
+/* ============================================================
+   DATA DISTRIBUTION VIEW - PIE CHART MOCKUP
+   Toggle between standard list view and visual pie chart
+   showing the 15 largest items in the current location.
+   ============================================================ */
+
+/* --- Theme System --- */
+:root {
+  --bg: #1a1a2e;
+  --surface: #242438;
+  --panel: #1e1e30;
+  --panel-hover: #2a2a42;
+  --border: #35354a;
+  --border-subtle: #2a2a3e;
+  --text-primary: #eaeaef;
+  --text-secondary: #8888a0;
+  --text-tertiary: #5a5a72;
+  --accent: #4CC2FF;
+  --accent-hover: #60CDFF;
+  --accent-dim: rgba(76, 194, 255, 0.12);
+  --selection: #1a3a52;
+  --selection-hover: #223e58;
+  --toolbar: #222236;
+  --success: #4ade80;
+  --warning: #f59e0b;
+  --danger: #f87171;
+  --scrollbar-track: #1e1e30;
+  --scrollbar-thumb: #3a3a50;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+[data-theme="light"] {
+  --bg: #f0f0f5;
+  --surface: #ffffff;
+  --panel: #e8e8f0;
+  --panel-hover: #dddde8;
+  --border: #d0d0dc;
+  --border-subtle: #e0e0ea;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b6b80;
+  --text-tertiary: #9999aa;
+  --accent: #0078D4;
+  --accent-hover: #106EBE;
+  --accent-dim: rgba(0, 120, 212, 0.08);
+  --selection: #d0e4f7;
+  --selection-hover: #bdd8f0;
+  --toolbar: #f6f6fa;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --scrollbar-track: #f0f0f5;
+  --scrollbar-thumb: #c0c0cc;
+  --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* --- 15-color palette for chart slices --- */
+:root {
+  --slice-0: #4CC2FF;
+  --slice-1: #FF6B8A;
+  --slice-2: #4ade80;
+  --slice-3: #f59e0b;
+  --slice-4: #a78bfa;
+  --slice-5: #f87171;
+  --slice-6: #38bdf8;
+  --slice-7: #fb923c;
+  --slice-8: #34d399;
+  --slice-9: #e879f9;
+  --slice-10: #fbbf24;
+  --slice-11: #60a5fa;
+  --slice-12: #c084fc;
+  --slice-13: #2dd4bf;
+  --slice-14: #94a3b8;
+}
+
+/* --- Top bar --- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--border);
+  min-height: 40px;
+}
+
+.toolbar .app-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: auto;
+}
+.toolbar .app-title span { color: var(--accent); }
+
+.theme-toggle {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.theme-toggle:hover { color: var(--text-primary); border-color: var(--accent); }
+
+/* --- Breadcrumb / path bar --- */
+.pathbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.pathbar .segment {
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pathbar .segment:hover { color: var(--accent); background: var(--accent-dim); }
+.pathbar .segment.current { color: var(--text-primary); font-weight: 600; }
+.pathbar .sep { color: var(--text-tertiary); font-size: 11px; }
+
+/* --- View toggle button group --- */
+.view-toggle-group {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  gap: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.view-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+.view-toggle-btn:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--border);
+}
+.view-toggle-btn:hover { color: var(--text-primary); background: var(--panel-hover); }
+.view-toggle-btn.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  font-weight: 600;
+}
+.view-toggle-btn svg { width: 14px; height: 14px; }
+
+/* --- Main content area --- */
+.main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* --- Panes --- */
+.pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.pane:last-child { border-right: none; }
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  gap: 12px;
+}
+.pane-header .location { font-weight: 600; color: var(--text-primary); }
+.pane-header .item-count { color: var(--text-tertiary); }
+
+.pane-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.pane-body::-webkit-scrollbar { width: 8px; }
+.pane-body::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+.pane-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+
+/* --- List view --- */
+.list-view { display: flex; flex-direction: column; }
+
+.list-header {
+  display: grid;
+  grid-template-columns: 28px 1fr 90px 140px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.list-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 90px 140px;
+  padding: 3px 12px;
+  font-size: 13px;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid transparent;
+}
+.list-row:hover { background: var(--selection-hover); }
+
+.list-row .icon { font-size: 16px; text-align: center; }
+.list-row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-row .size { color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+.list-row .date { color: var(--text-tertiary); font-size: 12px; }
+
+/* --- Chart view --- */
+.chart-view {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px;
+  gap: 20px;
+}
+.chart-view.active { display: flex; }
+.list-view.hidden { display: none; }
+
+.chart-container {
+  display: flex;
+  gap: 32px;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+}
+
+/* --- Pie chart --- */
+.pie-wrapper {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.pie-svg {
+  width: 320px;
+  height: 320px;
+  filter: drop-shadow(0 4px 16px rgba(0,0,0,0.2));
+}
+
+.pie-svg .slice {
+  transition: opacity 0.15s, transform 0.15s;
+  transform-origin: 160px 160px;
+  cursor: pointer;
+}
+.pie-svg .slice:hover {
+  opacity: 0.85;
+  transform: scale(1.02);
+}
+
+.pie-center-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.pie-center-label strong {
+  display: block;
+  font-size: 22px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* --- Legend list --- */
+.legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.legend-item {
+  display: grid;
+  grid-template-columns: 14px 1fr 70px 60px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 13px;
+  position: relative;
+  overflow: hidden;
+}
+.legend-item:hover { background: var(--selection-hover); }
+
+/* Size bar behind each legend item */
+.legend-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--bar-width, 0%);
+  opacity: 0.07;
+  border-radius: 6px;
+  background: var(--bar-color, var(--accent));
+  transition: width 0.3s ease;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legend-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-size {
+  text-align: right;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.legend-pct {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+/* --- Chart title bar --- */
+.chart-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.chart-title { font-size: 15px; font-weight: 600; }
+.chart-subtitle { font-size: 12px; color: var(--text-tertiary); }
+
+/* --- Status bar --- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 12px;
+  background: var(--toolbar);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  min-height: 28px;
+}
+.statusbar .spacer { flex: 1; }
+
+/* --- Right pane dimmed to focus on left --- */
+.pane.secondary { opacity: 0.7; }
+.pane.secondary:hover { opacity: 1; transition: opacity 0.2s; }
+
+/* --- Tooltip --- */
+.chart-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.12s;
+  max-width: 240px;
+}
+.chart-tooltip.visible { opacity: 1; }
+.chart-tooltip .tt-name { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.chart-tooltip .tt-row { display: flex; justify-content: space-between; gap: 16px; color: var(--text-secondary); }
+.chart-tooltip .tt-val { color: var(--text-primary); font-weight: 500; }
+
+/* --- Animations --- */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.chart-view.active { animation: fadeIn 0.2s ease; }
+
+@media (max-width: 900px) {
+  .chart-container { flex-direction: column; align-items: stretch; }
+  .pie-wrapper { align-self: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== TOOLBAR ==================== -->
+<div class="toolbar">
+  <div class="app-title"><span>Beet's</span> Backup</div>
+  <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+</div>
+
+<!-- ==================== PATH BAR WITH VIEW TOGGLE ==================== -->
+<div class="pathbar">
+  <span class="segment" data-path="drive">C:</span>
+  <span class="sep">&rsaquo;</span>
+  <span class="segment" data-path="users">Users</span>
+  <span class="sep">&rsaquo;</span>
+  <span class="segment" data-path="owner">Owner</span>
+  <span class="sep">&rsaquo;</span>
+  <span class="segment current" data-path="docs">Documents</span>
+
+  <!-- View toggle: List | Visual -->
+  <div class="view-toggle-group">
+    <button class="view-toggle-btn active" id="btn-list" onclick="switchView('list')">
+      <svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="0.5"/><rect x="1" y="7" width="14" height="2" rx="0.5"/><rect x="1" y="12" width="14" height="2" rx="0.5"/></svg>
+      List
+    </button>
+    <button class="view-toggle-btn" id="btn-chart" onclick="switchView('chart')">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 1.2v5.3l3.7 3.7a5.8 5.8 0 10-3.7-9z"/></svg>
+      Visual
+    </button>
+  </div>
+</div>
+
+<!-- ==================== MAIN DUAL PANE ==================== -->
+<div class="main">
+
+  <!-- LEFT PANE (active pane with chart toggle) -->
+  <div class="pane" id="left-pane">
+    <div class="pane-header">
+      <span class="location">C:\Users\Owner\Documents</span>
+      <span class="item-count">24 items &middot; 187.4 GB</span>
+    </div>
+    <div class="pane-body">
+
+      <!-- LIST VIEW (default) -->
+      <div class="list-view" id="list-view">
+        <div class="list-header">
+          <span></span><span>Name</span><span style="text-align:right">Size</span><span>Modified</span>
+        </div>
+      </div>
+
+      <!-- CHART VIEW (toggled via Visual button) -->
+      <div class="chart-view" id="chart-view">
+        <div class="chart-title-bar">
+          <span class="chart-title">Space Distribution</span>
+          <span class="chart-subtitle">Top 10 largest items in Documents</span>
+        </div>
+        <div class="chart-container">
+          <div class="pie-wrapper">
+            <svg class="pie-svg" id="pie-chart" viewBox="0 0 320 320"></svg>
+            <div class="pie-center-label">
+              <strong>187.4 GB</strong>
+              total in folder
+            </div>
+          </div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- RIGHT PANE (secondary, standard list) -->
+  <div class="pane secondary">
+    <div class="pane-header">
+      <span class="location">D:\Backups</span>
+      <span class="item-count">12 items &middot; 142.8 GB</span>
+    </div>
+    <div class="pane-body">
+      <div class="list-view" id="right-list">
+        <div class="list-header">
+          <span></span><span>Name</span><span style="text-align:right">Size</span><span>Modified</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ==================== STATUS BAR ==================== -->
+<div class="statusbar">
+  <span id="status-text">Ready</span>
+  <span class="spacer"></span>
+  <span>187.4 GB used &middot; 312.6 GB free</span>
+</div>
+
+<!-- ==================== TOOLTIP ==================== -->
+<div class="chart-tooltip" id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-row"><span>Size</span><span class="tt-val" id="tt-size"></span></div>
+  <div class="tt-row"><span>% of folder</span><span class="tt-val" id="tt-pct"></span></div>
+  <div class="tt-row"><span>Items inside</span><span class="tt-val" id="tt-items"></span></div>
+</div>
+
+<script>
+// ============================================================
+//  DATA — realistic folder contents for C:\Users\Owner\Documents
+// ============================================================
+const folderItems = [
+  { name: "Virtual Machines",    icon: "\u{1F4C1}", size: 52.3,  unit: "GB", date: "2026-02-18", items: 8 },
+  { name: "Video Projects",      icon: "\u{1F4C1}", size: 34.7,  unit: "GB", date: "2026-03-12", items: 143 },
+  { name: "Photography",         icon: "\u{1F4C1}", size: 22.1,  unit: "GB", date: "2026-03-20", items: 4812 },
+  { name: "Games",               icon: "\u{1F4C1}", size: 18.6,  unit: "GB", date: "2026-01-09", items: 34 },
+  { name: "Music Production",    icon: "\u{1F4C1}", size: 14.2,  unit: "GB", date: "2026-03-22", items: 287 },
+  { name: "Visual Studio",       icon: "\u{1F4C1}", size: 11.8,  unit: "GB", date: "2026-03-24", items: 56 },
+  { name: "Beet-3.0-Ultimate-Edition", icon: "\u{1F4C1}", size: 8.4, unit: "GB", date: "2026-03-24", items: 1204 },
+  { name: "ISO Images",          icon: "\u{1F4C1}", size: 6.9,   unit: "GB", date: "2025-12-03", items: 5 },
+  { name: "CAD Models",          icon: "\u{1F4C1}", size: 4.5,   unit: "GB", date: "2026-02-28", items: 89 },
+  { name: "Databases",           icon: "\u{1F4C1}", size: 3.8,   unit: "GB", date: "2026-03-15", items: 12 },
+  { name: "PowerShell Scripts",  icon: "\u{1F4C1}", size: 2.1,   unit: "GB", date: "2026-03-21", items: 204 },
+  { name: "Archives",            icon: "\u{1F4C1}", size: 1.9,   unit: "GB", date: "2026-01-22", items: 67 },
+  { name: "Fonts",               icon: "\u{1F4C1}", size: 1.4,   unit: "GB", date: "2025-11-10", items: 342 },
+  { name: "Ebooks",              icon: "\u{1F4C1}", size: 1.2,   unit: "GB", date: "2026-02-05", items: 178 },
+  { name: "3D Printing",         icon: "\u{1F4C1}", size: 0.9,   unit: "GB", date: "2026-03-01", items: 45 },
+  { name: "Wallpapers",          icon: "\u{1F4C1}", size: 0.6,   unit: "GB", date: "2026-01-15", items: 210 },
+  { name: "Templates",           icon: "\u{1F4C1}", size: 0.4,   unit: "GB", date: "2025-10-20", items: 33 },
+  { name: "Receipts",            icon: "\u{1F4C1}", size: 0.2,   unit: "GB", date: "2026-03-18", items: 156 },
+  { name: "desktop.ini",         icon: "\u{1F4C4}", size: 1,     unit: "KB", date: "2025-09-01", items: null },
+  { name: "notes.txt",           icon: "\u{1F4C4}", size: 12,    unit: "KB", date: "2026-03-23", items: null },
+  { name: "todo.md",             icon: "\u{1F4C4}", size: 4,     unit: "KB", date: "2026-03-22", items: null },
+  { name: "budget-2026.xlsx",    icon: "\u{1F4C4}", size: 0.8,   unit: "MB", date: "2026-03-10", items: null },
+  { name: "resume-draft.docx",   icon: "\u{1F4C4}", size: 0.3,   unit: "MB", date: "2026-02-14", items: null },
+  { name: "scan-001.pdf",        icon: "\u{1F4C4}", size: 5.2,   unit: "MB", date: "2026-03-05", items: null },
+];
+
+// Drive root view — all folders
+const driveItems = [
+  { name: "Users",              icon: "\u{1F4C1}", size: 187.4, unit: "GB", date: "2026-03-24", items: 45230 },
+  { name: "Windows",            icon: "\u{1F4C1}", size: 42.1,  unit: "GB", date: "2026-03-24", items: 98412 },
+  { name: "Program Files",      icon: "\u{1F4C1}", size: 38.5,  unit: "GB", date: "2026-03-24", items: 12840 },
+  { name: "Program Files (x86)", icon: "\u{1F4C1}", size: 22.8, unit: "GB", date: "2026-03-20", items: 6780 },
+  { name: "ProgramData",        icon: "\u{1F4C1}", size: 15.3,  unit: "GB", date: "2026-03-24", items: 3456 },
+  { name: "Recovery",           icon: "\u{1F4C1}", size: 8.2,   unit: "GB", date: "2025-11-15", items: 12 },
+  { name: "$Recycle.Bin",       icon: "\u{1F4C1}", size: 5.6,   unit: "GB", date: "2026-03-24", items: 89 },
+  { name: "Temp",               icon: "\u{1F4C1}", size: 4.1,   unit: "GB", date: "2026-03-24", items: 2341 },
+  { name: "Drivers",            icon: "\u{1F4C1}", size: 3.4,   unit: "GB", date: "2026-02-10", items: 567 },
+  { name: "Intel",              icon: "\u{1F4C1}", size: 2.8,   unit: "GB", date: "2025-09-20", items: 234 },
+  { name: "PerfLogs",           icon: "\u{1F4C1}", size: 1.9,   unit: "GB", date: "2026-03-15", items: 48 },
+  { name: "AMD",                icon: "\u{1F4C1}", size: 1.2,   unit: "GB", date: "2025-10-05", items: 156 },
+  { name: "MSOCache",           icon: "\u{1F4C1}", size: 0.8,   unit: "GB", date: "2025-08-22", items: 67 },
+  { name: "System Volume Information", icon: "\u{1F4C1}", size: 0.6, unit: "GB", date: "2026-03-24", items: 4 },
+  { name: "Boot",               icon: "\u{1F4C1}", size: 0.4,   unit: "GB", date: "2026-01-08", items: 23 },
+];
+
+const rightItems = [
+  { name: "2026-03-Daily",    icon: "\u{1F4C1}", size: 38.2, unit: "GB", date: "2026-03-24" },
+  { name: "2026-02-Daily",    icon: "\u{1F4C1}", size: 35.1, unit: "GB", date: "2026-02-28" },
+  { name: "2026-01-Daily",    icon: "\u{1F4C1}", size: 32.8, unit: "GB", date: "2026-01-31" },
+  { name: "2025-12-Monthly",  icon: "\u{1F4C1}", size: 18.4, unit: "GB", date: "2025-12-31" },
+  { name: "2025-Q4-Archive",  icon: "\u{1F4C1}", size: 12.6, unit: "GB", date: "2025-12-15" },
+  { name: "Photos-Mirror",    icon: "\u{1F4C1}", size: 3.2,  unit: "GB", date: "2026-03-20" },
+  { name: "VM-Snapshots",     icon: "\u{1F4C1}", size: 2.1,  unit: "GB", date: "2026-03-18" },
+  { name: "Config-Backup",    icon: "\u{1F4C1}", size: 0.4,  unit: "GB", date: "2026-03-22" },
+  { name: "backup-log.txt",   icon: "\u{1F4C4}", size: 24,   unit: "MB", date: "2026-03-24" },
+  { name: "manifest.json",    icon: "\u{1F4C4}", size: 1.2,  unit: "MB", date: "2026-03-24" },
+  { name: "checksums.sha256", icon: "\u{1F4C4}", size: 0.5,  unit: "MB", date: "2026-03-24" },
+  { name: "README.md",        icon: "\u{1F4C4}", size: 4,    unit: "KB", date: "2026-03-01" },
+];
+
+const COLORS = [
+  '#4CC2FF', '#FF6B8A', '#4ade80', '#f59e0b', '#a78bfa',
+  '#f87171', '#38bdf8', '#fb923c', '#34d399', '#e879f9'
+];
+
+// Currently active items for the left pane
+let activeItems = [...folderItems];
+
+// ============================================================
+//  HELPERS
+// ============================================================
+function sizeToGB(size, unit) {
+  if (unit === 'GB') return size;
+  if (unit === 'MB') return size / 1024;
+  if (unit === 'KB') return size / (1024 * 1024);
+  return size;
+}
+
+function formatSize(size, unit) {
+  if (unit === 'KB') return size + ' KB';
+  if (unit === 'MB') return size < 1 ? (size * 1024).toFixed(0) + ' KB' : size.toFixed(1) + ' MB';
+  if (unit === 'GB') return size < 0.1 ? (size * 1024).toFixed(0) + ' MB' : size.toFixed(1) + ' GB';
+  return size + ' ' + unit;
+}
+
+// ============================================================
+//  POPULATE LIST VIEWS
+// ============================================================
+function populateList(containerId, items) {
+  const container = document.getElementById(containerId);
+  // Remove old rows but keep header
+  container.querySelectorAll('.list-row').forEach(r => r.remove());
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML =
+      '<span class="icon">' + item.icon + '</span>' +
+      '<span class="name">' + item.name + '</span>' +
+      '<span class="size">' + formatSize(item.size, item.unit) + '</span>' +
+      '<span class="date">' + item.date + '</span>';
+    container.appendChild(row);
+  });
+}
+
+populateList('list-view', activeItems);
+populateList('right-list', rightItems);
+
+// ============================================================
+//  PIE CHART (pure SVG)
+// ============================================================
+function buildPieChart() {
+  const svg = document.getElementById('pie-chart');
+  const legend = document.getElementById('legend');
+  svg.innerHTML = '';
+  legend.innerHTML = '';
+
+  // Top 15 by size
+  const sorted = [...activeItems]
+    .map(it => ({ ...it, gb: sizeToGB(it.size, it.unit) }))
+    .sort((a, b) => b.gb - a.gb)
+    .slice(0, 10);
+
+  const total = sorted.reduce((s, it) => s + it.gb, 0);
+  const cx = 160, cy = 160, r = 140;
+  let cumAngle = -Math.PI / 2; // start at 12 o'clock
+
+  sorted.forEach((item, i) => {
+    const pct = item.gb / total;
+    const angle = pct * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(cumAngle);
+    const y1 = cy + r * Math.sin(cumAngle);
+    const x2 = cx + r * Math.cos(cumAngle + angle);
+    const y2 = cy + r * Math.sin(cumAngle + angle);
+    const largeArc = angle > Math.PI ? 1 : 0;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M ' + cx + ' ' + cy + ' L ' + x1 + ' ' + y1 + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 1 ' + x2 + ' ' + y2 + ' Z');
+    path.setAttribute('fill', COLORS[i]);
+    path.setAttribute('class', 'slice');
+    path.dataset.index = i;
+
+    path.addEventListener('mouseenter', function(e) { showTooltip(e, item, pct); highlightLegend(i, true); });
+    path.addEventListener('mousemove', moveTooltip);
+    path.addEventListener('mouseleave', function() { hideTooltip(); highlightLegend(i, false); });
+
+    svg.appendChild(path);
+    cumAngle += angle;
+
+    // Legend entry
+    const div = document.createElement('div');
+    div.className = 'legend-item';
+    div.id = 'legend-' + i;
+    div.style.setProperty('--bar-width', (pct * 100).toFixed(1) + '%');
+    div.style.setProperty('--bar-color', COLORS[i]);
+    div.innerHTML =
+      '<span class="legend-swatch" style="background:' + COLORS[i] + '"></span>' +
+      '<span class="legend-name">' + item.icon + ' ' + item.name + '</span>' +
+      '<span class="legend-size">' + formatSize(item.size, item.unit) + '</span>' +
+      '<span class="legend-pct" style="color:' + COLORS[i] + '">' + (pct * 100).toFixed(1) + '%</span>';
+
+    div.addEventListener('mouseenter', function(e) { showTooltip(e, item, pct); highlightSlice(i, true); });
+    div.addEventListener('mousemove', moveTooltip);
+    div.addEventListener('mouseleave', function() { hideTooltip(); highlightSlice(i, false); });
+    legend.appendChild(div);
+  });
+}
+
+buildPieChart();
+
+// ============================================================
+//  TOOLTIP
+// ============================================================
+const tooltip = document.getElementById('tooltip');
+
+function showTooltip(e, item, pct) {
+  document.getElementById('tt-name').textContent = item.name;
+  document.getElementById('tt-size').textContent = formatSize(item.size, item.unit);
+  document.getElementById('tt-pct').textContent = (pct * 100).toFixed(1) + '%';
+  document.getElementById('tt-items').textContent = item.items != null ? item.items.toLocaleString() : '\u2014';
+  tooltip.classList.add('visible');
+  moveTooltip(e);
+}
+
+function moveTooltip(e) {
+  tooltip.style.left = (e.clientX + 14) + 'px';
+  tooltip.style.top = (e.clientY - 10) + 'px';
+}
+
+function hideTooltip() { tooltip.classList.remove('visible'); }
+
+// ============================================================
+//  CROSS-HIGHLIGHTING
+// ============================================================
+function highlightLegend(i, on) {
+  const el = document.getElementById('legend-' + i);
+  if (el) el.style.background = on ? 'var(--selection)' : '';
+}
+
+function highlightSlice(i, on) {
+  const slice = document.querySelector('.slice[data-index="' + i + '"]');
+  if (slice) {
+    slice.style.opacity = on ? '0.8' : '';
+    slice.style.transform = on ? 'scale(1.03)' : '';
+  }
+}
+
+// ============================================================
+//  VIEW SWITCHING
+// ============================================================
+function switchView(mode) {
+  const listView = document.getElementById('list-view');
+  const chartView = document.getElementById('chart-view');
+  const btnList = document.getElementById('btn-list');
+  const btnChart = document.getElementById('btn-chart');
+  const statusText = document.getElementById('status-text');
+
+  if (mode === 'chart') {
+    listView.classList.add('hidden');
+    chartView.classList.add('active');
+    btnList.classList.remove('active');
+    btnChart.classList.add('active');
+    statusText.textContent = 'Visual mode \u2014 showing top 10 largest items by size';
+  } else {
+    listView.classList.remove('hidden');
+    chartView.classList.remove('active');
+    btnList.classList.add('active');
+    btnChart.classList.remove('active');
+    statusText.textContent = 'Ready';
+  }
+}
+
+// ============================================================
+//  THEME TOGGLE
+// ============================================================
+function toggleTheme() {
+  const html = document.documentElement;
+  html.setAttribute('data-theme', html.getAttribute('data-theme') === 'light' ? '' : 'light');
+}
+
+// ============================================================
+//  PATH SEGMENT CLICK — switch between drive root & folder
+// ============================================================
+document.querySelectorAll('.pathbar .segment').forEach(function(seg) {
+  seg.addEventListener('click', function() {
+    if (seg.dataset.path === 'drive') {
+      loadContext(driveItems, 'C:\\', '15 items \u00b7 335.1 GB', 'Top 10 largest folders on C: drive', '335.1 GB', 'total on drive');
+      document.querySelectorAll('.pathbar .segment').forEach(function(s) { s.classList.remove('current'); });
+      seg.classList.add('current');
+    } else if (seg.dataset.path === 'docs') {
+      loadContext(folderItems, 'C:\\Users\\Owner\\Documents', '24 items \u00b7 187.4 GB', 'Top 10 largest items in Documents', '187.4 GB', 'total in folder');
+      document.querySelectorAll('.pathbar .segment').forEach(function(s) { s.classList.remove('current'); });
+      seg.classList.add('current');
+    }
+  });
+});
+
+function loadContext(items, location, countText, subtitle, totalSize, totalLabel) {
+  activeItems = [...items];
+  document.querySelector('.pane-header .location').textContent = location;
+  document.querySelector('.pane-header .item-count').textContent = countText;
+  document.querySelector('.chart-subtitle').textContent = subtitle;
+  document.querySelector('.pie-center-label strong').textContent = totalSize;
+  document.querySelector('.pie-center-label').lastChild.textContent = '\n' + totalLabel;
+  populateList('list-view', activeItems);
+  buildPieChart();
+}
+</script>
+</body>
+</html>

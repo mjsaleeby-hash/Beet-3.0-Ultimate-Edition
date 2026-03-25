@@ -84,7 +84,7 @@ public class FileSystemItem : INotifyPropertyChanged
     public string TypeDisplay => IsDirectory ? "Folder" : Path.GetExtension(Name).TrimStart('.').ToUpper() + " File";
     public string Icon => IsDirectory ? "📁" : "📄";
 
-    private static string FormatBytes(long bytes)
+    internal static string FormatBytes(long bytes)
     {
         string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
         double value = bytes;

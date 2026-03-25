@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:BeetsBackup.ViewModels"
         xmlns:h="clr-namespace:BeetsBackup.Helpers"
+        xmlns:views="clr-namespace:BeetsBackup.Views"
         Title="Beet's Backup"
         Icon="/Assets/Beets Backup IMG.ico"
         MinWidth="900" MinHeight="600"
@@ -410,7 +411,22 @@
 
                 <!-- Right: File list -->
                 <Grid Grid.Column="2">
+                <!-- Visual mode toggle -->
+                <Button Content="📊" Padding="6,4"
+                        Style="{StaticResource ToolbarButton}"
+                        Command="{Binding ToggleTopVisualModeCommand}"
+                        ToolTip="Toggle data distribution view"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,4,22,0" Panel.ZIndex="2"/>
+                <!-- Pie chart overlay -->
+                <views:PieChartControl
+                    Slices="{Binding TopPieSlices}"
+                    TotalSize="{Binding TopTotalSize}"
+                    Subtitle="Top 10 largest items"
+                    Visibility="{Binding IsTopVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Panel.ZIndex="1"/>
                 <ListView x:Name="TopPaneList"
+                          Visibility="{Binding IsTopVisualMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"
                           ItemsSource="{Binding FilteredTopPaneItems}"
                           Background="{DynamicResource SurfaceBrush}"
                           Foreground="{DynamicResource PrimaryTextBrush}"
@@ -524,7 +540,22 @@
                                   Background="{DynamicResource BorderBrush}"/>
 
                     <Grid Grid.Column="2">
+                    <!-- Visual mode toggle -->
+                    <Button Content="📊" Padding="6,4"
+                            Style="{StaticResource ToolbarButton}"
+                            Command="{Binding ToggleTopVisualModeCommand}"
+                            ToolTip="Toggle data distribution view"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,4,22,0" Panel.ZIndex="2"/>
+                    <!-- Pie chart overlay -->
+                    <views:PieChartControl
+                        Slices="{Binding TopPieSlices}"
+                        TotalSize="{Binding TopTotalSize}"
+                        Subtitle="Top 10 largest items"
+                        Visibility="{Binding IsTopVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                        Panel.ZIndex="1"/>
                     <ListView x:Name="SplitTopList"
+                              Visibility="{Binding IsTopVisualMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"
                               ItemsSource="{Binding FilteredTopPaneItems}"
                               Background="{DynamicResource SurfaceBrush}"
                               Foreground="{DynamicResource PrimaryTextBrush}"
@@ -672,7 +703,22 @@
                                   HorizontalAlignment="Stretch"
                                   Background="{DynamicResource BorderBrush}"/>
 
+                    <!-- Visual mode toggle -->
+                    <Button Grid.Column="2" Content="📊" Padding="6,4"
+                            Style="{StaticResource ToolbarButton}"
+                            Command="{Binding ToggleBottomVisualModeCommand}"
+                            ToolTip="Toggle data distribution view"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,4,22,0" Panel.ZIndex="2"/>
+                    <!-- Pie chart overlay -->
+                    <views:PieChartControl Grid.Column="2"
+                        Slices="{Binding BottomPieSlices}"
+                        TotalSize="{Binding BottomTotalSize}"
+                        Subtitle="Top 10 largest items"
+                        Visibility="{Binding IsBottomVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                        Panel.ZIndex="1"/>
                     <ListView Grid.Column="2" x:Name="SplitBottomList"
+                              Visibility="{Binding IsBottomVisualMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"
                               ItemsSource="{Binding FilteredBottomPaneItems}"
                               Background="{DynamicResource SurfaceBrush}"
                               Foreground="{DynamicResource PrimaryTextBrush}"
