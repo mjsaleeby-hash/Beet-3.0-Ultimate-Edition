@@ -53,6 +53,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 ### UI / UX
 
 - **Dark and light theme** toggle
+- **Data Distribution Visual Mode** — toolbar button toggles between List view and a donut pie chart of the top 10 largest items in the current folder; color-coded with 10 distinct colors plus a muted "Other" slice; legend shows item name, icon, size, and percentage; hovering a slice highlights the matching legend entry and vice versa; chart auto-rebuilds when folder size calculations complete; works in both single-pane and split-pane modes
 - **Custom logo** with gradient "Beet's Backup" branding
 - **Navigation bars** — top pane nav bar with back, forward, up, path display, search, and refresh; bottom pane nav bar in split mode with symmetric back, forward, up, and path display
 - **Restructured split pane layout** — top half (source tree + file list), full-width bottom nav bar, bottom half (destination tree + file list)
@@ -110,9 +111,9 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 ## Project Structure
 
 ```
-├── Views/               UI (MainWindow, dialogs: Schedule, Jobs, Log, Rename, TransferMode)
+├── Views/               UI (MainWindow, PieChartControl, dialogs: Schedule, Jobs, Log, Rename, TransferMode)
 ├── ViewModels/          Presentation logic (MVVM)
-├── Models/              Data types (FileSystemItem, DriveItem, ScheduledJob, TransferResult, etc.)
+├── Models/              Data types (FileSystemItem, DriveItem, ScheduledJob, TransferResult, PieSlice, etc.)
 ├── Services/            Core logic
 │   ├── FileSystemService    Drive & file enumeration, rename
 │   ├── TransferService      Copy/move with dedup, permission stripping, checksum verification
@@ -122,7 +123,8 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 │   └── ThemeService         Light/dark mode
 ├── Helpers/             Value converters for WPF bindings
 ├── Themes/              Light.xaml & Dark.xaml resource dictionaries
-└── Assets/              App icon & logo
+├── Assets/              App icon & logo
+└── mockups/             HTML design mockups (data-distribution-chart.html, etc.)
 ```
 
 ---

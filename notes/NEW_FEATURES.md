@@ -1,3 +1,31 @@
+# Beets Backup -- Changes for 2026-03-25
+
+## New Features
+
+### 1. Data Distribution Visual Mode (Pie Chart)
+
+A new **Visual Mode** can be toggled from the toolbar (button sits next to the Dark/Light theme toggle). The toolbar button shows a gradient pie symbol and its label dynamically reads "Visual" in list mode and "List View" in visual mode.
+
+When active, the file list is replaced with a **donut pie chart** visualizing the top 10 largest items in the current folder:
+- **10 distinct colors** — blue, rose, green, amber, violet, red, sky, orange, emerald, fuchsia
+- **"Other" slice** (muted gray) covers all items beyond the top 10
+- **Legend panel** to the right lists each item with its name, file/folder icon, size, and percentage
+- **Cross-highlighting** — hovering a pie slice highlights the matching legend row, and hovering a legend row highlights the matching slice
+- **Auto-rebuilds** when async folder size calculations finish (cancellation-safe via `TaskContinuationOptions.OnlyOnRanToCompletion`)
+- Works in both **single-pane and split-pane** modes
+
+**Implementation notes:**
+- Pure WPF — `PathGeometry` + `ArcSegment` (same pattern as `UsageToArcConverter`); no third-party charting library
+- `TryFindResource` used for all brush lookups (theme-safe)
+- Event handler cleanup on each rebuild prevents listener accumulation
+- `FormatBytes` in `FileSystemItem.cs` promoted from `private` to `internal static` for reuse by `PieSlice`
+
+**New files:** `Models/PieSlice.cs`, `Views/PieChartControl.xaml`, `Views/PieChartControl.xaml.cs`, `mockups/data-distribution-chart.html`
+
+**Modified files:** `Models/FileSystemItem.cs`, `ViewModels/MainViewModel.cs`, `Views/MainWindow.xaml`
+
+---
+
 # Beets Backup -- Changes for 2026-03-21
 
 This document covers all gaps fixed, new features added, and bugs resolved in the 2026-03-21 session.

@@ -1,5 +1,5 @@
 Beets Backup — Feature List, Known Limitations, and Critical Testing Areas
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 ================================================================================
 SECTION 1: COMPLETE FEATURE LIST
@@ -72,6 +72,17 @@ BACKUP LOG
 - Clear log (persists to disk)
 - Log capped at 500 entries (oldest dropped)
 - Stale "Running" entries auto-marked as Failed on startup
+
+DATA VISUALIZATION
+- Visual Mode toolbar button toggles between List view and donut pie chart
+- Pie chart shows top 10 largest items in the current folder by size
+- "Other" slice (muted gray) accounts for all items beyond top 10
+- 10 distinct colors per slice (blue, rose, green, amber, violet, red, sky, orange, emerald, fuchsia)
+- Legend panel shows item name, icon, size, and percentage
+- Cross-highlighting: hovering a slice highlights its legend row and vice versa
+- Chart auto-rebuilds when folder size calculations complete
+- Works in single-pane and split-pane modes
+- Pure WPF implementation — no third-party charting library
 
 APPLICATION
 - Dark and Light theme support with runtime toggle
@@ -189,3 +200,15 @@ RENAME
 
 NAVIGATION
 - Navigation history: Navigate through 5+ folders, use Back/Forward, verify correct paths
+
+VISUAL MODE (PIE CHART)
+- Toggle Visual Mode on a folder with folder sizes already calculated — verify chart renders immediately
+- Toggle Visual Mode before folder sizes finish calculating — verify chart auto-builds once calculations complete
+- Verify "Other" slice appears when folder contains more than 10 items
+- Hover each pie slice — verify corresponding legend row highlights and unhighlights correctly
+- Hover each legend row — verify corresponding pie slice highlights and unhighlights correctly
+- Navigate to a new folder while in Visual Mode — verify chart rebuilds for the new location
+- Toggle theme (dark/light) while Visual Mode is active — verify colors and backgrounds update correctly
+- Enable Visual Mode in split-pane mode — verify top and bottom panes each show their own independent chart
+- Toggle back to List View — verify the file list returns with all columns intact
+- Open a folder with 0 or 1 items in Visual Mode — verify no crash or empty-chart rendering errors
