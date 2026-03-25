@@ -256,19 +256,27 @@ public class TransferService
         bool verifyChecksums, TransferResult result, IProgress<string>? progress)
     {
         var fileSize = new FileInfo(source).Length;
-        _fs.CopyFile(source, dest, stripPermissions);
-        result.FilesCopied++;
-        result.BytesTransferred += fileSize;
 
         if (verifyChecksums)
         {
-            var sourceHash = ComputeSha256(source);
+            // Single-pass copy: hash source bytes as they're written to dest,
+            // then only re-read the destination for verification.
+            var sourceHash = _fs.CopyFileWithHash(source, dest, stripPermissions);
+            result.FilesCopied++;
+            result.BytesTransferred += fileSize;
+
             var destHash = ComputeSha256(dest);
             if (!sourceHash.SequenceEqual(destHash))
             {
                 result.ChecksumMismatches++;
                 progress?.Report($"CHECKSUM MISMATCH: {Path.GetFileName(dest)}");
             }
+        }
+        else
+        {
+            _fs.CopyFile(source, dest, stripPermissions);
+            result.FilesCopied++;
+            result.BytesTransferred += fileSize;
         }
     }
 

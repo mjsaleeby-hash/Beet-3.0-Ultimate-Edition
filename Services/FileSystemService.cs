@@ -72,6 +72,44 @@ public class FileSystemService
             File.SetAttributes(dest, File.GetAttributes(dest) | FileAttributes.Hidden);
     }
 
+    /// <summary>
+    /// Copies a file while computing the SHA256 hash of the source data in a single pass.
+    /// Returns the hash so the caller only needs to read the destination for verification.
+    /// </summary>
+    public byte[] CopyFileWithHash(string source, string dest, bool stripPermissions)
+    {
+        bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
+
+        byte[] hash;
+        using (var srcStream = File.OpenRead(source))
+        using (var sha = System.Security.Cryptography.SHA256.Create())
+        using (var destStream = File.Create(dest))
+        {
+            var buffer = new byte[81920]; // 80KB buffer
+            int bytesRead;
+            while ((bytesRead = srcStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                sha.TransformBlock(buffer, 0, bytesRead, null, 0);
+                destStream.Write(buffer, 0, bytesRead);
+            }
+            sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+            hash = sha.Hash!;
+        }
+
+        // Preserve timestamps
+        var srcInfo = new FileInfo(source);
+        File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc);
+        File.SetCreationTimeUtc(dest, srcInfo.CreationTimeUtc);
+
+        if (stripPermissions)
+            ResetFilePermissions(dest);
+
+        if (isHidden)
+            File.SetAttributes(dest, File.GetAttributes(dest) | FileAttributes.Hidden);
+
+        return hash;
+    }
+
     private void CopyDirectory(string source, string dest, bool stripPermissions, bool preserveHidden)
     {
         Directory.CreateDirectory(dest);
