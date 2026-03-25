@@ -41,7 +41,8 @@
                         <DataTemplate>
                             <Border x:Name="LegendBorder" CornerRadius="4" Padding="8,6" Margin="0,1"
                                     Background="Transparent" Cursor="Hand"
-                                    MouseEnter="Legend_MouseEnter" MouseLeave="Legend_MouseLeave">
+                                    MouseEnter="Legend_MouseEnter" MouseLeave="Legend_MouseLeave"
+                                    MouseLeftButtonUp="Legend_Click">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="16"/>

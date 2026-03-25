@@ -402,6 +402,19 @@ public partial class MainWindow : Window
         header.Content = GetBaseHeaderText(header);
     }
 
+    // -- Pie chart slice navigation --
+    private void TopPieChart_SliceClicked(object? sender, PieSlice slice)
+    {
+        if (slice.IsDirectory && slice.FullPath != null)
+            Vm.NavigateTopCommand.Execute(slice.FullPath);
+    }
+
+    private void BottomPieChart_SliceClicked(object? sender, PieSlice slice)
+    {
+        if (slice.IsDirectory && slice.FullPath != null)
+            Vm.NavigateBottomCommand.Execute(slice.FullPath);
+    }
+
     // -- Helpers --
     private static List<FileSystemItem> GetSelectedItems(ListView list) =>
         list.SelectedItems.Cast<FileSystemItem>().ToList();

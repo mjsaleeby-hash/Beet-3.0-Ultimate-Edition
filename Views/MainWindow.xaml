@@ -453,6 +453,7 @@
                     TotalSize="{Binding TopTotalSize}"
                     Subtitle="Top 10 largest items"
                     Visibility="{Binding IsTopVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                    SliceClicked="TopPieChart_SliceClicked"
                     Panel.ZIndex="1"/>
                 <ListView x:Name="TopPaneList"
                           Visibility="{Binding IsTopVisualMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"
@@ -582,6 +583,7 @@
                         TotalSize="{Binding TopTotalSize}"
                         Subtitle="Top 10 largest items"
                         Visibility="{Binding IsTopVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                        SliceClicked="TopPieChart_SliceClicked"
                         Panel.ZIndex="1"/>
                     <ListView x:Name="SplitTopList"
                               Visibility="{Binding IsTopVisualMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"
@@ -738,6 +740,7 @@
                         Slices="{Binding BottomPieSlices}"
                         TotalSize="{Binding BottomTotalSize}"
                         Subtitle="Top 10 largest items"
+                        SliceClicked="BottomPieChart_SliceClicked"
                         Visibility="{Binding IsBottomVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
                         Panel.ZIndex="1"/>
                     <ListView Grid.Column="2" x:Name="SplitBottomList"

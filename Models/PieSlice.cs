@@ -15,6 +15,8 @@ public class PieSlice : INotifyPropertyChanged
     public required double SweepAngle { get; init; }
     public required Color FillColor { get; init; }
     public int Index { get; init; }
+    public string? FullPath { get; init; }
+    public bool IsDirectory { get; init; }
 
     private bool _isHighlighted;
     public bool IsHighlighted

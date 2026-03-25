@@ -844,6 +844,8 @@ public partial class MainViewModel : ObservableObject
                 SweepAngle = sweep,
                 FillColor = PieColors[i % PieColors.Length],
                 Index = i,
+                FullPath = sorted[i].FullPath,
+                IsDirectory = sorted[i].IsDirectory,
             });
             angle += sweep;
         }

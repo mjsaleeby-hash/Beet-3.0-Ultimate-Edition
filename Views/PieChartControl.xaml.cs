@@ -13,6 +13,11 @@ public partial class PieChartControl : UserControl
 {
     private readonly List<Path> _slicePaths = new();
 
+    /// <summary>
+    /// Raised when a pie slice or legend item is clicked.
+    /// </summary>
+    public event EventHandler<PieSlice>? SliceClicked;
+
     public static readonly DependencyProperty SlicesProperty =
         DependencyProperty.Register(nameof(Slices), typeof(ObservableCollection<PieSlice>),
             typeof(PieChartControl), new PropertyMetadata(null, OnSlicesChanged));
@@ -87,6 +92,7 @@ public partial class PieChartControl : UserControl
         {
             oldPath.MouseEnter -= Slice_MouseEnter;
             oldPath.MouseLeave -= Slice_MouseLeave;
+            oldPath.MouseLeftButtonUp -= Slice_Click;
         }
 
         PieCanvas.Children.Clear();
@@ -123,6 +129,7 @@ public partial class PieChartControl : UserControl
             path.Tag = slice;
             path.MouseEnter += Slice_MouseEnter;
             path.MouseLeave += Slice_MouseLeave;
+            path.MouseLeftButtonUp += Slice_Click;
             _slicePaths.Add(path);
             PieCanvas.Children.Add(path);
         }
@@ -221,6 +228,18 @@ public partial class PieChartControl : UserControl
         {
             HighlightSlice(slice.Index, false);
         }
+    }
+
+    private void Slice_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Path path && path.Tag is PieSlice slice)
+            SliceClicked?.Invoke(this, slice);
+    }
+
+    private void Legend_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
+            SliceClicked?.Invoke(this, slice);
     }
 
     private void HighlightSlice(int index, bool highlight)
