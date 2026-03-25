@@ -760,7 +760,7 @@ public partial class MainViewModel : ObservableObject
         dialog.ShowDialog();
     }
 
-    private static string FormatTransferResult(TransferResult result)
+    internal static string FormatTransferResult(TransferResult result)
     {
         var parts = new List<string>();
         if (result.FilesCopied > 0) parts.Add($"{result.FilesCopied} copied");
@@ -805,7 +805,7 @@ public partial class MainViewModel : ObservableObject
             BuildPieSlices(BottomPaneItems, BottomPieSlices, false);
     }
 
-    private void BuildPieSlices(ObservableCollection<FileSystemItem> items, ObservableCollection<PieSlice> slices, bool isTop)
+    internal void BuildPieSlices(ObservableCollection<FileSystemItem> items, ObservableCollection<PieSlice> slices, bool isTop)
     {
         slices.Clear();
 

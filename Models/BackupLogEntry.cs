@@ -6,7 +6,7 @@ public enum BackupStatus { Scheduled, Running, Complete, Failed }
 
 public partial class BackupLogEntry : ObservableObject
 {
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; set; } = Guid.NewGuid();
     public string JobName { get; set; } = string.Empty;
     public string SourcePath { get; set; } = string.Empty;
     public string DestinationPath { get; set; } = string.Empty;
