@@ -1,3 +1,4 @@
+using BeetsBackup.Models;
 using BeetsBackup.Services;
 using System.IO;
 using System.Text;
@@ -10,17 +11,31 @@ namespace BeetsBackup.Views;
 public partial class LogDialog : Window
 {
     private readonly BackupLogService _log;
+    private readonly SchedulerService _scheduler;
 
-    public LogDialog(BackupLogService log)
+    public LogDialog(BackupLogService log, SchedulerService scheduler)
     {
         InitializeComponent();
         _log = log;
+        _scheduler = scheduler;
         LogList.ItemsSource = _log.Entries;
     }
 
     private void ClearLog_Click(object sender, RoutedEventArgs e)
     {
         _log.Clear();
+    }
+
+    private async void Retry_Click(object sender, RoutedEventArgs e)
+    {
+        if (LogList.SelectedItem is not BackupLogEntry entry) return;
+        if (entry.Status != BackupStatus.Failed) return;
+        if (entry.SourcePaths.Count == 0)
+        {
+            MessageBox.Show("This entry does not have enough information to retry.", "Retry", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        await _scheduler.RetryAsync(entry);
     }
 
     private void ExportCsv_Click(object sender, RoutedEventArgs e)
@@ -40,6 +55,13 @@ public partial class LogDialog : Window
         }
         File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
         MessageBox.Show($"Log exported to {dialog.FileName}", "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void LogList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        RetryButton.IsEnabled = LogList.SelectedItem is BackupLogEntry entry
+            && entry.Status == BackupStatus.Failed
+            && entry.SourcePaths.Count > 0;
     }
 
     private static string Escape(string value) => value.Replace("\"", "\"\"");

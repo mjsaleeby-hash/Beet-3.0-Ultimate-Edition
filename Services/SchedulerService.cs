@@ -106,6 +106,9 @@ public class SchedulerService : IDisposable
             JobName = job.Name,
             SourcePath = string.Join("; ", job.SourcePaths),
             DestinationPath = job.DestinationPath,
+            SourcePaths = new List<string>(job.SourcePaths),
+            StripPermissions = job.StripPermissions,
+            TransferMode = job.TransferMode,
             Status = BackupStatus.Running,
             Message = "Transfer in progress..."
         };
@@ -136,6 +139,52 @@ public class SchedulerService : IDisposable
         catch (Exception ex)
         {
             FileLogger.LogException($"Scheduled job failed: '{job.Name}'", ex);
+            _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, ex.Message);
+        }
+    }
+
+    public async Task RetryAsync(BackupLogEntry failedEntry)
+    {
+        if (failedEntry.SourcePaths.Count == 0) return;
+
+        var logEntry = new BackupLogEntry
+        {
+            JobName = failedEntry.JobName + " (retry)",
+            SourcePath = failedEntry.SourcePath,
+            DestinationPath = failedEntry.DestinationPath,
+            SourcePaths = new List<string>(failedEntry.SourcePaths),
+            StripPermissions = failedEntry.StripPermissions,
+            TransferMode = failedEntry.TransferMode,
+            Status = BackupStatus.Running,
+            Message = "Retrying transfer..."
+        };
+        _log.Add(logEntry);
+        FileLogger.Info($"Retry started: '{logEntry.JobName}' — {logEntry.SourcePath} → {logEntry.DestinationPath}");
+
+        try
+        {
+            var percentProgress = new Progress<int>(pct =>
+                _log.UpdateProgress(logEntry.Id, pct));
+
+            var result = await _transfer.CopyAsync(
+                logEntry.SourcePaths,
+                logEntry.DestinationPath,
+                logEntry.StripPermissions,
+                logEntry.TransferMode,
+                progressPercent: percentProgress);
+
+            _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
+                result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles);
+            FileLogger.Info($"Retry completed: '{logEntry.JobName}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped");
+        }
+        catch (InsufficientSpaceException)
+        {
+            FileLogger.Error($"Retry failed: '{logEntry.JobName}' — insufficient disk space");
+            _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, "Not enough disk space on the destination drive.");
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogException($"Retry failed: '{logEntry.JobName}'", ex);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, ex.Message);
         }
     }

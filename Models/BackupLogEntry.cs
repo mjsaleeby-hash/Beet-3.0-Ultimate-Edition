@@ -10,6 +10,9 @@ public partial class BackupLogEntry : ObservableObject
     public string JobName { get; set; } = string.Empty;
     public string SourcePath { get; set; } = string.Empty;
     public string DestinationPath { get; set; } = string.Empty;
+    public List<string> SourcePaths { get; set; } = new();
+    public bool StripPermissions { get; set; }
+    public TransferMode TransferMode { get; set; } = TransferMode.SkipExisting;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusDisplay))]
     [NotifyPropertyChangedFor(nameof(StatsDisplay))]

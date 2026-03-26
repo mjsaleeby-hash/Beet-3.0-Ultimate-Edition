@@ -30,7 +30,8 @@
                   Background="White"
                   BorderBrush="#D0D0D0"
                   BorderThickness="1"
-                  Foreground="#1A1A1A">
+                  Foreground="#1A1A1A"
+                  SelectionChanged="LogList_SelectionChanged">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="Time" Width="150" DisplayMemberBinding="{Binding TimestampDisplay}"/>
@@ -92,6 +93,11 @@
         </ListView>
 
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="RetryButton" Content="Retry"
+                    Background="#F7630C" Foreground="White"
+                    BorderThickness="0"
+                    Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
+                    Click="Retry_Click" IsEnabled="False"/>
             <Button Content="Export CSV"
                     Background="#EBEBEB" Foreground="#1A1A1A"
                     BorderBrush="#D0D0D0" BorderThickness="1"

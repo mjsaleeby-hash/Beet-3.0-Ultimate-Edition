@@ -831,7 +831,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void OpenLogDialog()
     {
-        var dialog = new LogDialog(_log)
+        var dialog = new LogDialog(_log, _scheduler)
         {
             Owner = System.Windows.Application.Current.MainWindow
         };
