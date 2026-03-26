@@ -633,20 +633,25 @@ public partial class MainViewModel : ObservableObject
         if (mode == null) return;
         BeginTransfer();
         StatusMessage = "Copying...";
+        FileLogger.Info($"Copy started: {items.Count} item(s) → {BottomCurrentPath} (mode={mode.Value})");
         var progress = new Progress<string>(OnTransferProgress);
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
         {
             var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
             await NavigateBottom(BottomCurrentPath);
-            EndTransfer(FormatTransferResult(result));
+            var summary = FormatTransferResult(result);
+            FileLogger.Info($"Copy completed: {summary}");
+            EndTransfer(summary);
         }
         catch (OperationCanceledException)
         {
+            FileLogger.Warn("Copy cancelled by user");
             EndTransfer("Transfer stopped.");
         }
-        catch (InsufficientSpaceException)
+        catch (InsufficientSpaceException ex)
         {
+            FileLogger.Error($"Copy failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
@@ -660,20 +665,25 @@ public partial class MainViewModel : ObservableObject
         if (mode == null) return;
         BeginTransfer();
         StatusMessage = "Copying...";
+        FileLogger.Info($"Copy started: {items.Count} item(s) → {TopCurrentPath} (mode={mode.Value})");
         var progress = new Progress<string>(OnTransferProgress);
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
         {
             var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
             await NavigateTop(TopCurrentPath);
-            EndTransfer(FormatTransferResult(result));
+            var summary = FormatTransferResult(result);
+            FileLogger.Info($"Copy completed: {summary}");
+            EndTransfer(summary);
         }
         catch (OperationCanceledException)
         {
+            FileLogger.Warn("Copy cancelled by user");
             EndTransfer("Transfer stopped.");
         }
-        catch (InsufficientSpaceException)
+        catch (InsufficientSpaceException ex)
         {
+            FileLogger.Error($"Copy failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
@@ -687,6 +697,7 @@ public partial class MainViewModel : ObservableObject
         if (mode == null) return;
         BeginTransfer();
         StatusMessage = "Moving...";
+        FileLogger.Info($"Move started: {items.Count} item(s) → {BottomCurrentPath} (mode={mode.Value})");
         var progress = new Progress<string>(OnTransferProgress);
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
@@ -694,14 +705,18 @@ public partial class MainViewModel : ObservableObject
             var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
             await NavigateTop(TopCurrentPath);
             await NavigateBottom(BottomCurrentPath);
-            EndTransfer(FormatTransferResult(result));
+            var summary = FormatTransferResult(result);
+            FileLogger.Info($"Move completed: {summary}");
+            EndTransfer(summary);
         }
         catch (OperationCanceledException)
         {
+            FileLogger.Warn("Move cancelled by user");
             EndTransfer("Transfer stopped.");
         }
-        catch (InsufficientSpaceException)
+        catch (InsufficientSpaceException ex)
         {
+            FileLogger.Error($"Move failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
@@ -715,6 +730,7 @@ public partial class MainViewModel : ObservableObject
         if (mode == null) return;
         BeginTransfer();
         StatusMessage = "Moving...";
+        FileLogger.Info($"Move started: {items.Count} item(s) → {TopCurrentPath} (mode={mode.Value})");
         var progress = new Progress<string>(OnTransferProgress);
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
@@ -722,14 +738,18 @@ public partial class MainViewModel : ObservableObject
             var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
             await NavigateTop(TopCurrentPath);
             await NavigateBottom(BottomCurrentPath);
-            EndTransfer(FormatTransferResult(result));
+            var summary = FormatTransferResult(result);
+            FileLogger.Info($"Move completed: {summary}");
+            EndTransfer(summary);
         }
         catch (OperationCanceledException)
         {
+            FileLogger.Warn("Move cancelled by user");
             EndTransfer("Transfer stopped.");
         }
-        catch (InsufficientSpaceException)
+        catch (InsufficientSpaceException ex)
         {
+            FileLogger.Error($"Move failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
@@ -738,6 +758,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void DeleteItem(FileSystemItem item)
     {
+        FileLogger.Info($"Delete: {item.FullPath}");
         _fs.DeleteItem(item.FullPath);
         TopPaneItems.Remove(item);
         BottomPaneItems.Remove(item);
@@ -747,6 +768,7 @@ public partial class MainViewModel : ObservableObject
     private async Task RenameItem((FileSystemItem item, string newName) args)
     {
         var (item, newName) = args;
+        FileLogger.Info($"Rename: {item.FullPath} → {newName}");
         _fs.RenameItem(item.FullPath, newName);
         if (!string.IsNullOrEmpty(TopCurrentPath))
             await NavigateTop(TopCurrentPath);

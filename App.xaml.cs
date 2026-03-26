@@ -2,7 +2,6 @@ using BeetsBackup.Services;
 using BeetsBackup.ViewModels;
 using BeetsBackup.Views;
 using Microsoft.Extensions.DependencyInjection;
-using System.IO;
 using System.Threading;
 using System.Windows.Threading;
 using Application = System.Windows.Application;
@@ -15,10 +14,6 @@ public partial class App : Application
 {
     public static IServiceProvider Services { get; private set; } = null!;
     private Mutex? _singleInstanceMutex;
-
-    private static readonly string CrashLogPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Beet's Backup", "crash.log");
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -39,6 +34,8 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
+        FileLogger.Info("═══ Application starting ═══");
+
         var services = new ServiceCollection();
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
@@ -51,10 +48,13 @@ public partial class App : Application
 
         var mainWindow = Services.GetRequiredService<MainWindow>();
         mainWindow.Show();
+
+        FileLogger.Info("Application started successfully");
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
+        FileLogger.Info("═══ Application shutting down ═══");
         try { _singleInstanceMutex?.ReleaseMutex(); }
         catch (ApplicationException) { /* Mutex not owned — second instance path */ }
         _singleInstanceMutex?.Dispose();
@@ -63,31 +63,20 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        LogCrash("DispatcherUnhandledException", e.Exception);
+        FileLogger.WriteCrashDump("DispatcherUnhandledException", e.Exception);
         e.Handled = true; // Prevent crash on recoverable UI errors
     }
 
     private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         if (e.ExceptionObject is Exception ex)
-            LogCrash("AppDomain.UnhandledException", ex);
+            FileLogger.WriteCrashDump("AppDomain.UnhandledException", ex);
     }
 
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        LogCrash("TaskScheduler.UnobservedTaskException", e.Exception);
+        FileLogger.WriteCrashDump("TaskScheduler.UnobservedTaskException", e.Exception);
         e.SetObserved();
-    }
-
-    private static void LogCrash(string source, Exception ex)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(CrashLogPath)!);
-            var entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}\n{ex}\n\n";
-            File.AppendAllText(CrashLogPath, entry);
-        }
-        catch { /* Last resort — nothing we can do */ }
     }
 
     private static void ConfigureServices(ServiceCollection services)

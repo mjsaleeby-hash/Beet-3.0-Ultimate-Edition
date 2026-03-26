@@ -163,16 +163,19 @@ public class TransferService
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
                 {
                     result.DiskFullErrors++;
+                    FileLogger.Error($"Disk full: {file}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(file)} — not enough space");
                 }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
                 {
                     result.FilesLocked++;
+                    FileLogger.Warn($"File locked: {file}");
                     progress?.Report($"LOCKED: {Path.GetFileName(file)} — file is in use");
                 }
                 catch (Exception ex)
                 {
                     result.FilesFailed++;
+                    FileLogger.LogException($"File copy failed: {file}", ex);
                     progress?.Report($"ERROR: {Path.GetFileName(file)} — {ex.Message}");
                 }
             }
@@ -187,16 +190,19 @@ public class TransferService
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
                 {
                     result.DiskFullErrors++;
+                    FileLogger.Error($"Disk full: {dir}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(dir)} — not enough space");
                 }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
                 {
                     result.FilesLocked++;
+                    FileLogger.Warn($"Directory locked: {dir}");
                     progress?.Report($"LOCKED: {Path.GetFileName(dir)} — file is in use");
                 }
                 catch (Exception ex)
                 {
                     result.DirectoriesFailed++;
+                    FileLogger.LogException($"Directory copy failed: {dir}", ex);
                     progress?.Report($"ERROR: {Path.GetFileName(dir)} — {ex.Message}");
                 }
             }

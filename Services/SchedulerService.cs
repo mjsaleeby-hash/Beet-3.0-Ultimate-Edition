@@ -94,7 +94,7 @@ public class SchedulerService : IDisposable
             catch (Exception ex)
             {
                 LastSchedulerError = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Scheduler error: {ex.Message}";
-                System.Diagnostics.Debug.WriteLine($"Scheduler error: {ex}");
+                FileLogger.LogException("Scheduler loop error", ex);
             }
         }
     }
@@ -110,6 +110,7 @@ public class SchedulerService : IDisposable
             Message = "Transfer in progress..."
         };
         _log.Add(logEntry);
+        FileLogger.Info($"Scheduled job started: '{job.Name}' — {string.Join("; ", job.SourcePaths)} → {job.DestinationPath}");
 
         try
         {
@@ -125,13 +126,16 @@ public class SchedulerService : IDisposable
 
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
                 result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles);
+            FileLogger.Info($"Scheduled job completed: '{job.Name}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped");
         }
         catch (InsufficientSpaceException)
         {
+            FileLogger.Error($"Scheduled job failed: '{job.Name}' — insufficient disk space");
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, "Not enough disk space on the destination drive.");
         }
         catch (Exception ex)
         {
+            FileLogger.LogException($"Scheduled job failed: '{job.Name}'", ex);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, ex.Message);
         }
     }
