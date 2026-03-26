@@ -92,27 +92,62 @@
             </ListView.View>
         </ListView>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="RetryButton" Content="Retry"
-                    Background="#F7630C" Foreground="White"
-                    BorderThickness="0"
-                    Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
-                    Click="Retry_Click" IsEnabled="False"/>
-            <Button Content="Export CSV"
-                    Background="#EBEBEB" Foreground="#1A1A1A"
-                    BorderBrush="#D0D0D0" BorderThickness="1"
-                    Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
-                    Click="ExportCsv_Click"/>
-            <Button Content="Clear Log"
-                    Background="#EBEBEB" Foreground="#1A1A1A"
-                    BorderBrush="#D0D0D0" BorderThickness="1"
-                    Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
-                    Click="ClearLog_Click"/>
-            <Button Content="Close"
-                    Background="#0078D4" Foreground="White"
-                    BorderThickness="0"
+        <Grid Grid.Row="4">
+            <Button x:Name="RetryButton" Content="&#x1F504; Retry Failed Job"
                     Padding="16,8" Cursor="Hand"
-                    Click="Close_Click"/>
-        </StackPanel>
+                    HorizontalAlignment="Left"
+                    Click="Retry_Click" IsEnabled="False"
+                    ToolTip="Select a failed entry to retry">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Background="#F7630C" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter TargetName="Bd" Property="Background" Value="#CCCCCC"/>
+                                        </Trigger>
+                                        <MultiTrigger>
+                                            <MultiTrigger.Conditions>
+                                                <Condition Property="IsMouseOver" Value="True"/>
+                                                <Condition Property="IsEnabled" Value="True"/>
+                                            </MultiTrigger.Conditions>
+                                            <Setter TargetName="Bd" Property="Background" Value="#E85A00"/>
+                                        </MultiTrigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Foreground" Value="White"/>
+                        <Setter Property="FontWeight" Value="SemiBold"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#888888"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Export CSV"
+                        Background="#EBEBEB" Foreground="#1A1A1A"
+                        BorderBrush="#D0D0D0" BorderThickness="1"
+                        Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
+                        Click="ExportCsv_Click"/>
+                <Button Content="Clear Log"
+                        Background="#EBEBEB" Foreground="#1A1A1A"
+                        BorderBrush="#D0D0D0" BorderThickness="1"
+                        Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
+                        Click="ClearLog_Click"/>
+                <Button Content="Close"
+                        Background="#0078D4" Foreground="White"
+                        BorderThickness="0"
+                        Padding="16,8" Cursor="Hand"
+                        Click="Close_Click"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

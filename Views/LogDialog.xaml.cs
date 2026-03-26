@@ -30,11 +30,14 @@ public partial class LogDialog : Window
     {
         if (LogList.SelectedItem is not BackupLogEntry entry) return;
         if (entry.Status != BackupStatus.Failed) return;
-        if (entry.SourcePaths.Count == 0)
+        if (!HasRetryInfo(entry))
         {
             MessageBox.Show("This entry does not have enough information to retry.", "Retry", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        // Back-fill SourcePaths from display string for older entries
+        if (entry.SourcePaths.Count == 0 && !string.IsNullOrEmpty(entry.SourcePath))
+            entry.SourcePaths = entry.SourcePath.Split("; ", StringSplitOptions.RemoveEmptyEntries).ToList();
         await _scheduler.RetryAsync(entry);
     }
 
@@ -61,8 +64,12 @@ public partial class LogDialog : Window
     {
         RetryButton.IsEnabled = LogList.SelectedItem is BackupLogEntry entry
             && entry.Status == BackupStatus.Failed
-            && entry.SourcePaths.Count > 0;
+            && HasRetryInfo(entry);
     }
+
+    private static bool HasRetryInfo(BackupLogEntry entry)
+        => (entry.SourcePaths.Count > 0 || !string.IsNullOrEmpty(entry.SourcePath))
+           && !string.IsNullOrEmpty(entry.DestinationPath);
 
     private static string Escape(string value) => value.Replace("\"", "\"\"");
 
