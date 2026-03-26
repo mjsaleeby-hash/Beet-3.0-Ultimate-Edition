@@ -48,6 +48,39 @@ public partial class PieChartControl : UserControl
         set => SetValue(SubtitleProperty, value);
     }
 
+    public static readonly DependencyProperty IsCalculatingProperty =
+        DependencyProperty.Register(nameof(IsCalculating), typeof(bool),
+            typeof(PieChartControl), new PropertyMetadata(false, OnIsCalculatingChanged));
+
+    public bool IsCalculating
+    {
+        get => (bool)GetValue(IsCalculatingProperty);
+        set => SetValue(IsCalculatingProperty, value);
+    }
+
+    private static void OnIsCalculatingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var control = (PieChartControl)d;
+        var calculating = (bool)e.NewValue;
+        var hasSlices = control.Slices != null && control.Slices.Count > 0;
+        if (calculating && !hasSlices)
+        {
+            control.ChartContent.Visibility = Visibility.Visible;
+            control.SelectDriveOverlay.Visibility = Visibility.Collapsed;
+            control.CalculatingOverlay.Visibility = Visibility.Visible;
+        }
+        else if (!calculating && !hasSlices)
+        {
+            control.ChartContent.Visibility = Visibility.Collapsed;
+            control.SelectDriveOverlay.Visibility = Visibility.Visible;
+            control.CalculatingOverlay.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            control.CalculatingOverlay.Visibility = Visibility.Collapsed;
+        }
+    }
+
     public PieChartControl()
     {
         InitializeComponent();
@@ -102,11 +135,24 @@ public partial class PieChartControl : UserControl
         if (slices == null || slices.Count == 0)
         {
             LegendList.ItemsSource = null;
-            EmptyText.Visibility = Visibility.Visible;
+            if (IsCalculating)
+            {
+                ChartContent.Visibility = Visibility.Visible;
+                SelectDriveOverlay.Visibility = Visibility.Collapsed;
+                CalculatingOverlay.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ChartContent.Visibility = Visibility.Collapsed;
+                SelectDriveOverlay.Visibility = Visibility.Visible;
+                CalculatingOverlay.Visibility = Visibility.Collapsed;
+            }
             return;
         }
 
-        EmptyText.Visibility = Visibility.Collapsed;
+        ChartContent.Visibility = Visibility.Visible;
+        SelectDriveOverlay.Visibility = Visibility.Collapsed;
+        CalculatingOverlay.Visibility = Visibility.Collapsed;
         LegendList.ItemsSource = slices;
 
         const double cx = 140, cy = 140, radius = 120;

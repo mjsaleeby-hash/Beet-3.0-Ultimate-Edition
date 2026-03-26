@@ -7,6 +7,15 @@
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource SurfaceBrush}">
+        <!-- Empty state: select a drive or folder -->
+        <StackPanel x:Name="SelectDriveOverlay" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Visibility="Visible">
+            <TextBlock Text="Select a drive or folder" FontSize="16" FontWeight="SemiBold"
+                       Foreground="{DynamicResource SecondaryTextBrush}" HorizontalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Main chart content -->
+        <Grid x:Name="ChartContent" Visibility="Collapsed">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
@@ -26,6 +35,18 @@
                            FontSize="11"
                            Foreground="{DynamicResource SecondaryTextBrush}"/>
             </StackPanel>
+            <!-- Calculating overlay -->
+            <Border x:Name="CalculatingOverlay" Background="{DynamicResource SurfaceBrush}"
+                    CornerRadius="140" Opacity="0.85" Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="&#x23F3;" FontSize="32" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                    <TextBlock Text="Calculating sizes..." FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Chart will update as data arrives" FontSize="11"
+                               Foreground="{DynamicResource SecondaryTextBrush}" HorizontalAlignment="Center"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
         </Grid>
 
         <!-- Legend -->
@@ -88,11 +109,8 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <!-- Empty state -->
-                <TextBlock x:Name="EmptyText" Text="Navigate to a folder to see size distribution."
-                           FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}"
-                           Margin="0,20,0,0" Visibility="Collapsed"/>
             </StackPanel>
         </ScrollViewer>
+        </Grid>
     </Grid>
 </UserControl>

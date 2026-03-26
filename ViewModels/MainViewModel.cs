@@ -83,6 +83,8 @@ public partial class MainViewModel : ObservableObject
     // --- Visual mode (pie chart) ---
     [ObservableProperty] private bool _isTopVisualMode;
     [ObservableProperty] private bool _isBottomVisualMode;
+    [ObservableProperty] private bool _isTopCalculating;
+    [ObservableProperty] private bool _isBottomCalculating;
     [ObservableProperty] private string _topTotalSize = "";
     [ObservableProperty] private string _bottomTotalSize = "";
     public ObservableCollection<PieSlice> TopPieSlices { get; } = new();
@@ -244,9 +246,14 @@ public partial class MainViewModel : ObservableObject
         foreach (var item in children)
             TopPaneItems.Add(item);
         _filteredTopView?.Refresh();
-        _ = CalculateFolderSizesAsync(TopPaneItems, _topSizeCts.Token)
-            .ContinueWith(_ => System.Windows.Application.Current?.Dispatcher.BeginInvoke(RebuildPieSlicesIfNeeded),
-                CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+        IsTopCalculating = true;
+        if (IsTopVisualMode)
+        {
+            TopPieSlices.Clear();
+            TopTotalSize = "";
+        }
+        var sizeCts = _topSizeCts;
+        _ = CalculateFolderSizesWithProgressAsync(TopPaneItems, TopPieSlices, true, sizeCts.Token);
 
         if (!_isNavigatingHistory)
         {
@@ -279,9 +286,14 @@ public partial class MainViewModel : ObservableObject
         foreach (var item in children)
             BottomPaneItems.Add(item);
         _filteredBottomView?.Refresh();
-        _ = CalculateFolderSizesAsync(BottomPaneItems, _bottomSizeCts.Token)
-            .ContinueWith(_ => System.Windows.Application.Current?.Dispatcher.BeginInvoke(RebuildPieSlicesIfNeeded),
-                CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+        IsBottomCalculating = true;
+        if (IsBottomVisualMode)
+        {
+            BottomPieSlices.Clear();
+            BottomTotalSize = "";
+        }
+        var sizeCts = _bottomSizeCts;
+        _ = CalculateFolderSizesWithProgressAsync(BottomPaneItems, BottomPieSlices, false, sizeCts.Token);
 
         if (!_isNavigatingBottomHistory)
         {
@@ -306,6 +318,50 @@ public partial class MainViewModel : ObservableObject
         await Parallel.ForEachAsync(directories, parallelOptions, async (dir, ct) =>
         {
             await dir.CalculateDirectorySizeAsync(ct);
+        });
+    }
+
+    private async Task CalculateFolderSizesWithProgressAsync(
+        ObservableCollection<FileSystemItem> items,
+        ObservableCollection<PieSlice> slices,
+        bool isTop,
+        CancellationToken cancellationToken)
+    {
+        var directories = items.Where(i => i.IsDirectory).ToList();
+        int completed = 0;
+        int total = directories.Count;
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Environment.ProcessorCount,
+            CancellationToken = cancellationToken
+        };
+
+        // Periodic pie chart refresh while calculating
+        using var refreshTimer = new System.Threading.Timer(_ =>
+        {
+            if (cancellationToken.IsCancellationRequested) return;
+            if ((isTop && IsTopVisualMode) || (!isTop && IsBottomVisualMode))
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => BuildPieSlices(items, slices, isTop));
+        }, null, TimeSpan.FromMilliseconds(800), TimeSpan.FromMilliseconds(800));
+
+        try
+        {
+            await Parallel.ForEachAsync(directories, parallelOptions, async (dir, ct) =>
+            {
+                await dir.CalculateDirectorySizeAsync(ct);
+                Interlocked.Increment(ref completed);
+            });
+        }
+        catch (OperationCanceledException) { return; }
+
+        refreshTimer.Change(Timeout.Infinite, Timeout.Infinite);
+
+        await System.Windows.Application.Current!.Dispatcher.InvokeAsync(() =>
+        {
+            if (isTop) IsTopCalculating = false;
+            else IsBottomCalculating = false;
+            RebuildPieSlicesIfNeeded();
         });
     }
 

@@ -451,6 +451,7 @@
                 <views:PieChartControl
                     Slices="{Binding TopPieSlices}"
                     TotalSize="{Binding TopTotalSize}"
+                    IsCalculating="{Binding IsTopCalculating}"
                     Subtitle="Top 10 largest items"
                     Visibility="{Binding IsTopVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
                     SliceClicked="TopPieChart_SliceClicked"
@@ -581,6 +582,7 @@
                     <views:PieChartControl
                         Slices="{Binding TopPieSlices}"
                         TotalSize="{Binding TopTotalSize}"
+                        IsCalculating="{Binding IsTopCalculating}"
                         Subtitle="Top 10 largest items"
                         Visibility="{Binding IsTopVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
                         SliceClicked="TopPieChart_SliceClicked"
@@ -739,6 +741,7 @@
                     <views:PieChartControl Grid.Column="2"
                         Slices="{Binding BottomPieSlices}"
                         TotalSize="{Binding BottomTotalSize}"
+                        IsCalculating="{Binding IsBottomCalculating}"
                         Subtitle="Top 10 largest items"
                         SliceClicked="BottomPieChart_SliceClicked"
                         Visibility="{Binding IsBottomVisualMode, Converter={StaticResource BoolToVisibilityConverter}}"
