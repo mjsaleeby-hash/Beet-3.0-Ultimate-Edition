@@ -31,6 +31,7 @@ public class ScheduledJob
     [JsonConverter(typeof(NullableTimeSpanConverter))]
     public TimeSpan? RecurInterval { get; set; }
     public DateTime NextRun { get; set; }
+    public DateTime? LastRun { get; set; }
     public bool IsEnabled { get; set; } = true;
 
     public void UpdateNextRun()

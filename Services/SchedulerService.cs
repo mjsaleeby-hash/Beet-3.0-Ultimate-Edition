@@ -33,7 +33,34 @@ public class SchedulerService : IDisposable
         _log = log;
         LoadJobs();
         _ticker = new PeriodicTimer(TimeSpan.FromMinutes(1));
-        _runTask = RunAsync(_cts.Token);
+    }
+
+    public void Start()
+    {
+        if (_runTask == null)
+            _runTask = RunAsync(_cts.Token);
+    }
+
+    public List<ScheduledJob> GetMissedJobs()
+    {
+        lock (_jobsLock)
+        {
+            return _jobs.Where(j => j.IsEnabled && j.NextRun < DateTime.Now).ToList();
+        }
+    }
+
+    public void SkipMissedJob(Guid id)
+    {
+        lock (_jobsLock)
+        {
+            var job = _jobs.FirstOrDefault(j => j.Id == id);
+            if (job != null)
+            {
+                job.UpdateNextRun();
+                SaveJobs();
+            }
+        }
+        JobsChanged?.Invoke();
     }
 
     public void AddJob(ScheduledJob job)
@@ -140,6 +167,14 @@ public class SchedulerService : IDisposable
         {
             FileLogger.LogException($"Scheduled job failed: '{job.Name}'", ex);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, ex.Message);
+        }
+        finally
+        {
+            lock (_jobsLock)
+            {
+                job.LastRun = DateTime.Now;
+                SaveJobs();
+            }
         }
     }
 

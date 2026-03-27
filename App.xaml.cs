@@ -49,6 +49,21 @@ public partial class App : Application
         var mainWindow = Services.GetRequiredService<MainWindow>();
         mainWindow.Show();
 
+        // Check for missed backups before starting the scheduler
+        var scheduler = Services.GetRequiredService<SchedulerService>();
+        var missedJobs = scheduler.GetMissedJobs();
+        if (missedJobs.Count > 0)
+        {
+            FileLogger.Info($"Detected {missedJobs.Count} missed backup(s)");
+            var dialog = new MissedBackupsDialog(scheduler, missedJobs);
+            dialog.Owner = mainWindow;
+            dialog.ShowDialog();
+
+            if (!dialog.RunNow)
+                FileLogger.Info("User skipped missed backups");
+        }
+
+        scheduler.Start();
         FileLogger.Info("Application started successfully");
     }
 
