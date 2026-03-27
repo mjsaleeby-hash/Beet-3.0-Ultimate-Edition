@@ -252,7 +252,7 @@ public class TransferService
 
             if (result.TotalFiles > 0)
             {
-                var percent = (result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.DiskFullErrors + result.FilesLocked) * 100 / result.TotalFiles;
+                var percent = (int)Math.Round((result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.DiskFullErrors + result.FilesLocked) * 100.0 / result.TotalFiles);
                 progressPercent?.Report(Math.Min(percent, 100));
             }
         }

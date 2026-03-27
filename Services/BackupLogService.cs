@@ -33,6 +33,15 @@ public class BackupLogService
                 entry.Message = "Interrupted — the application closed while this job was running.";
                 anyStale = true;
             }
+
+            // Fix completed entries that still show a percentage as their message
+            foreach (var entry in Entries.Where(e => e.Status == BackupStatus.Complete && e.Message != null && e.Message.EndsWith("%")))
+            {
+                entry.Message = "Complete";
+                entry.ProgressPercent = 100;
+                anyStale = true;
+            }
+
             if (anyStale) Save();
         }
         catch { }
@@ -86,6 +95,7 @@ public class BackupLogService
             entry.BytesTransferred = bytesTransferred;
             entry.TotalFiles = totalFiles;
             entry.ProgressPercent = 100;
+            entry.Message = "Complete";
             entry.Timestamp = DateTime.Now;
             Save();
         });
