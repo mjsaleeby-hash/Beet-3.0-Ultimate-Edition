@@ -27,7 +27,8 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 
 ### Transfers
 
-- **Transfer mode selection:** Skip Existing, Keep Both, or Replace
+- **Transfer mode selection:** Skip Existing, Keep Both, Replace, or Mirror (Sync)
+- **Mirror mode** — copies new/changed files then deletes destination files not present in source; shows a prominent confirmation warning before proceeding
 - **NTFS permission stripping** — Remove Permissions checkbox strips ACLs so files work cleanly on other machines
 - **SHA-256 checksum verification** — Verify Checksums checkbox confirms integrity after every copy
 - **Pause, resume, and stop** controls during active transfers
@@ -38,8 +39,12 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 
 - **One-time or recurring** schedules (Daily, Weekly, Every 6 Hours, Every 12 Hours)
 - **Jobs persist to disk** and survive app restarts
+- **Missed backup detection** — on startup, detects jobs that were missed while the app was closed and prompts to run them immediately or skip
 - **Runs in the background** via a `PeriodicTimer` while the app is open
-- **Per-job settings** for transfer mode and permission stripping
+- **Per-job settings** for transfer mode, permission stripping, checksum verification, and exclusion filters
+- **Exclusion filters** — skip files by extension pattern (e.g. `*.tmp`, `*.log`) or exact name (e.g. `Thumbs.db`, `node_modules`)
+- **Backup size estimation** — "Estimate Size" button calculates total source size and file count respecting active filters; auto-runs at job start
+- **Pause / resume** for running scheduled jobs via the log dialog
 
 ### Backup Log
 
@@ -47,6 +52,8 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 - **Real-time progress bars** for currently running jobs
 - **Color-coded status** indicators: Scheduled, Running, Complete, Failed
 - **Detailed stats** including file counts and bytes transferred
+- **Pause button** for running jobs, always visible in the log dialog
+- **Retry button** for failed jobs
 - **Export to CSV** for external reporting
 - **Clear log** to reset history
 
@@ -98,10 +105,10 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 4. **Navigate** using back, forward, and up buttons or by double-clicking folders.
 5. **Search recursively** by typing a term in the search box on the top nav bar and pressing Enter or clicking the magnifying glass. Use the "X" button to cancel and return to the folder view. The filter textbox applies a secondary live filter on top of any search results.
 6. **Transfer files** between panes using toolbar buttons, the right-click context menu, or drag-and-drop.
-7. **Choose a transfer mode** (Skip Existing, Keep Both, or Replace) before starting a transfer.
+7. **Choose a transfer mode** (Skip Existing, Keep Both, Replace, or Mirror) before starting a transfer. Mirror mode will delete destination files not in the source — confirm the warning before proceeding.
 8. **Enable checksum verification** or **permission stripping** via the toolbar checkboxes as needed.
 9. **Monitor progress** in the status bar, and use pause, resume, or stop controls during transfers.
-10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, and permission options.
+10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, permission options, checksum verification, and exclusion filters. Use "Estimate Size" to preview how much data will be transferred.
 11. **Review backup history** in the log dialog to see past and active operations, then export to CSV if needed.
 
 > **Tip:** The app must remain running for scheduled backups to execute. To launch it automatically at login, create a shortcut to `BeetsBackup.exe` in your Windows startup folder (press `Win+R`, type `shell:startup`, and place the shortcut there).
