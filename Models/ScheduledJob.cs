@@ -25,7 +25,9 @@ public class ScheduledJob
         }
     }
     public bool StripPermissions { get; set; }
+    public bool VerifyChecksums { get; set; }
     public TransferMode TransferMode { get; set; } = TransferMode.SkipExisting;
+    public List<string> ExclusionFilters { get; set; } = new();
     public bool IsRecurring { get; set; }
 
     [JsonConverter(typeof(NullableTimeSpanConverter))]

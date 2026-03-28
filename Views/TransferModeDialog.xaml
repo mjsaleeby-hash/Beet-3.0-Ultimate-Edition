@@ -65,11 +65,21 @@
             </StackPanel>
         </Button>
 
-        <Button Style="{StaticResource ModeButton}" Click="Replace_Click" Margin="0,0,0,16">
+        <Button Style="{StaticResource ModeButton}" Click="Replace_Click" Margin="0,0,0,8">
             <StackPanel>
                 <TextBlock Text="Replace" FontWeight="SemiBold"
                            Foreground="{DynamicResource PrimaryTextBrush}"/>
                 <TextBlock Text="Overwrite existing files at the destination with the source files."
+                           Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Button>
+
+        <Button Style="{StaticResource ModeButton}" Click="Mirror_Click" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="Mirror (Sync)" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"/>
+                <TextBlock Text="Make destination an exact copy of source. Copies new/changed files. Any file in the destination not in the source — including files you added there manually — will be permanently deleted."
                            Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12"
                            TextWrapping="Wrap"/>
             </StackPanel>

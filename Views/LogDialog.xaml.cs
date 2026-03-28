@@ -60,11 +60,39 @@ public partial class LogDialog : Window
         MessageBox.Show($"Log exported to {dialog.FileName}", "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
+    private void PauseResume_Click(object sender, RoutedEventArgs e)
+    {
+        if (LogList.SelectedItem is not BackupLogEntry entry) return;
+        if (!_scheduler.IsJobRunning(entry.Id)) return;
+
+        if (_scheduler.IsJobPaused(entry.Id))
+        {
+            _scheduler.ResumeJob(entry.Id);
+            PauseResumeButton.Content = "Pause";
+        }
+        else
+        {
+            _scheduler.PauseJob(entry.Id);
+            PauseResumeButton.Content = "Resume";
+        }
+    }
+
     private void LogList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         RetryButton.IsEnabled = LogList.SelectedItem is BackupLogEntry entry
             && entry.Status == BackupStatus.Failed
             && HasRetryInfo(entry);
+
+        if (LogList.SelectedItem is BackupLogEntry selected && _scheduler.IsJobRunning(selected.Id))
+        {
+            PauseResumeButton.IsEnabled = true;
+            PauseResumeButton.Content = _scheduler.IsJobPaused(selected.Id) ? "Resume" : "Pause";
+        }
+        else
+        {
+            PauseResumeButton.IsEnabled = false;
+            PauseResumeButton.Content = "Pause";
+        }
     }
 
     private static bool HasRetryInfo(BackupLogEntry entry)

@@ -281,22 +281,6 @@
                         <Button Content="Log" Margin="0,0,12,0"
                                 Style="{StaticResource ToolbarButton}"
                                 Command="{Binding OpenLogDialogCommand}"/>
-
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
-                            <CheckBox IsChecked="{Binding RemovePermissions}"
-                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock Text="Remove Permissions"
-                                       Foreground="{DynamicResource PrimaryTextBrush}"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,0">
-                            <CheckBox IsChecked="{Binding VerifyChecksums}"
-                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock Text="Verify Checksums"
-                                       Foreground="{DynamicResource PrimaryTextBrush}"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
                     </WrapPanel>
 
                     <!-- Row 2: Secondary actions -->
@@ -339,6 +323,22 @@
                                 </TextBlock>
                             </StackPanel>
                         </Button>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                            <CheckBox IsChecked="{Binding RemovePermissions}"
+                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Remove Permissions"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,0">
+                            <CheckBox IsChecked="{Binding VerifyChecksums}"
+                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="Verify Checksums"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
                     </WrapPanel>
                 </Grid>
             </Grid>

@@ -11,4 +11,6 @@ public class TransferResult
     public int DiskFullErrors { get; set; }
     public int FilesLocked { get; set; }
     public int DirectoriesFailed { get; set; }
+    public int FilesDeleted { get; set; }
+    public int DirectoriesDeleted { get; set; }
 }

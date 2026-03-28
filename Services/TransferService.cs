@@ -54,7 +54,7 @@ public class TransferService
         bool stripPermissions, TransferMode mode = TransferMode.SkipExisting,
         IProgress<string>? progress = null, IProgress<int>? progressPercent = null,
         CancellationToken cancellationToken = default, ManualResetEventSlim? pauseToken = null,
-        bool verifyChecksums = false)
+        bool verifyChecksums = false, IReadOnlyList<string>? exclusions = null)
     {
         var result = new TransferResult();
         var sourceList = sourcePaths.ToList();
@@ -62,19 +62,33 @@ public class TransferService
         await Task.Run(() =>
         {
             CheckFreeSpace(sourceList, destinationDir);
-            result.TotalFiles = sourceList.Sum(s => CountFiles(s));
+            var excludeSet = exclusions != null && exclusions.Count > 0 ? exclusions : null;
+            result.TotalFiles = sourceList.Sum(s => CountFiles(s, excludeSet));
 
             foreach (var source in sourceList)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums);
+                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
                     progress?.Report($"Error: {Path.GetFileName(source)} — {ex.Message}");
+                }
+            }
+
+            if (mode == TransferMode.Mirror)
+            {
+                progress?.Report("Mirror: removing extra files from destination...");
+                foreach (var source in sourceList)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var sourceName = Path.GetFileName(source);
+                    var destSubDir = string.IsNullOrEmpty(sourceName) ? destinationDir : Path.Combine(destinationDir, sourceName);
+                    if (Directory.Exists(source) && Directory.Exists(destSubDir))
+                        MirrorCleanup(source, destSubDir, progress, result, cancellationToken);
                 }
             }
         }, cancellationToken);
@@ -123,7 +137,7 @@ public class TransferService
     private void CopyItem(string sourcePath, string destinationDir, bool stripPermissions,
         TransferMode mode, IProgress<string>? progress, IProgress<int>? progressPercent,
         TransferResult result, CancellationToken ct, ManualResetEventSlim? pauseToken,
-        bool verifyChecksums)
+        bool verifyChecksums, IReadOnlyList<string>? exclusions = null)
     {
         pauseToken?.Wait(ct);
         ct.ThrowIfCancellationRequested();
@@ -131,6 +145,13 @@ public class TransferService
         var attr = File.GetAttributes(sourcePath);
         bool isDirectory = attr.HasFlag(FileAttributes.Directory);
         var name = Path.GetFileName(sourcePath);
+
+        if (exclusions != null && IsExcluded(name, exclusions))
+        {
+            if (!isDirectory)
+                result.FilesSkipped++;
+            return;
+        }
 
         if (isDirectory)
         {
@@ -157,7 +178,7 @@ public class TransferService
             {
                 try
                 {
-                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums);
+                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -184,7 +205,7 @@ public class TransferService
             {
                 try
                 {
-                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums);
+                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -216,6 +237,7 @@ public class TransferService
                 switch (mode)
                 {
                     case TransferMode.SkipExisting:
+                    case TransferMode.Mirror:
                         var sourceInfo = new FileInfo(sourcePath);
                         var destInfo = new FileInfo(destFile);
                         if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
@@ -286,6 +308,58 @@ public class TransferService
         }
     }
 
+    private static void MirrorCleanup(string sourceDir, string destDir,
+        IProgress<string>? progress, TransferResult result, CancellationToken ct)
+    {
+        // Delete destination files that don't exist in source
+        foreach (var destFile in Directory.EnumerateFiles(destDir, "*", ShallowEnumOptions))
+        {
+            ct.ThrowIfCancellationRequested();
+            var name = Path.GetFileName(destFile);
+            var sourceFile = Path.Combine(sourceDir, name);
+            if (!File.Exists(sourceFile))
+            {
+                try
+                {
+                    File.Delete(destFile);
+                    result.FilesDeleted++;
+                    progress?.Report($"Mirror deleted: {name}");
+                }
+                catch (Exception ex)
+                {
+                    FileLogger.Warn($"Mirror cleanup failed: {destFile} — {ex.Message}");
+                    progress?.Report($"Mirror delete failed: {name} — {ex.Message}");
+                }
+            }
+        }
+
+        // Recurse into subdirectories, then delete empty ones not in source
+        foreach (var destSub in Directory.EnumerateDirectories(destDir, "*", ShallowEnumOptions))
+        {
+            ct.ThrowIfCancellationRequested();
+            var name = Path.GetFileName(destSub);
+            var sourceSub = Path.Combine(sourceDir, name);
+            if (Directory.Exists(sourceSub))
+            {
+                MirrorCleanup(sourceSub, destSub, progress, result, ct);
+            }
+            else
+            {
+                try
+                {
+                    Directory.Delete(destSub, true);
+                    result.DirectoriesDeleted++;
+                    progress?.Report($"Mirror deleted folder: {name}\\");
+                }
+                catch (Exception ex)
+                {
+                    FileLogger.Warn($"Mirror cleanup failed: {destSub} — {ex.Message}");
+                    progress?.Report($"Mirror delete failed: {name}\\ — {ex.Message}");
+                }
+            }
+        }
+    }
+
     private static byte[] ComputeSha256(string filePath)
     {
         using var stream = File.OpenRead(filePath);
@@ -323,7 +397,7 @@ public class TransferService
 
     private static void CheckFreeSpace(List<string> sourcePaths, string destinationDir)
     {
-        long totalSize = sourcePaths.Sum(s => CalculateTotalSize(s));
+        long totalSize = EstimateTotalSize(sourcePaths);
         var driveInfo = new DriveInfo(Path.GetPathRoot(destinationDir)!);
         long available = driveInfo.AvailableFreeSpace;
 
@@ -331,30 +405,65 @@ public class TransferService
             throw new InsufficientSpaceException(totalSize, available);
     }
 
-    private static long CalculateTotalSize(string path)
+    private static int CountFiles(string path, IReadOnlyList<string>? exclusions = null)
     {
         try
         {
             var attr = File.GetAttributes(path);
             if (attr.HasFlag(FileAttributes.Directory))
             {
-                return new DirectoryInfo(path)
-                    .EnumerateFiles("*", EnumOptions)
-                    .Sum(f => { try { return f.Length; } catch { return 0L; } });
+                var files = Directory.EnumerateFiles(path, "*", EnumOptions);
+                if (exclusions != null)
+                    files = files.Where(f => !IsExcluded(Path.GetFileName(f), exclusions));
+                return files.Count();
             }
-            return new FileInfo(path).Length;
+            if (exclusions != null && IsExcluded(Path.GetFileName(path), exclusions))
+                return 0;
+            return 1;
         }
         catch { return 0; }
     }
 
-    private static int CountFiles(string path)
+    private static bool IsExcluded(string name, IReadOnlyList<string> exclusions)
+    {
+        foreach (var pattern in exclusions)
+        {
+            if (pattern.StartsWith("*."))
+            {
+                // Extension match: *.tmp, *.log
+                var ext = pattern.Substring(1); // ".tmp"
+                if (name.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            else if (name.Equals(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                // Exact name match: Thumbs.db, node_modules
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static long EstimateTotalSize(IEnumerable<string> sourcePaths, IReadOnlyList<string>? exclusions = null)
+    {
+        return sourcePaths.Sum(s => CalculateTotalSize(s, exclusions));
+    }
+
+    private static long CalculateTotalSize(string path, IReadOnlyList<string>? exclusions = null)
     {
         try
         {
             var attr = File.GetAttributes(path);
             if (attr.HasFlag(FileAttributes.Directory))
-                return Directory.EnumerateFiles(path, "*", EnumOptions).Count();
-            return 1;
+            {
+                var files = new DirectoryInfo(path).EnumerateFiles("*", EnumOptions);
+                if (exclusions != null)
+                    files = files.Where(f => !IsExcluded(f.Name, exclusions));
+                return files.Sum(f => { try { return f.Length; } catch { return 0L; } });
+            }
+            if (exclusions != null && IsExcluded(Path.GetFileName(path), exclusions))
+                return 0;
+            return new FileInfo(path).Length;
         }
         catch { return 0; }
     }

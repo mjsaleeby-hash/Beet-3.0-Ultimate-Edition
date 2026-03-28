@@ -1,6 +1,7 @@
 using BeetsBackup.Models;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
 
 namespace BeetsBackup.Services;
 
@@ -12,6 +13,7 @@ public class SchedulerService : IDisposable
     private readonly PeriodicTimer _ticker;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _jobsLock = new();
+    private readonly Dictionary<Guid, ManualResetEventSlim> _pauseGates = new();
     private Task? _runTask;
 
     public string? LastSchedulerError { get; private set; }
@@ -154,13 +156,22 @@ public class SchedulerService : IDisposable
             StripPermissions = job.StripPermissions,
             TransferMode = job.TransferMode,
             Status = BackupStatus.Running,
-            Message = "Transfer in progress..."
+            Message = "Estimating size..."
         };
         _log.Add(logEntry);
         FileLogger.Info($"Scheduled job started: '{job.Name}' — {string.Join("; ", job.SourcePaths)} → {job.DestinationPath}");
 
+        var pauseGate = new ManualResetEventSlim(true);
+        lock (_jobsLock) { _pauseGates[logEntry.Id] = pauseGate; }
+
         try
         {
+            var exclusions = job.ExclusionFilters.Count > 0 ? job.ExclusionFilters : null;
+
+            var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(job.SourcePaths, exclusions));
+            _log.UpdateStatus(logEntry.Id, BackupStatus.Running, $"Transfer in progress — {FormatBytes(estimatedSize)} estimated");
+            FileLogger.Info($"Estimated size for '{job.Name}': {FormatBytes(estimatedSize)}");
+
             var percentProgress = new Progress<int>(pct =>
                 _log.UpdateProgress(logEntry.Id, pct));
 
@@ -169,7 +180,10 @@ public class SchedulerService : IDisposable
                 job.DestinationPath,
                 job.StripPermissions,
                 job.TransferMode,
-                progressPercent: percentProgress);
+                progressPercent: percentProgress,
+                pauseToken: pauseGate,
+                verifyChecksums: job.VerifyChecksums,
+                exclusions: exclusions);
 
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
                 result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles);
@@ -189,9 +203,45 @@ public class SchedulerService : IDisposable
         {
             lock (_jobsLock)
             {
+                _pauseGates.Remove(logEntry.Id);
+                pauseGate.Dispose();
                 job.LastRun = DateTime.Now;
                 SaveJobs();
             }
+        }
+    }
+
+    public void PauseJob(Guid logEntryId)
+    {
+        lock (_jobsLock)
+        {
+            if (_pauseGates.TryGetValue(logEntryId, out var gate))
+                gate.Reset();
+        }
+    }
+
+    public void ResumeJob(Guid logEntryId)
+    {
+        lock (_jobsLock)
+        {
+            if (_pauseGates.TryGetValue(logEntryId, out var gate))
+                gate.Set();
+        }
+    }
+
+    public bool IsJobPaused(Guid logEntryId)
+    {
+        lock (_jobsLock)
+        {
+            return _pauseGates.TryGetValue(logEntryId, out var gate) && !gate.IsSet;
+        }
+    }
+
+    public bool IsJobRunning(Guid logEntryId)
+    {
+        lock (_jobsLock)
+        {
+            return _pauseGates.ContainsKey(logEntryId);
         }
     }
 
@@ -274,6 +324,16 @@ public class SchedulerService : IDisposable
                 File.Move(tmpPath, JobsPath);
         }
         catch { }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes == 0) return "0 B";
+        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+        double value = bytes;
+        int i = 0;
+        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
+        return $"{value:0.##} {suffixes[i]}";
     }
 
     public void Dispose()

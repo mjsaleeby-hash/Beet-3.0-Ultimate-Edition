@@ -848,6 +848,8 @@ public partial class MainViewModel : ObservableObject
         if (result.FilesLocked > 0) parts.Add($"{result.FilesLocked} locked");
         if (result.DiskFullErrors > 0) parts.Add($"{result.DiskFullErrors} disk full errors");
         if (result.ChecksumMismatches > 0) parts.Add($"{result.ChecksumMismatches} checksum mismatches!");
+        if (result.FilesDeleted > 0) parts.Add($"{result.FilesDeleted} deleted");
+        if (result.DirectoriesDeleted > 0) parts.Add($"{result.DirectoriesDeleted} folders deleted");
         return parts.Count > 0 ? $"Done — {string.Join(", ", parts)}" : "Done.";
     }
 

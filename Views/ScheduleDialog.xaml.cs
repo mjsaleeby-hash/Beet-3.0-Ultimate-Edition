@@ -27,6 +27,14 @@ public partial class ScheduleDialog : Window
             return;
         }
 
+        if (_vm.SelectedTransferMode == TransferMode.Mirror)
+        {
+            var confirm = MessageBox.Show(
+                "Mirror mode will permanently delete files from the destination that are not present in the source — including files you placed there manually.\n\nDo you want to continue?",
+                "Confirm Mirror Mode", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes) return;
+        }
+
         Result = _vm.BuildJob();
         DialogResult = true;
     }

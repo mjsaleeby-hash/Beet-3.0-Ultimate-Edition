@@ -93,9 +93,17 @@
         </ListView>
 
         <Grid Grid.Row="4">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+            <Button x:Name="PauseResumeButton" Content="Pause"
+                    Padding="16,8" Cursor="Hand"
+                    Click="PauseResume_Click"
+                    IsEnabled="False"
+                    Margin="0,0,12,0"
+                    Background="#0078D4" Foreground="White"
+                    BorderThickness="0" FontWeight="SemiBold"
+                    ToolTip="Pause or resume a running backup"/>
             <Button x:Name="RetryButton" Content="&#x1F504; Retry Failed Job"
                     Padding="16,8" Cursor="Hand"
-                    HorizontalAlignment="Left"
                     Click="Retry_Click" IsEnabled="False"
                     ToolTip="Select a failed entry to retry">
                 <Button.Style>
@@ -131,6 +139,7 @@
                     </Style>
                 </Button.Style>
             </Button>
+            </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Export CSV"
                         Background="#EBEBEB" Foreground="#1A1A1A"

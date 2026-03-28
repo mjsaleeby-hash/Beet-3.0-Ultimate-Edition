@@ -4,5 +4,6 @@ public enum TransferMode
 {
     SkipExisting,
     KeepBoth,
-    Replace
+    Replace,
+    Mirror
 }
