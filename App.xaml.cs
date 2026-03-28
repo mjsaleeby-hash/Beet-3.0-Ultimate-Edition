@@ -59,7 +59,9 @@ public partial class App : Application
             dialog.Owner = mainWindow;
             dialog.ShowDialog();
 
-            if (!dialog.RunNow)
+            if (dialog.RunNow)
+                scheduler.RunMissedJobs(missedJobs);
+            else
                 FileLogger.Info("User skipped missed backups");
         }
 

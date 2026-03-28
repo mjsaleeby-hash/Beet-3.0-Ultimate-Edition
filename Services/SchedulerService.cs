@@ -49,6 +49,23 @@ public class SchedulerService : IDisposable
         }
     }
 
+    public void RunMissedJobs(List<ScheduledJob> jobs)
+    {
+        foreach (var job in jobs)
+        {
+            FileLogger.Info($"Running missed job: '{job.Name}'");
+            _ = ExecuteJobAsync(job);
+            lock (_jobsLock)
+            {
+                job.UpdateNextRun();
+                if (!job.IsRecurring)
+                    job.IsEnabled = false;
+                SaveJobs();
+            }
+        }
+        JobsChanged?.Invoke();
+    }
+
     public void SkipMissedJob(Guid id)
     {
         lock (_jobsLock)
