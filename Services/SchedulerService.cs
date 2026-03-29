@@ -56,7 +56,11 @@ public class SchedulerService : IDisposable
         foreach (var job in jobs)
         {
             FileLogger.Info($"Running missed job: '{job.Name}'");
-            _ = ExecuteJobAsync(job);
+            _ = Task.Run(async () =>
+            {
+                try { await ExecuteJobAsync(job); }
+                catch (Exception ex) { FileLogger.LogException($"Missed job failed: '{job.Name}'", ex); }
+            });
             lock (_jobsLock)
             {
                 job.UpdateNextRun();
@@ -127,7 +131,11 @@ public class SchedulerService : IDisposable
 
                 foreach (var job in dueJobs)
                 {
-                    _ = ExecuteJobAsync(job);
+                    _ = Task.Run(async () =>
+                    {
+                        try { await ExecuteJobAsync(job); }
+                        catch (Exception jobEx) { FileLogger.LogException($"Scheduled job failed: '{job.Name}'", jobEx); }
+                    });
                     lock (_jobsLock)
                     {
                         job.UpdateNextRun();
@@ -340,7 +348,14 @@ public class SchedulerService : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        try { _runTask?.GetAwaiter().GetResult(); } catch { }
         _ticker.Dispose();
+        lock (_jobsLock)
+        {
+            foreach (var gate in _pauseGates.Values)
+                gate.Dispose();
+            _pauseGates.Clear();
+        }
         _cts.Dispose();
     }
 }

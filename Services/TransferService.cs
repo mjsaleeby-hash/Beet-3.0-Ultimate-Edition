@@ -245,7 +245,7 @@ public class TransferService
                         if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
                         {
                             File.Delete(destFile);
-                            CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
+                            CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
                             progress?.Report($"Updated (changed): {name}");
                         }
                         else
@@ -257,20 +257,20 @@ public class TransferService
 
                     case TransferMode.KeepBoth:
                         destFile = GetUniqueFilePath(destFile);
-                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
                         progress?.Report($"Copied (renamed): {Path.GetFileName(destFile)}");
                         break;
 
                     case TransferMode.Replace:
                         File.Delete(destFile);
-                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
                         progress?.Report($"Replaced: {name}");
                         break;
                 }
             }
             else
             {
-                CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
+                CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
                 progress?.Report($"Copied: {name}");
             }
 
@@ -284,13 +284,14 @@ public class TransferService
 
     private void CopyAndVerify(string source, string dest, bool stripPermissions,
         bool verifyChecksums, TransferResult result, IProgress<string>? progress,
-        long throttleBytesPerSec = 0)
+        long throttleBytesPerSec = 0, ManualResetEventSlim? pauseToken = null,
+        CancellationToken ct = default)
     {
         var fileSize = new FileInfo(source).Length;
 
         if (throttleBytesPerSec > 0)
         {
-            var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec, verifyChecksums);
+            var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec, verifyChecksums, pauseToken, ct);
             result.FilesCopied++;
             result.BytesTransferred += fileSize;
 
@@ -328,9 +329,11 @@ public class TransferService
     /// <summary>
     /// Copies a file with bandwidth throttling using chunked reads with timed delays.
     /// Optionally computes SHA-256 of source data during the copy (single pass).
+    /// Supports pause/cancel between chunks for responsive UI control.
     /// </summary>
     private static byte[]? ThrottledCopy(string source, string dest, bool stripPermissions,
-        long bytesPerSec, bool computeHash)
+        long bytesPerSec, bool computeHash, ManualResetEventSlim? pauseToken = null,
+        CancellationToken ct = default)
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
 
@@ -346,27 +349,23 @@ public class TransferService
             {
                 var buffer = new byte[bufferSize];
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                long bytesSinceLastThrottle = 0;
+                long totalBytesWritten = 0;
                 int bytesRead;
 
-                while ((bytesRead = srcStream.Read(buffer, 0, bytesRead = buffer.Length)) > 0)
+                while ((bytesRead = srcStream.Read(buffer, 0, buffer.Length)) > 0)
                 {
+                    pauseToken?.Wait(ct);
+                    ct.ThrowIfCancellationRequested();
+
                     sha?.TransformBlock(buffer, 0, bytesRead, null, 0);
                     destStream.Write(buffer, 0, bytesRead);
-                    bytesSinceLastThrottle += bytesRead;
+                    totalBytesWritten += bytesRead;
 
-                    // Throttle: if we've written enough bytes for the elapsed time, sleep
+                    // Throttle: if we've written more bytes than the rate allows, sleep
                     var elapsedMs = stopwatch.ElapsedMilliseconds;
-                    var expectedMs = (long)(bytesSinceLastThrottle * 1000.0 / bytesPerSec);
+                    var expectedMs = (long)(totalBytesWritten * 1000.0 / bytesPerSec);
                     if (expectedMs > elapsedMs)
                         Thread.Sleep((int)(expectedMs - elapsedMs));
-
-                    // Reset counters periodically to avoid drift
-                    if (bytesSinceLastThrottle >= bytesPerSec)
-                    {
-                        bytesSinceLastThrottle = 0;
-                        stopwatch.Restart();
-                    }
                 }
 
                 if (sha != null)
@@ -386,19 +385,17 @@ public class TransferService
         File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc);
         File.SetCreationTimeUtc(dest, srcInfo.CreationTimeUtc);
 
+        // Match FileSystemService.ResetFilePermissions: remove protection, inherit from parent
         if (stripPermissions)
         {
-            var fi = new FileInfo(dest);
-            var ac = fi.GetAccessControl();
-            ac.SetAccessRuleProtection(true, false);
-            foreach (System.Security.AccessControl.FileSystemAccessRule rule in
-                ac.GetAccessRules(true, false, typeof(System.Security.Principal.NTAccount)))
-                ac.RemoveAccessRule(rule);
-            ac.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
-                System.Security.Principal.WindowsIdentity.GetCurrent().Name,
-                System.Security.AccessControl.FileSystemRights.FullControl,
-                System.Security.AccessControl.AccessControlType.Allow));
-            fi.SetAccessControl(ac);
+            try
+            {
+                var fi = new FileInfo(dest);
+                var ac = fi.GetAccessControl();
+                ac.SetAccessRuleProtection(false, false);
+                fi.SetAccessControl(ac);
+            }
+            catch (UnauthorizedAccessException) { }
         }
 
         if (isHidden)

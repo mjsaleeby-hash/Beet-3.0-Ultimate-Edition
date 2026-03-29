@@ -11,7 +11,7 @@ using System.Windows.Media;
 
 namespace BeetsBackup.ViewModels;
 
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ThemeService _theme;
     private readonly FileSystemService _fs;
@@ -105,6 +105,8 @@ public partial class MainViewModel : ObservableObject
     private CancellationTokenSource? _transferCts;
     private ManualResetEventSlim _pauseGate = new(true);
     private DateTime _transferStartTime;
+    private TimeSpan _pausedDuration;
+    private DateTime _pauseStartTime;
 
     private long ThrottleValue => ThrottleTransfer ? ManualThrottleBytesPerSec : 0;
 
@@ -155,12 +157,14 @@ public partial class MainViewModel : ObservableObject
         if (!IsTransferring) return;
         if (IsPaused)
         {
+            _pausedDuration += DateTime.Now - _pauseStartTime;
             _pauseGate.Set();
             IsPaused = false;
             StatusMessage = "Resumed...";
         }
         else
         {
+            _pauseStartTime = DateTime.Now;
             _pauseGate.Reset();
             IsPaused = true;
             StatusMessage = "Paused.";
@@ -187,6 +191,7 @@ public partial class MainViewModel : ObservableObject
         TransferProgressPercent = 0;
         TransferEta = string.Empty;
         _transferStartTime = DateTime.Now;
+        _pausedDuration = TimeSpan.Zero;
     }
 
     private void EndTransfer(string message)
@@ -198,6 +203,12 @@ public partial class MainViewModel : ObservableObject
         StatusMessage = message;
     }
 
+    public void Dispose()
+    {
+        _pauseGate.Dispose();
+        _transferCts?.Dispose();
+    }
+
     private void OnTransferProgress(string msg) => StatusMessage = msg;
 
     private void OnTransferPercent(int percent)
@@ -205,7 +216,8 @@ public partial class MainViewModel : ObservableObject
         TransferProgressPercent = percent;
         if (percent > 0)
         {
-            var elapsed = DateTime.Now - _transferStartTime;
+            var elapsed = DateTime.Now - _transferStartTime - _pausedDuration;
+            if (elapsed.TotalSeconds < 1) return;
             var estimated = TimeSpan.FromTicks((long)(elapsed.Ticks * (100.0 / percent)));
             var remaining = estimated - elapsed;
             if (remaining.TotalSeconds > 0)
