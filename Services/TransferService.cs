@@ -54,7 +54,8 @@ public class TransferService
         bool stripPermissions, TransferMode mode = TransferMode.SkipExisting,
         IProgress<string>? progress = null, IProgress<int>? progressPercent = null,
         CancellationToken cancellationToken = default, ManualResetEventSlim? pauseToken = null,
-        bool verifyChecksums = false, IReadOnlyList<string>? exclusions = null)
+        bool verifyChecksums = false, IReadOnlyList<string>? exclusions = null,
+        long throttleBytesPerSec = 0)
     {
         var result = new TransferResult();
         var sourceList = sourcePaths.ToList();
@@ -70,7 +71,7 @@ public class TransferService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet);
+                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet, throttleBytesPerSec);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -100,7 +101,7 @@ public class TransferService
         bool stripPermissions, TransferMode mode = TransferMode.SkipExisting,
         IProgress<string>? progress = null, IProgress<int>? progressPercent = null,
         CancellationToken cancellationToken = default, ManualResetEventSlim? pauseToken = null,
-        bool verifyChecksums = false)
+        bool verifyChecksums = false, long throttleBytesPerSec = 0)
     {
         var result = new TransferResult();
         var sourceList = sourcePaths.ToList();
@@ -116,7 +117,7 @@ public class TransferService
                 try
                 {
                     var failedBefore = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
-                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums);
+                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, throttleBytesPerSec: throttleBytesPerSec);
                     var failedDuring = (result.FilesFailed + result.DiskFullErrors + result.FilesLocked) - failedBefore;
                     if (failedDuring == 0)
                         _fs.DeleteItem(source);
@@ -137,7 +138,8 @@ public class TransferService
     private void CopyItem(string sourcePath, string destinationDir, bool stripPermissions,
         TransferMode mode, IProgress<string>? progress, IProgress<int>? progressPercent,
         TransferResult result, CancellationToken ct, ManualResetEventSlim? pauseToken,
-        bool verifyChecksums, IReadOnlyList<string>? exclusions = null)
+        bool verifyChecksums, IReadOnlyList<string>? exclusions = null,
+        long throttleBytesPerSec = 0)
     {
         pauseToken?.Wait(ct);
         ct.ThrowIfCancellationRequested();
@@ -178,7 +180,7 @@ public class TransferService
             {
                 try
                 {
-                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions);
+                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -205,7 +207,7 @@ public class TransferService
             {
                 try
                 {
-                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions);
+                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -243,7 +245,7 @@ public class TransferService
                         if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
                         {
                             File.Delete(destFile);
-                            CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress);
+                            CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
                             progress?.Report($"Updated (changed): {name}");
                         }
                         else
@@ -255,20 +257,20 @@ public class TransferService
 
                     case TransferMode.KeepBoth:
                         destFile = GetUniqueFilePath(destFile);
-                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
                         progress?.Report($"Copied (renamed): {Path.GetFileName(destFile)}");
                         break;
 
                     case TransferMode.Replace:
                         File.Delete(destFile);
-                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
                         progress?.Report($"Replaced: {name}");
                         break;
                 }
             }
             else
             {
-                CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress);
+                CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec);
                 progress?.Report($"Copied: {name}");
             }
 
@@ -281,14 +283,29 @@ public class TransferService
     }
 
     private void CopyAndVerify(string source, string dest, bool stripPermissions,
-        bool verifyChecksums, TransferResult result, IProgress<string>? progress)
+        bool verifyChecksums, TransferResult result, IProgress<string>? progress,
+        long throttleBytesPerSec = 0)
     {
         var fileSize = new FileInfo(source).Length;
 
-        if (verifyChecksums)
+        if (throttleBytesPerSec > 0)
         {
-            // Single-pass copy: hash source bytes as they're written to dest,
-            // then only re-read the destination for verification.
+            var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec, verifyChecksums);
+            result.FilesCopied++;
+            result.BytesTransferred += fileSize;
+
+            if (verifyChecksums && sourceHash != null)
+            {
+                var destHash = ComputeSha256(dest);
+                if (!sourceHash.SequenceEqual(destHash))
+                {
+                    result.ChecksumMismatches++;
+                    progress?.Report($"CHECKSUM MISMATCH: {Path.GetFileName(dest)}");
+                }
+            }
+        }
+        else if (verifyChecksums)
+        {
             var sourceHash = _fs.CopyFileWithHash(source, dest, stripPermissions);
             result.FilesCopied++;
             result.BytesTransferred += fileSize;
@@ -306,6 +323,88 @@ public class TransferService
             result.FilesCopied++;
             result.BytesTransferred += fileSize;
         }
+    }
+
+    /// <summary>
+    /// Copies a file with bandwidth throttling using chunked reads with timed delays.
+    /// Optionally computes SHA-256 of source data during the copy (single pass).
+    /// </summary>
+    private static byte[]? ThrottledCopy(string source, string dest, bool stripPermissions,
+        long bytesPerSec, bool computeHash)
+    {
+        bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
+
+        const int bufferSize = 65536; // 64 KB chunks
+        byte[]? hash = null;
+
+        using (var srcStream = File.OpenRead(source))
+        using (var destStream = File.Create(dest))
+        {
+            System.Security.Cryptography.SHA256? sha = computeHash
+                ? System.Security.Cryptography.SHA256.Create() : null;
+            try
+            {
+                var buffer = new byte[bufferSize];
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                long bytesSinceLastThrottle = 0;
+                int bytesRead;
+
+                while ((bytesRead = srcStream.Read(buffer, 0, bytesRead = buffer.Length)) > 0)
+                {
+                    sha?.TransformBlock(buffer, 0, bytesRead, null, 0);
+                    destStream.Write(buffer, 0, bytesRead);
+                    bytesSinceLastThrottle += bytesRead;
+
+                    // Throttle: if we've written enough bytes for the elapsed time, sleep
+                    var elapsedMs = stopwatch.ElapsedMilliseconds;
+                    var expectedMs = (long)(bytesSinceLastThrottle * 1000.0 / bytesPerSec);
+                    if (expectedMs > elapsedMs)
+                        Thread.Sleep((int)(expectedMs - elapsedMs));
+
+                    // Reset counters periodically to avoid drift
+                    if (bytesSinceLastThrottle >= bytesPerSec)
+                    {
+                        bytesSinceLastThrottle = 0;
+                        stopwatch.Restart();
+                    }
+                }
+
+                if (sha != null)
+                {
+                    sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                    hash = sha.Hash;
+                }
+            }
+            finally
+            {
+                sha?.Dispose();
+            }
+        }
+
+        // Preserve timestamps
+        var srcInfo = new FileInfo(source);
+        File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc);
+        File.SetCreationTimeUtc(dest, srcInfo.CreationTimeUtc);
+
+        if (stripPermissions)
+        {
+            var fi = new FileInfo(dest);
+            var ac = fi.GetAccessControl();
+            ac.SetAccessRuleProtection(true, false);
+            foreach (System.Security.AccessControl.FileSystemAccessRule rule in
+                ac.GetAccessRules(true, false, typeof(System.Security.Principal.NTAccount)))
+                ac.RemoveAccessRule(rule);
+            ac.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                System.Security.Principal.WindowsIdentity.GetCurrent().Name,
+                System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.AccessControlType.Allow));
+            fi.SetAccessControl(ac);
+        }
+
+        if (isHidden)
+            File.SetAttributes(dest, File.GetAttributes(dest) | FileAttributes.Hidden);
+
+        return hash;
     }
 
     private static void MirrorCleanup(string sourceDir, string destDir,

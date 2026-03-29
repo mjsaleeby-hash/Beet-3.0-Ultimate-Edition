@@ -25,6 +25,7 @@ public partial class MainViewModel : ObservableObject
     // --- Toolbar ---
     [ObservableProperty] private bool _removePermissions;
     [ObservableProperty] private bool _verifyChecksums;
+    [ObservableProperty] private bool _throttleTransfer;
     [ObservableProperty] private bool _isSplitPane;
 
     // --- Pane data ---
@@ -99,9 +100,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private int _transferProgressPercent;
     [ObservableProperty] private string _transferEta = string.Empty;
 
+    private const long ManualThrottleBytesPerSec = 10L * 1024 * 1024; // 10 MB/s
+
     private CancellationTokenSource? _transferCts;
     private ManualResetEventSlim _pauseGate = new(true);
     private DateTime _transferStartTime;
+
+    private long ThrottleValue => ThrottleTransfer ? ManualThrottleBytesPerSec : 0;
 
     private CancellationTokenSource? _topSizeCts;
     private CancellationTokenSource? _bottomSizeCts;
@@ -638,7 +643,7 @@ public partial class MainViewModel : ObservableObject
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
         {
-            var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
+            var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, throttleBytesPerSec: ThrottleValue);
             await NavigateBottom(BottomCurrentPath);
             var summary = FormatTransferResult(result);
             FileLogger.Info($"Copy completed: {summary}");
@@ -670,7 +675,7 @@ public partial class MainViewModel : ObservableObject
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
         {
-            var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
+            var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, throttleBytesPerSec: ThrottleValue);
             await NavigateTop(TopCurrentPath);
             var summary = FormatTransferResult(result);
             FileLogger.Info($"Copy completed: {summary}");
@@ -702,7 +707,7 @@ public partial class MainViewModel : ObservableObject
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
         {
-            var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
+            var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, ThrottleValue);
             await NavigateTop(TopCurrentPath);
             await NavigateBottom(BottomCurrentPath);
             var summary = FormatTransferResult(result);
@@ -735,7 +740,7 @@ public partial class MainViewModel : ObservableObject
         var progressPercent = new Progress<int>(OnTransferPercent);
         try
         {
-            var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums);
+            var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, ThrottleValue);
             await NavigateTop(TopCurrentPath);
             await NavigateBottom(BottomCurrentPath);
             var summary = FormatTransferResult(result);

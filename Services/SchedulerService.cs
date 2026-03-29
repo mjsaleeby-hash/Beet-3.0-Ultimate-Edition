@@ -183,7 +183,8 @@ public class SchedulerService : IDisposable
                 progressPercent: percentProgress,
                 pauseToken: pauseGate,
                 verifyChecksums: job.VerifyChecksums,
-                exclusions: exclusions);
+                exclusions: exclusions,
+                throttleBytesPerSec: job.ThrottleMBps > 0 ? (long)job.ThrottleMBps * 1024 * 1024 : 0);
 
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
                 result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles);

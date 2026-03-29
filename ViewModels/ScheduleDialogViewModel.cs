@@ -25,8 +25,15 @@ public partial class ScheduleDialogViewModel : ObservableObject
     public ObservableCollection<string> ExclusionFilters { get; } = new();
     [ObservableProperty] private string _newExclusion = string.Empty;
     [ObservableProperty] private string? _selectedExclusion;
+    [ObservableProperty] private bool _enableThrottle;
+    [ObservableProperty] private string _selectedThrottleSpeed = "10 MB/s";
     [ObservableProperty] private string _sizeEstimate = string.Empty;
     [ObservableProperty] private bool _isEstimating;
+
+    public List<string> ThrottleSpeedOptions { get; } = new()
+    {
+        "1 MB/s", "5 MB/s", "10 MB/s", "25 MB/s", "50 MB/s", "100 MB/s"
+    };
 
     public List<string> IntervalOptions { get; } = new()
     {
@@ -199,6 +206,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
             VerifyChecksums = VerifyChecksums,
             TransferMode = SelectedTransferMode,
             ExclusionFilters = ExclusionFilters.ToList(),
+            ThrottleMBps = EnableThrottle ? ParseThrottleMBps(SelectedThrottleSpeed) : 0,
             IsRecurring = IsRecurring,
             NextRun = nextRun,
             RecurInterval = IsRecurring ? GetInterval() : null,
@@ -223,6 +231,9 @@ public partial class ScheduleDialogViewModel : ObservableObject
         "Every 12 Hours" => TimeSpan.FromHours(12),
         _                => TimeSpan.FromDays(1)
     };
+
+    private static int ParseThrottleMBps(string option) =>
+        int.TryParse(option.Split(' ')[0], out var mb) ? mb : 10;
 
     public bool IsValid =>
         SourcePaths.Count > 0 &&

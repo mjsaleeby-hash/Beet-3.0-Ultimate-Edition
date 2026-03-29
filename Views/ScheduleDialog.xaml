@@ -182,6 +182,23 @@
                                Foreground="#6B6B6B" FontSize="11" Margin="24,2,0,0"/>
                 </StackPanel>
 
+                <!-- Speed Limit -->
+                <StackPanel Margin="0,10,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox IsChecked="{Binding EnableThrottle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Limit transfer speed" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Slows down the backup so your computer stays responsive for other work — like browsing the web or using other apps while the backup runs in the background."
+                               Foreground="#6B6B6B" FontSize="11" TextWrapping="Wrap" Margin="24,2,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="24,6,0,0"
+                                Visibility="{Binding EnableThrottle, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock Text="Max speed:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding ThrottleSpeedOptions}"
+                                  SelectedItem="{Binding SelectedThrottleSpeed}"
+                                  MinWidth="110"/>
+                    </StackPanel>
+                </StackPanel>
+
                 <!-- Transfer Mode -->
                 <TextBlock Text="If files already exist" FontWeight="SemiBold" Margin="0,14,0,6"/>
                 <ComboBox ItemsSource="{Binding TransferModeOptions}"

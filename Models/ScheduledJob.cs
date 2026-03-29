@@ -28,6 +28,8 @@ public class ScheduledJob
     public bool VerifyChecksums { get; set; }
     public TransferMode TransferMode { get; set; } = TransferMode.SkipExisting;
     public List<string> ExclusionFilters { get; set; } = new();
+    /// <summary>Speed limit in MB/s. 0 means unlimited.</summary>
+    public int ThrottleMBps { get; set; }
     public bool IsRecurring { get; set; }
 
     [JsonConverter(typeof(NullableTimeSpanConverter))]
