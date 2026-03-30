@@ -1,0 +1,1868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beet's Backup v2 — Visual Overhaul Mockup</title>
+<style>
+/* ============================================================
+   BEET'S BACKUP v2 — VISUAL OVERHAUL MOCKUP
+   Target: WPF / .NET 8, Windows 11 Fluent-inspired design
+
+   Design decisions are noted inline with "DESIGN:" comments.
+   All measurements assume 96 DPI (WPF default).
+   ============================================================ */
+
+/* ---- CSS Custom Properties (maps directly to WPF ResourceDictionary keys) ---- */
+:root {
+  /* === DARK THEME (default) ===
+     DESIGN: Deep navy-adjacent dark rather than pure grey — feels richer
+     and pairs better with the #4a9eff accent. */
+  --bg:              #1a1a2e;
+  --surface:         #232338;
+  --surface-raised:  #2a2a42;
+  --surface-inset:   #1e1e30;
+  --border:          rgba(255,255,255,0.06);
+  --border-strong:   rgba(255,255,255,0.10);
+  --text-primary:    #e8e8ec;
+  --text-secondary:  #8888a0;
+  --text-tertiary:   #555568;
+  --accent:          #4a9eff;
+  --accent-hover:    #6aafff;
+  --accent-dim:      rgba(74,158,255,0.12);
+  --accent-dim-hover:rgba(74,158,255,0.20);
+  --accent-text:     #ffffff;
+  --selection-bg:    rgba(74,158,255,0.14);
+  --selection-border:rgba(74,158,255,0.30);
+  --hover-bg:        rgba(255,255,255,0.04);
+  --hover-bg-strong: rgba(255,255,255,0.07);
+  --toolbar-bg:      #20203a;
+  --sidebar-bg:      #1f1f34;
+  --success:         #4ade80;
+  --success-dim:     rgba(74,222,128,0.12);
+  --warning:         #f59e0b;
+  --warning-dim:     rgba(245,158,11,0.12);
+  --danger:          #f87171;
+  --danger-dim:      rgba(248,113,113,0.12);
+  --shadow-sm:       0 1px 4px rgba(0,0,0,0.35);
+  --shadow-md:       0 2px 12px rgba(0,0,0,0.45);
+  --shadow-lg:       0 8px 32px rgba(0,0,0,0.55);
+  --pane-label-src:  rgba(74,158,255,0.08);
+  --pane-label-dst:  rgba(74,222,128,0.08);
+  --pane-border-src: rgba(74,158,255,0.25);
+  --pane-border-dst: rgba(74,222,128,0.25);
+  --scrollbar-track: rgba(255,255,255,0.03);
+  --scrollbar-thumb: rgba(255,255,255,0.12);
+  --toggle-off-bg:   rgba(255,255,255,0.10);
+  --toggle-track:    rgba(255,255,255,0.10);
+  --toggle-knob:     rgba(255,255,255,0.50);
+  --row-alt:         rgba(255,255,255,0.018);
+  --col-header-bg:   rgba(255,255,255,0.03);
+  --breadcrumb-sep:  var(--text-tertiary);
+  --progress-track:  rgba(255,255,255,0.07);
+  --drive-bar-track: rgba(255,255,255,0.08);
+}
+
+[data-theme="light"] {
+  /* === LIGHT THEME ===
+     DESIGN: Warm near-white background avoids the sterile pure-white look.
+     Surfaces use clean white. Borders are very subtle ink washes. */
+  --bg:              #ededf2;
+  --surface:         #ffffff;
+  --surface-raised:  #f7f7fc;
+  --surface-inset:   #f0f0f6;
+  --border:          rgba(0,0,0,0.07);
+  --border-strong:   rgba(0,0,0,0.12);
+  --text-primary:    #1a1a2e;
+  --text-secondary:  #666680;
+  --text-tertiary:   #aaaabc;
+  --accent:          #4a9eff;
+  --accent-hover:    #2a8aef;
+  --accent-dim:      rgba(74,158,255,0.10);
+  --accent-dim-hover:rgba(74,158,255,0.18);
+  --accent-text:     #ffffff;
+  --selection-bg:    rgba(74,158,255,0.12);
+  --selection-border:rgba(74,158,255,0.28);
+  --hover-bg:        rgba(0,0,0,0.034);
+  --hover-bg-strong: rgba(0,0,0,0.06);
+  --toolbar-bg:      #f4f4f9;
+  --sidebar-bg:      #f0f0f5;
+  --success:         #16a34a;
+  --success-dim:     rgba(22,163,74,0.10);
+  --warning:         #d97706;
+  --warning-dim:     rgba(217,119,6,0.10);
+  --danger:          #dc2626;
+  --danger-dim:      rgba(220,38,38,0.08);
+  --shadow-sm:       0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:       0 2px 10px rgba(0,0,0,0.10);
+  --shadow-lg:       0 8px 28px rgba(0,0,0,0.14);
+  --pane-label-src:  rgba(74,158,255,0.06);
+  --pane-label-dst:  rgba(22,163,74,0.06);
+  --pane-border-src: rgba(74,158,255,0.20);
+  --pane-border-dst: rgba(22,163,74,0.20);
+  --scrollbar-track: rgba(0,0,0,0.03);
+  --scrollbar-thumb: rgba(0,0,0,0.14);
+  --toggle-off-bg:   rgba(0,0,0,0.12);
+  --toggle-track:    rgba(0,0,0,0.12);
+  --toggle-knob:     rgba(255,255,255,0.95);
+  --row-alt:         rgba(0,0,0,0.016);
+  --col-header-bg:   rgba(0,0,0,0.025);
+  --breadcrumb-sep:  var(--text-tertiary);
+  --progress-track:  rgba(0,0,0,0.07);
+  --drive-bar-track: rgba(0,0,0,0.08);
+}
+
+/* ---- Reset ---- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 13px; }
+
+body {
+  /* DESIGN: Segoe UI Variable at 13px base — tighter than system default 14px
+     for a denser, more information-rich layout without feeling cramped. */
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  transition: background 0.25s ease, color 0.25s ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Scrollbars (slim, unobtrusive) ---- */
+/* DESIGN: 6px scrollbars are modern-feeling; WPF maps to custom ScrollBar template. */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ====================================================================
+   APPLICATION SHELL
+   4-row grid: titlebar | toolbar | main-area | statusbar
+   ==================================================================== */
+.app-shell {
+  display: grid;
+  grid-template-rows: 32px auto 1fr 28px;
+  height: 100vh;
+  background: var(--bg);
+}
+
+/* ====================================================================
+   TITLE BAR
+   DESIGN: Minimal 32px custom chrome. Logo + name left-aligned.
+   Windows controls (⊟ ⊠ ✕) right-aligned. Draggable region in center.
+   ==================================================================== */
+.title-bar {
+  display: flex;
+  align-items: center;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px 0 12px;
+  gap: 8px;
+  user-select: none;
+  position: relative;
+  z-index: 100;
+}
+
+.title-bar-brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+/* DESIGN: The beet logo is represented as a CSS shape — in WPF this is a
+   small 20x20 Image asset. The round purple/red form echoes a beet root. */
+.title-brand-icon {
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at 40% 55%, #c44569, #7b2d8b);
+  border-radius: 50% 50% 50% 40% / 55% 55% 45% 45%;
+  position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(196,69,105,0.4);
+}
+.title-brand-icon::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 6px;
+  width: 5px;
+  height: 7px;
+  background: #4ade80;
+  border-radius: 2px 2px 0 0;
+  transform: rotate(-10deg);
+}
+
+.title-brand-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+/* Drag region takes up remaining space */
+.title-drag-region {
+  flex: 1;
+  height: 100%;
+  cursor: default;
+}
+
+.title-window-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.wc-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.wc-btn:hover { background: var(--hover-bg-strong); color: var(--text-primary); }
+.wc-btn.wc-close:hover { background: #c42b1c; color: white; }
+
+/* ====================================================================
+   COMMAND BAR (TOOLBAR)
+   DESIGN: Two logical sections on one ~44px row:
+   Left cluster — transfer controls (Pause, Stop) + navigation tools
+   Right cluster — feature buttons (Schedule, Jobs, Log) + option toggles
+
+   Replaces the current oversized 144px logo + two-row WrapPanel layout.
+   The logo moves to the title bar, freeing the full toolbar for controls.
+   ==================================================================== */
+.command-bar {
+  display: flex;
+  align-items: center;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 0 12px;
+  gap: 4px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+/* Vertical divider between button groups */
+.cmd-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-strong);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.cmd-spacer { flex: 1; }
+
+/* ---- Icon Buttons ----
+   DESIGN: Icon buttons have a subtle pill-shaped hit area on hover.
+   WPF: ControlTemplate with Border CornerRadius="6" + trigger for IsMouseOver. */
+.cmd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cmd-btn:hover {
+  background: var(--hover-bg-strong);
+  border-color: var(--border-strong);
+}
+.cmd-btn:active {
+  background: var(--hover-bg-strong);
+  transform: translateY(1px);
+}
+
+/* Icon-only buttons (square) */
+.cmd-btn-icon {
+  padding: 0;
+  width: 30px;
+  justify-content: center;
+  font-size: 14px;
+}
+
+/* Accent/primary action button (Schedule — most important CTA in toolbar) */
+.cmd-btn-accent {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.cmd-btn-accent:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* Danger-tinted stop button (only active during transfers) */
+.cmd-btn-danger {
+  color: var(--danger);
+}
+.cmd-btn-danger:hover {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+}
+
+/* Disabled state */
+.cmd-btn[disabled],
+.cmd-btn.is-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* ---- SVG Icons (inline, WPF equivalent: Segoe Fluent Icons glyph or Path geometry) ---- */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.icon svg { width: 100%; height: 100%; }
+
+/* ---- Toggle Switches (Replace ugly WPF checkboxes) ----
+   DESIGN: Pill-toggle is more touch-friendly and visually clear.
+   WPF: ToggleButton with custom ControlTemplate — pill Border + sliding Ellipse.
+   Accessibility: AutomationProperties.Name + role="switch" equivalent. */
+.cmd-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.toggle-item label {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.toggle-item:hover label { color: var(--text-primary); }
+
+.toggle-switch {
+  /* DESIGN: 28×16px pill — compact enough for a toolbar without looking cramped. */
+  position: relative;
+  width: 28px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--toggle-track);
+  border-radius: 8px;
+  transition: background 0.18s;
+  border: 1px solid var(--border-strong);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--toggle-knob);
+  transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1), background 0.18s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.toggle-switch input:checked ~ .toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-switch input:checked ~ .toggle-knob {
+  transform: translateX(12px);
+  background: white;
+}
+
+/* ====================================================================
+   MAIN AREA
+   DESIGN: Sidebar (220px fixed) + content area. The content area holds
+   the dual-pane split layout stacked vertically.
+   ==================================================================== */
+.main-area {
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ====================================================================
+   SIDEBAR (Drive tree + folder navigation)
+   DESIGN: Sidebar background is slightly darker than main surface.
+   No explicit border-right — the background color change provides
+   the separation. A subtle 1px right border is added for clarity.
+   ==================================================================== */
+.sidebar {
+  width: 220px;
+  min-width: 180px;
+  max-width: 320px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  resize: horizontal; /* DEMO: enable resizing in the mockup */
+}
+
+.sidebar-section-label {
+  /* DESIGN: ALL-CAPS 10px label — understated heading, matches WPF
+     SecondaryTextBrush at 10px SemiBold. Used for SOURCE / DESTINATION. */
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  padding: 12px 12px 6px;
+}
+
+/* Drive entry */
+.drive-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 12px;
+  border-radius: 6px;
+  margin: 1px 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+  position: relative;
+}
+.drive-item:hover { background: var(--hover-bg-strong); }
+.drive-item.is-selected { background: var(--selection-bg); }
+.drive-item.is-selected .drive-name { color: var(--accent); }
+
+.drive-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.drive-info {
+  flex: 1;
+  min-width: 0;
+}
+.drive-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.drive-usage-text {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  line-height: 1.2;
+  margin-top: 1px;
+}
+
+/* DESIGN: Thin 3px horizontal bar under drive name. Much subtler than
+   the circular arc in the current code — easier to scan quickly. */
+.drive-bar {
+  height: 3px;
+  background: var(--drive-bar-track);
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+.drive-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.drive-bar-fill.is-full { background: var(--warning); }
+.drive-bar-fill.is-critical { background: var(--danger); }
+
+/* Sidebar folder tree */
+.sidebar-tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0 8px;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 0;
+  border-radius: 6px;
+  margin: 1px 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  min-height: 26px;
+  position: relative;
+}
+.tree-item:hover { background: var(--hover-bg); }
+.tree-item.is-selected { background: var(--selection-bg); }
+.tree-item.is-selected .tree-item-name { color: var(--accent); }
+
+.tree-indent { display: inline-block; flex-shrink: 0; }
+.tree-expand-btn {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 8px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  transition: color 0.1s;
+}
+.tree-item:hover .tree-expand-btn { color: var(--text-secondary); }
+.tree-expand-btn.is-expanded { transform: rotate(90deg); }
+
+.tree-item-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.tree-item-name {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* ====================================================================
+   CONTENT AREA (dual-pane stack)
+   ==================================================================== */
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Each pane: top nav bar + file list */
+.pane-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  background: var(--surface);
+}
+
+/* DESIGN: Top pane gets a very faint blue tint on the label/indicator
+   to communicate SOURCE role. Bottom pane gets green for DESTINATION.
+   This replaces the text label "SOURCE" / "DESTINATION" in the sidebar
+   with a pane-level color cue — easier to understand at a glance. */
+.pane-wrapper.is-source { border-left: 2px solid var(--pane-border-src); }
+.pane-wrapper.is-dest   { border-left: 2px solid var(--pane-border-dst); }
+
+/* ---- Pane Navigation Bar ----
+   DESIGN: Single-row nav bar with back/forward/up icon buttons,
+   breadcrumb path bar, and search field. ~34px height.
+   Replaces the current separate <Border Grid.Row="1"> nav bar which
+   only served the top pane. Bottom pane now gets its own nav bar. */
+.pane-nav {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 3px;
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  height: 36px;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.nav-btn:hover { background: var(--hover-bg-strong); color: var(--text-primary); }
+.nav-btn[disabled] { opacity: 0.3; pointer-events: none; }
+
+/* DESIGN: Breadcrumb bar instead of a plain TextBox.
+   In WPF this is an ItemsControl with Path segments as buttons.
+   Each segment is clickable for quick navigation. */
+.breadcrumb {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 0 10px;
+  height: 26px;
+  overflow: hidden;
+  min-width: 0;
+  gap: 2px;
+}
+
+.bc-seg {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bc-seg:hover { background: var(--hover-bg-strong); color: var(--text-primary); }
+.bc-seg.is-last { color: var(--text-primary); font-weight: 500; flex-shrink: 0; }
+
+.bc-sep {
+  color: var(--breadcrumb-sep);
+  font-size: 10px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Pane role badge */
+.pane-role-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.pane-role-badge.src {
+  background: var(--pane-label-src);
+  color: var(--accent);
+  border: 1px solid var(--pane-border-src);
+}
+.pane-role-badge.dst {
+  background: var(--pane-label-dst);
+  color: var(--success);
+  border: 1px solid var(--pane-border-dst);
+}
+
+/* Search input in nav bar */
+.pane-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 0 8px;
+  height: 26px;
+  width: 180px;
+  flex-shrink: 0;
+  transition: border-color 0.15s, width 0.2s;
+}
+.pane-search:focus-within {
+  border-color: var(--accent);
+  width: 220px;
+}
+.pane-search input {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+.pane-search input::placeholder { color: var(--text-tertiary); }
+.pane-search .search-icon { color: var(--text-tertiary); font-size: 12px; }
+
+/* ---- Pane Splitter ----
+   DESIGN: 3px splitter with a visible drag handle knob.
+   WPF: GridSplitter with Width="3" + centered grip indicator. */
+.pane-splitter {
+  height: 3px;
+  background: var(--border-strong);
+  position: relative;
+  cursor: row-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.pane-splitter:hover { background: var(--accent); }
+.pane-splitter::after {
+  content: '···';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-tertiary);
+  font-size: 8px;
+  letter-spacing: 2px;
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* ====================================================================
+   FILE LIST
+   DESIGN: Column headers are sticky, slightly tinted.
+   Rows: 28px height (compact but scannable).
+   Alternating row background is extremely subtle (just enough to track rows).
+   Selected row uses accent-tinted background + left border indicator.
+   ==================================================================== */
+.file-list-wrapper {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* Sticky column headers */
+.file-table thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.file-table th {
+  background: var(--col-header-bg);
+  backdrop-filter: blur(4px);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0 10px;
+  height: 28px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s, color 0.1s;
+}
+.file-table th:hover { background: var(--hover-bg-strong); color: var(--text-primary); }
+.file-table th.sort-asc::after  { content: ' ↑'; color: var(--accent); }
+.file-table th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+
+/* Column widths */
+.col-name     { width: 44%; }
+.col-size     { width: 12%; text-align: right; }
+.col-modified { width: 22%; }
+.col-type     { width: 17%; }
+.col-calc     { width: 5%; }
+
+.file-table td {
+  padding: 0 10px;
+  height: 28px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.file-table td.col-size {
+  text-align: right;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.file-table td.col-modified {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.file-table td.col-type {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+/* Alternating rows */
+.file-table tbody tr:nth-child(even) { background: var(--row-alt); }
+
+/* Hover state */
+.file-table tbody tr:hover {
+  background: var(--hover-bg-strong);
+  cursor: pointer;
+}
+.file-table tbody tr:hover td { border-bottom-color: var(--border-strong); }
+
+/* Selected state
+   DESIGN: Accent-tinted background + 2px left border indicator — the
+   same pattern used in VS Code and Windows 11 File Explorer. */
+.file-table tbody tr.is-selected {
+  background: var(--selection-bg);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.file-table tbody tr.is-selected td { color: var(--text-primary); }
+
+/* File icon cell */
+.file-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.file-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+.file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Folder rows */
+.file-table tbody tr.is-folder td.col-name .file-name {
+  font-weight: 500;
+}
+
+/* Calculating indicator (tiny animated bar) */
+.calc-bar {
+  width: 36px;
+  height: 3px;
+  background: var(--progress-track);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.calc-bar::after {
+  content: '';
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: calcSlide 1.2s ease-in-out infinite;
+}
+@keyframes calcSlide {
+  0% { margin-left: -40%; }
+  100% { margin-left: 140%; }
+}
+
+/* ====================================================================
+   TRANSFER PROGRESS BAR AREA
+   DESIGN: Compact collapsible section that appears between the panes
+   when a transfer is active. Shows file name, progress, speed, ETA.
+   WPF: Visibility-bound panel with ProgressBar + TextBlock grid.
+   ==================================================================== */
+.transfer-banner {
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.transfer-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.transfer-filename {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.transfer-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 12px;
+}
+.transfer-meta span { white-space: nowrap; }
+.transfer-meta .tm-speed { color: var(--accent); font-weight: 500; }
+
+/* Progress track + fill */
+.transfer-progress-track {
+  flex: 1;
+  height: 4px;
+  background: var(--progress-track);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 80px;
+  max-width: 320px;
+}
+.transfer-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.transfer-percent {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pause/Stop quick controls in banner */
+.transfer-controls {
+  display: flex;
+  gap: 4px;
+}
+.transfer-ctrl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.transfer-ctrl-btn:hover { background: var(--hover-bg-strong); color: var(--text-primary); }
+
+/* ====================================================================
+   STATUS BAR
+   DESIGN: 28px single-row bar. Left: item count + size summary.
+   Right: current theme indicator + selection info.
+   WPF: DockPanel with TextBlocks, separator characters.
+   ==================================================================== */
+.status-bar {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--toolbar-bg);
+  border-top: 1px solid var(--border);
+  gap: 16px;
+  height: 28px;
+  flex-shrink: 0;
+}
+.status-item {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.status-item strong { color: var(--text-primary); font-weight: 500; }
+.status-item.accent { color: var(--accent); }
+.status-spacer { flex: 1; }
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.green { background: var(--success); }
+.status-dot.blue  { background: var(--accent); }
+.status-dot.amber { background: var(--warning); }
+
+/* ====================================================================
+   THEME TOGGLE BUTTON (floating, top-right of toolbar)
+   ==================================================================== */
+.theme-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  height: 26px;
+  border-radius: 13px;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.theme-toggle-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* ====================================================================
+   UTILITY / MISC
+   ==================================================================== */
+.split-bar-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 3px;
+  cursor: row-resize;
+  background: var(--border-strong);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.split-bar-handle:hover { background: var(--accent); }
+
+/* Subtle animation on page load to show the panes sliding in */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.pane-wrapper {
+  animation: fadeSlideIn 0.3s ease both;
+}
+.pane-wrapper.is-dest { animation-delay: 0.08s; }
+
+</style>
+</head>
+<body>
+
+<!--
+  ================================================================
+  BEET'S BACKUP v2 — FULL WINDOW MOCKUP
+  Current state: Split Pane (dual-pane) mode, dark theme
+  Showing: Active transfer in progress
+  ================================================================
+-->
+<div class="app-shell" id="appShell">
+
+  <!-- ============================================================
+       TITLE BAR — custom chrome, 32px
+       WPF: Window chrome with custom title bar template
+       ============================================================ -->
+  <div class="title-bar">
+    <div class="title-bar-brand">
+      <!-- DESIGN: Tiny beet icon (CSS here, Image asset in WPF) -->
+      <div class="title-brand-icon"></div>
+      <span class="title-brand-name">Beet's Backup</span>
+    </div>
+
+    <!-- Draggable region -->
+    <div class="title-drag-region"></div>
+
+    <!-- DESIGN: Windows 11-style window controls — minimize, maximize, close -->
+    <div class="title-window-controls">
+      <button class="wc-btn" title="Minimize">&#x2013;</button>
+      <button class="wc-btn" title="Maximize">&#x25A1;</button>
+      <button class="wc-btn wc-close" title="Close">&#x2715;</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       COMMAND BAR — ~44px, single row
+       Groups: [Logo area stripped] | Transfer | Navigation | Tools | Options | Theme
+       DESIGN: All actions fit in one row at 1200px. The oversized logo
+       (144px image) is replaced by the 18px icon in the title bar,
+       saving ~144px of vertical real estate.
+       ============================================================ -->
+  <div class="command-bar">
+
+    <!-- GROUP 1: Transfer controls (contextual — dimmed when idle) -->
+    <button class="cmd-btn is-disabled" title="Pause transfer (no active transfer)">
+      <!-- WPF: Segoe Fluent Icons \uE769 Pause, \uF5B0 Resume -->
+      <span class="icon">
+        <svg viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
+      </span>
+      Pause
+    </button>
+
+    <button class="cmd-btn cmd-btn-danger is-disabled" title="Stop transfer">
+      <!-- WPF: Segoe Fluent Icons \uE71A Stop -->
+      <span class="icon">
+        <svg viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/></svg>
+      </span>
+      Stop
+    </button>
+
+    <div class="cmd-divider"></div>
+
+    <!-- GROUP 2: Navigation -->
+    <button class="cmd-btn cmd-btn-icon" title="Toggle split pane view">
+      <!-- WPF: Segoe Fluent Icons \uF246 Split — or custom Path geometry -->
+      <span class="icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="13" height="5.5" rx="1.5"/><rect x="1.5" y="9" width="13" height="5.5" rx="1.5"/></svg>
+      </span>
+    </button>
+
+    <button class="cmd-btn cmd-btn-icon" title="Refresh drives">
+      <!-- WPF: Segoe Fluent Icons \uE72C Refresh -->
+      <span class="icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5c1.6 0 3 .68 4 1.76"/><polyline points="14,2 14,4.5 11.5,4.5"/></svg>
+      </span>
+    </button>
+
+    <div class="cmd-divider"></div>
+
+    <!-- GROUP 3: Feature buttons -->
+    <button class="cmd-btn cmd-btn-accent" title="Create new backup schedule">
+      <span class="icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><line x1="5" y1="1.5" x2="5" y2="5"/><line x1="11" y1="1.5" x2="11" y2="5"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><line x1="8" y1="9" x2="8" y2="12.5"/><line x1="6" y1="10.7" x2="10" y2="10.7"/></svg>
+      </span>
+      Schedule
+    </button>
+
+    <button class="cmd-btn" title="View backup jobs">
+      <span class="icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><line x1="5" y1="5.5" x2="11" y2="5.5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="10.5" x2="8.5" y2="10.5"/></svg>
+      </span>
+      Jobs
+    </button>
+
+    <button class="cmd-btn" title="View activity log">
+      <span class="icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3h10M3 6h10M3 9h7M3 12h5"/></svg>
+      </span>
+      Log
+    </button>
+
+    <!-- Spacer pushes options to the right -->
+    <div class="cmd-spacer"></div>
+
+    <!-- GROUP 4: Option toggles
+         DESIGN: Toggle switches instead of checkboxes. Labeled with 11px
+         secondary-text labels. Groups of 3 read clearly at ~400px combined. -->
+    <div class="cmd-toggle-group">
+
+      <label class="toggle-item" title="Strip NTFS permissions from copied files">
+        <div class="toggle-switch">
+          <input type="checkbox" id="togglePerms">
+          <div class="toggle-track"></div>
+          <div class="toggle-knob"></div>
+        </div>
+        <label for="togglePerms">Remove Permissions</label>
+      </label>
+
+      <label class="toggle-item" title="Verify file integrity via SHA-256 checksum after copy">
+        <div class="toggle-switch">
+          <input type="checkbox" id="toggleChecksum" checked>
+          <div class="toggle-track"></div>
+          <div class="toggle-knob"></div>
+        </div>
+        <label for="toggleChecksum">Verify Checksums</label>
+      </label>
+
+      <label class="toggle-item" title="Throttle transfer to ~10 MB/s to keep system responsive">
+        <div class="toggle-switch">
+          <input type="checkbox" id="toggleThrottle">
+          <div class="toggle-track"></div>
+          <div class="toggle-knob"></div>
+        </div>
+        <label for="toggleThrottle">Limit Speed</label>
+      </label>
+    </div>
+
+    <div class="cmd-divider"></div>
+
+    <!-- Theme toggle — pill button, right-aligned -->
+    <button class="theme-toggle-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle dark/light theme">
+      <span id="themeIcon">&#9788;</span>
+      <span id="themeLabel">Light</span>
+    </button>
+
+  </div><!-- /command-bar -->
+
+  <!-- ============================================================
+       MAIN AREA: Sidebar + Dual-Pane Content
+       ============================================================ -->
+  <div class="main-area">
+
+    <!-- ===========================================================
+         SIDEBAR
+         DESIGN: Single unified sidebar showing both drives simultaneously.
+         The SOURCE label is on the top tree section, DESTINATION on the bottom.
+         This matches the dual-pane split while keeping one coherent sidebar.
+         =========================================================== -->
+    <div class="sidebar">
+
+      <!-- SOURCE drives -->
+      <div class="sidebar-section-label">Source</div>
+
+      <div class="drive-item is-selected" role="treeitem" tabindex="0">
+        <span class="drive-icon">&#128190;</span>
+        <div class="drive-info">
+          <div class="drive-name">C: Windows (SSD)</div>
+          <div class="drive-usage-text">487.2 GB / 953.9 GB</div>
+          <div class="drive-bar"><div class="drive-bar-fill is-full" style="width:51%"></div></div>
+        </div>
+      </div>
+
+      <div class="drive-item" role="treeitem" tabindex="0">
+        <span class="drive-icon">&#128190;</span>
+        <div class="drive-info">
+          <div class="drive-name">D: Data (HDD)</div>
+          <div class="drive-usage-text">1.24 TB / 3.64 TB</div>
+          <div class="drive-bar"><div class="drive-bar-fill" style="width:34%"></div></div>
+        </div>
+      </div>
+
+      <div class="drive-item" role="treeitem" tabindex="0">
+        <span class="drive-icon">&#128190;</span>
+        <div class="drive-info">
+          <div class="drive-name">E: Projects (SSD)</div>
+          <div class="drive-usage-text">192.4 GB / 512 GB</div>
+          <div class="drive-bar"><div class="drive-bar-fill" style="width:38%"></div></div>
+        </div>
+      </div>
+
+      <!-- Source folder tree -->
+      <div class="sidebar-tree" role="tree" aria-label="Source folder tree">
+
+        <!-- C:\ root — expanded -->
+        <div class="tree-item" role="treeitem" aria-expanded="true">
+          <span class="tree-indent" style="width:8px"></span>
+          <span class="tree-expand-btn is-expanded">&#9658;</span>
+          <span class="tree-item-icon">&#128190;</span>
+          <span class="tree-item-name">C:\</span>
+        </div>
+
+        <div class="tree-item" role="treeitem" aria-expanded="true">
+          <span class="tree-indent" style="width:20px"></span>
+          <span class="tree-expand-btn is-expanded">&#9658;</span>
+          <span class="tree-item-icon">&#128193;</span>
+          <span class="tree-item-name">Users</span>
+        </div>
+
+        <div class="tree-item is-selected" role="treeitem" aria-selected="true">
+          <span class="tree-indent" style="width:32px"></span>
+          <span class="tree-expand-btn is-expanded">&#9658;</span>
+          <span class="tree-item-icon">&#128193;</span>
+          <span class="tree-item-name">Mike</span>
+        </div>
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:44px"></span>
+          <span class="tree-expand-btn">&#9658;</span>
+          <span class="tree-item-icon">&#128193;</span>
+          <span class="tree-item-name">Documents</span>
+        </div>
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:44px"></span>
+          <span class="tree-expand-btn">&#9658;</span>
+          <span class="tree-item-icon">&#128247;</span>
+          <span class="tree-item-name">Pictures</span>
+        </div>
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:44px"></span>
+          <span class="tree-expand-btn">&#9658;</span>
+          <span class="tree-item-icon">&#127910;</span>
+          <span class="tree-item-name">Videos</span>
+        </div>
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:44px"></span>
+          <span class="tree-expand-btn">&#9658;</span>
+          <span class="tree-item-icon">&#127795;</span>
+          <span class="tree-item-name">OneDrive - WKU</span>
+        </div>
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:44px"></span>
+          <span class="tree-expand-btn">&#9658;</span>
+          <span class="tree-item-icon">&#128196;</span>
+          <span class="tree-item-name">Desktop</span>
+        </div>
+
+      </div><!-- /sidebar-tree source -->
+
+      <!-- Destination drives -->
+      <div class="sidebar-section-label" style="padding-top:8px; border-top:1px solid var(--border-strong); margin-top:4px">Destination</div>
+
+      <div class="drive-item" role="treeitem" tabindex="0">
+        <span class="drive-icon">&#128190;</span>
+        <div class="drive-info">
+          <div class="drive-name">F: Backup (USB 3.2)</div>
+          <div class="drive-usage-text">312 GB / 2 TB</div>
+          <div class="drive-bar"><div class="drive-bar-fill" style="width:16%"></div></div>
+        </div>
+      </div>
+
+      <div class="drive-item is-selected" role="treeitem" tabindex="0">
+        <span class="drive-icon">&#128190;</span>
+        <div class="drive-info">
+          <div class="drive-name">G: NAS Backup</div>
+          <div class="drive-usage-text">1.8 TB / 8 TB</div>
+          <div class="drive-bar"><div class="drive-bar-fill" style="width:22%"></div></div>
+        </div>
+      </div>
+
+      <!-- Destination folder tree (collapsed, showing selected path) -->
+      <div class="sidebar-tree" role="tree" aria-label="Destination folder tree">
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:8px"></span>
+          <span class="tree-expand-btn is-expanded">&#9658;</span>
+          <span class="tree-item-icon">&#128190;</span>
+          <span class="tree-item-name">G:\</span>
+        </div>
+
+        <div class="tree-item is-selected" role="treeitem" aria-selected="true">
+          <span class="tree-indent" style="width:20px"></span>
+          <span class="tree-expand-btn is-expanded">&#9658;</span>
+          <span class="tree-item-icon">&#128193;</span>
+          <span class="tree-item-name">Backups</span>
+        </div>
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:32px"></span>
+          <span class="tree-expand-btn">&#9658;</span>
+          <span class="tree-item-icon">&#128193;</span>
+          <span class="tree-item-name">Desktop-2024-12</span>
+        </div>
+
+        <div class="tree-item" role="treeitem">
+          <span class="tree-indent" style="width:32px"></span>
+          <span class="tree-expand-btn">&#9658;</span>
+          <span class="tree-item-icon">&#128193;</span>
+          <span class="tree-item-name">Documents-2025-01</span>
+        </div>
+
+      </div>
+
+    </div><!-- /sidebar -->
+
+    <!-- ===========================================================
+         CONTENT AREA: Dual-pane file lists
+         =========================================================== -->
+    <div class="content-area">
+
+      <!-- =====================================================
+           TOP PANE — SOURCE
+           ===================================================== -->
+      <div class="pane-wrapper is-source">
+
+        <!-- Pane Navigation Bar -->
+        <div class="pane-nav" role="toolbar" aria-label="Source pane navigation">
+
+          <!-- Back / Forward / Up -->
+          <button class="nav-btn" title="Back" disabled>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M7.5 2L4 6l3.5 4"/></svg>
+          </button>
+          <button class="nav-btn" title="Forward">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M4.5 2L8 6l-3.5 4"/></svg>
+          </button>
+          <button class="nav-btn" title="Up one level">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 8L6 4l4 4"/></svg>
+          </button>
+
+          <!-- Breadcrumb path bar -->
+          <div class="breadcrumb" role="navigation" aria-label="Current path">
+            <span class="bc-seg" tabindex="0">C:</span>
+            <span class="bc-sep">&#8250;</span>
+            <span class="bc-seg" tabindex="0">Users</span>
+            <span class="bc-sep">&#8250;</span>
+            <span class="bc-seg" tabindex="0">Mike</span>
+            <span class="bc-sep">&#8250;</span>
+            <span class="bc-seg is-last" tabindex="0">OneDrive - WKU</span>
+          </div>
+
+          <!-- Pane role indicator badge -->
+          <span class="pane-role-badge src" aria-label="Source pane">SRC</span>
+
+          <!-- Search -->
+          <div class="pane-search" role="search">
+            <span class="search-icon">&#128269;</span>
+            <input type="text" placeholder="Search files..." aria-label="Search source files">
+          </div>
+
+        </div><!-- /pane-nav top -->
+
+        <!-- Source File List -->
+        <div class="file-list-wrapper" role="region" aria-label="Source file list">
+          <table class="file-table" role="grid" aria-label="Source directory contents">
+            <colgroup>
+              <col class="col-name">
+              <col class="col-size">
+              <col class="col-modified">
+              <col class="col-type">
+              <col class="col-calc">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="col-name sort-asc" scope="col" tabindex="0" aria-sort="ascending">Name</th>
+                <th class="col-size" scope="col" tabindex="0">Size</th>
+                <th class="col-modified" scope="col" tabindex="0">Modified</th>
+                <th class="col-type" scope="col" tabindex="0">Type</th>
+                <th class="col-calc" scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+
+              <!-- Folders first -->
+              <tr class="is-folder" role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128193;</span><span class="file-name">.claude</span></div></td>
+                <td class="col-size">—</td>
+                <td class="col-modified">2026-03-22  9:14 AM</td>
+                <td class="col-type">File folder</td>
+                <td></td>
+              </tr>
+
+              <tr class="is-folder" role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128193;</span><span class="file-name">Beet-3.0-Ultimate-Edition</span></div></td>
+                <td class="col-size">—</td>
+                <td class="col-modified">2026-03-29  1:42 PM</td>
+                <td class="col-type">File folder</td>
+                <td><div class="calc-bar"></div></td>
+              </tr>
+
+              <tr class="is-folder is-selected" role="row" tabindex="0" aria-selected="true">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128193;</span><span class="file-name">Personal</span></div></td>
+                <td class="col-size">—</td>
+                <td class="col-modified">2026-03-28  6:05 PM</td>
+                <td class="col-type">File folder</td>
+                <td></td>
+              </tr>
+
+              <tr class="is-folder" role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128193;</span><span class="file-name">Tax Returns</span></div></td>
+                <td class="col-size">—</td>
+                <td class="col-modified">2025-04-15  8:30 AM</td>
+                <td class="col-type">File folder</td>
+                <td></td>
+              </tr>
+
+              <!-- Files -->
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">Budget_2026_Q1.xlsx</span></div></td>
+                <td class="col-size">247 KB</td>
+                <td class="col-modified">2026-03-15  2:11 PM</td>
+                <td class="col-type">Excel Workbook</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">Capstone_Thesis_Draft_v4.docx</span></div></td>
+                <td class="col-size">1.8 MB</td>
+                <td class="col-modified">2026-03-27  11:58 PM</td>
+                <td class="col-type">Word Document</td>
+                <td></td>
+              </tr>
+
+              <tr class="is-selected" role="row" tabindex="0" aria-selected="true">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128247;</span><span class="file-name">Family_Vacation_2025.zip</span></div></td>
+                <td class="col-size">4.2 GB</td>
+                <td class="col-modified">2025-08-12  7:44 PM</td>
+                <td class="col-type">ZIP Archive</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">Resume_Mike_2026.pdf</span></div></td>
+                <td class="col-size">312 KB</td>
+                <td class="col-modified">2026-01-09  4:22 PM</td>
+                <td class="col-type">PDF Document</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#127925;</span><span class="file-name">chill_playlist_export.m3u8</span></div></td>
+                <td class="col-size">18 KB</td>
+                <td class="col-modified">2025-11-03  8:00 PM</td>
+                <td class="col-type">M3U Playlist</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">notes_spring2026.txt</span></div></td>
+                <td class="col-size">88 KB</td>
+                <td class="col-modified">2026-03-29  8:15 AM</td>
+                <td class="col-type">Text Document</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128247;</span><span class="file-name">profile_photo_2025.jpg</span></div></td>
+                <td class="col-size">3.1 MB</td>
+                <td class="col-modified">2025-06-20  3:38 PM</td>
+                <td class="col-type">JPEG Image</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">WKU_Transcript_Official.pdf</span></div></td>
+                <td class="col-size">548 KB</td>
+                <td class="col-modified">2025-12-18  1:05 PM</td>
+                <td class="col-type">PDF Document</td>
+                <td></td>
+              </tr>
+
+            </tbody>
+          </table>
+        </div><!-- /file-list-wrapper top -->
+
+      </div><!-- /pane-wrapper is-source -->
+
+      <!-- =====================================================
+           TRANSFER BANNER (active — visible during a copy job)
+           DESIGN: Appears between the two panes when a transfer
+           is running. Collapsed to 0 height when idle.
+           WPF: Visibility.Collapsed when IsTransferring=False.
+           ===================================================== -->
+      <div class="transfer-banner" role="status" aria-live="polite" aria-label="Transfer progress">
+
+        <!-- File + speed metadata -->
+        <div class="transfer-info">
+          <div class="transfer-filename">Copying: Family_Vacation_2025.zip</div>
+          <div class="transfer-meta">
+            <span class="tm-speed">&#9654; 284 MB/s</span>
+            <span>2.61 GB / 4.2 GB</span>
+            <span>ETA: 6s</span>
+            <span>Checksum: verifying&#8230;</span>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="transfer-progress-track" role="progressbar" aria-valuenow="62" aria-valuemin="0" aria-valuemax="100">
+          <div class="transfer-progress-fill" style="width:62%"></div>
+        </div>
+        <div class="transfer-percent">62%</div>
+
+        <!-- Inline pause/stop controls -->
+        <div class="transfer-controls">
+          <button class="transfer-ctrl-btn" title="Pause transfer">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
+          </button>
+          <button class="transfer-ctrl-btn" title="Stop transfer" style="color:var(--danger)">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/></svg>
+          </button>
+        </div>
+
+      </div><!-- /transfer-banner -->
+
+      <!-- =====================================================
+           PANE SPLITTER HANDLE
+           ===================================================== -->
+      <div class="split-bar-handle" role="separator" aria-label="Drag to resize panes"></div>
+
+      <!-- =====================================================
+           BOTTOM PANE — DESTINATION
+           ===================================================== -->
+      <div class="pane-wrapper is-dest">
+
+        <!-- Bottom Pane Navigation Bar -->
+        <div class="pane-nav" role="toolbar" aria-label="Destination pane navigation">
+
+          <button class="nav-btn" title="Back">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M7.5 2L4 6l3.5 4"/></svg>
+          </button>
+          <button class="nav-btn" title="Forward" disabled>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M4.5 2L8 6l-3.5 4"/></svg>
+          </button>
+          <button class="nav-btn" title="Up one level">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 8L6 4l4 4"/></svg>
+          </button>
+
+          <div class="breadcrumb" role="navigation" aria-label="Current destination path">
+            <span class="bc-seg" tabindex="0">G:</span>
+            <span class="bc-sep">&#8250;</span>
+            <span class="bc-seg" tabindex="0">Backups</span>
+            <span class="bc-sep">&#8250;</span>
+            <span class="bc-seg is-last" tabindex="0">OneDrive-WKU-2026-03</span>
+          </div>
+
+          <span class="pane-role-badge dst" aria-label="Destination pane">DST</span>
+
+          <div class="pane-search" role="search">
+            <span class="search-icon">&#128269;</span>
+            <input type="text" placeholder="Search files..." aria-label="Search destination files">
+          </div>
+
+        </div><!-- /pane-nav bottom -->
+
+        <!-- Destination File List -->
+        <div class="file-list-wrapper" role="region" aria-label="Destination file list">
+          <table class="file-table" role="grid" aria-label="Destination directory contents">
+            <colgroup>
+              <col class="col-name">
+              <col class="col-size">
+              <col class="col-modified">
+              <col class="col-type">
+              <col class="col-calc">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="col-name sort-desc" scope="col" tabindex="0" aria-sort="descending">Name</th>
+                <th class="col-size" scope="col" tabindex="0">Size</th>
+                <th class="col-modified" scope="col" tabindex="0">Modified</th>
+                <th class="col-type" scope="col" tabindex="0">Type</th>
+                <th class="col-calc" scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+
+              <tr class="is-folder" role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128193;</span><span class="file-name">Beet-3.0-Ultimate-Edition</span></div></td>
+                <td class="col-size">—</td>
+                <td class="col-modified">2026-03-29  1:40 PM</td>
+                <td class="col-type">File folder</td>
+                <td></td>
+              </tr>
+
+              <tr class="is-folder" role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128193;</span><span class="file-name">Tax Returns</span></div></td>
+                <td class="col-size">—</td>
+                <td class="col-modified">2025-04-15  8:30 AM</td>
+                <td class="col-type">File folder</td>
+                <td></td>
+              </tr>
+
+              <tr class="is-folder is-selected" role="row" tabindex="0" aria-selected="true">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128193;</span><span class="file-name">Personal</span></div></td>
+                <td class="col-size">—</td>
+                <td class="col-modified">2026-03-28  6:00 PM</td>
+                <td class="col-type">File folder</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">Budget_2026_Q1.xlsx</span></div></td>
+                <td class="col-size">247 KB</td>
+                <td class="col-modified">2026-03-15  2:11 PM</td>
+                <td class="col-type">Excel Workbook</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">Capstone_Thesis_Draft_v4.docx</span></div></td>
+                <td class="col-size">1.8 MB</td>
+                <td class="col-modified">2026-03-27  11:58 PM</td>
+                <td class="col-type">Word Document</td>
+                <td></td>
+              </tr>
+
+              <!-- NOTE: Family_Vacation_2025.zip is being copied right now (in progress) -->
+              <tr class="is-selected" role="row" tabindex="0" aria-selected="true" style="opacity:0.55;" title="Being copied — not yet complete">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128247;</span><span class="file-name">Family_Vacation_2025.zip</span><span style="font-size:10px;color:var(--accent);margin-left:6px;">copying...</span></div></td>
+                <td class="col-size">4.2 GB</td>
+                <td class="col-modified">—</td>
+                <td class="col-type">ZIP Archive</td>
+                <td><div class="calc-bar"></div></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">Resume_Mike_2026.pdf</span></div></td>
+                <td class="col-size">312 KB</td>
+                <td class="col-modified">2026-01-09  4:22 PM</td>
+                <td class="col-type">PDF Document</td>
+                <td></td>
+              </tr>
+
+              <tr role="row" tabindex="0">
+                <td class="col-name"><div class="file-cell"><span class="file-icon">&#128196;</span><span class="file-name">WKU_Transcript_Official.pdf</span></div></td>
+                <td class="col-size">548 KB</td>
+                <td class="col-modified">2025-12-18  1:05 PM</td>
+                <td class="col-type">PDF Document</td>
+                <td></td>
+              </tr>
+
+            </tbody>
+          </table>
+        </div><!-- /file-list-wrapper bottom -->
+
+      </div><!-- /pane-wrapper is-dest -->
+
+    </div><!-- /content-area -->
+
+  </div><!-- /main-area -->
+
+  <!-- ============================================================
+       STATUS BAR — 28px
+       DESIGN: Two-zone layout. Left shows context for the active pane
+       (item count, sizes). Right shows global state (theme, idle/active).
+       WPF: DockPanel with TextBlocks and Separator elements.
+       ============================================================ -->
+  <div class="status-bar" role="status" aria-label="Application status">
+
+    <div class="status-dot blue"></div>
+    <span class="status-item">
+      <strong>SRC</strong>&nbsp; C:\Users\Mike\OneDrive - WKU
+    </span>
+
+    <span class="status-item">11 items</span>
+    <span class="status-item">6.4 GB selected</span>
+
+    <div class="status-spacer"></div>
+
+    <span class="status-item">
+      <strong>DST</strong>&nbsp; G:\Backups\OneDrive-WKU-2026-03
+    </span>
+
+    <span class="status-item">8 items</span>
+
+    <div class="status-spacer"></div>
+
+    <!-- Transfer state indicator -->
+    <div class="status-dot blue" style="animation: pulse 1.2s infinite;"></div>
+    <span class="status-item accent">Copying&#8230; &nbsp;284 MB/s &nbsp;&#8226;&nbsp; 62% &nbsp;&#8226;&nbsp; ETA 6s</span>
+
+    <div style="width:1px;height:14px;background:var(--border-strong);margin:0 8px;"></div>
+
+    <span class="status-item">Checksums: ON</span>
+
+  </div><!-- /status-bar -->
+
+</div><!-- /app-shell -->
+
+<!-- ============================================================
+     JAVASCRIPT: Theme toggle + minor interactivity for demo
+     ============================================================ -->
+<script>
+// ---- Theme Toggle ----
+// WPF equivalent: App.xaml.cs ToggleThemeCommand → merges
+// Dark.xaml or Light.xaml into Application.Current.Resources
+function toggleTheme() {
+  const shell = document.getElementById('appShell');
+  const btn   = document.getElementById('themeBtn');
+  const icon  = document.getElementById('themeIcon');
+  const label = document.getElementById('themeLabel');
+  const isLight = shell.getAttribute('data-theme') === 'light';
+
+  if (isLight) {
+    // Switch to dark
+    shell.removeAttribute('data-theme');
+    icon.textContent  = '\u2600'; // sun glyph
+    label.textContent = 'Light';
+  } else {
+    // Switch to light
+    shell.setAttribute('data-theme', 'light');
+    icon.textContent  = '\u263D'; // crescent moon glyph
+    label.textContent = 'Dark';
+  }
+}
+
+// ---- Row selection demo (click to select/deselect) ----
+document.querySelectorAll('.file-table tbody tr').forEach(row => {
+  row.addEventListener('click', function() {
+    // Simple single-select toggle for demo
+    const table = this.closest('table');
+    table.querySelectorAll('tbody tr').forEach(r => {
+      r.classList.remove('is-selected');
+      r.removeAttribute('aria-selected');
+    });
+    this.classList.add('is-selected');
+    this.setAttribute('aria-selected', 'true');
+  });
+});
+
+// ---- Animate transfer progress for demo ----
+// Simulates a live transfer moving from 62% toward 100%
+let progress = 62;
+const fillEl   = document.querySelector('.transfer-progress-fill');
+const pctEl    = document.querySelector('.transfer-percent');
+const speedEl  = document.querySelector('.tm-speed');
+const metaEls  = document.querySelectorAll('.transfer-meta span');
+
+function advanceTransfer() {
+  if (progress >= 100) return;
+  progress += (Math.random() * 1.5 + 0.3);
+  if (progress > 100) progress = 100;
+
+  const pct = Math.round(progress);
+  if (fillEl) fillEl.style.width = pct + '%';
+  if (pctEl)  pctEl.textContent  = pct + '%';
+
+  // Update ETA display
+  const remaining = (100 - progress) / 100 * 4.2;
+  const eta = Math.max(0, Math.round(remaining / 0.284));
+  if (metaEls[2]) metaEls[2].textContent = 'ETA: ' + (eta > 0 ? eta + 's' : 'Done');
+
+  if (progress < 100) {
+    setTimeout(advanceTransfer, 400 + Math.random() * 300);
+  } else {
+    // Transfer complete — update UI
+    document.querySelector('.transfer-filename').textContent = 'Transfer complete — Family_Vacation_2025.zip';
+    if (speedEl) speedEl.textContent = '✓ Verified';
+    document.querySelector('.status-item.accent').textContent = 'Transfer complete — all checksums verified';
+  }
+}
+// Start the animation after a short delay
+setTimeout(advanceTransfer, 1200);
+
+// ---- Toggle switches: update label opacity ----
+document.querySelectorAll('.toggle-switch input').forEach(input => {
+  input.addEventListener('change', function() {
+    const label = this.closest('.toggle-item').querySelector('label');
+    if (label) {
+      label.style.color = this.checked ? 'var(--text-primary)' : '';
+    }
+  });
+  // Set initial state for the pre-checked checksum toggle
+  if (input.checked) {
+    const label = input.closest('.toggle-item').querySelector('label');
+    if (label) label.style.color = 'var(--text-primary)';
+  }
+});
+
+// ---- Tree item interaction ----
+document.querySelectorAll('.tree-item').forEach(item => {
+  item.addEventListener('click', function() {
+    const sidebar = this.closest('.sidebar');
+    sidebar.querySelectorAll('.tree-item').forEach(t => t.classList.remove('is-selected'));
+    this.classList.add('is-selected');
+  });
+});
+
+// ---- Drive item interaction ----
+document.querySelectorAll('.drive-item').forEach(item => {
+  item.addEventListener('click', function() {
+    // Select within same section (above/below divider) — simplified
+    this.classList.toggle('is-selected');
+  });
+});
+</script>
+
+</body>
+</html>

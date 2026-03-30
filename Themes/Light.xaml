@@ -1,26 +1,59 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Color x:Key="BackgroundColor">#F3F3F3</Color>
+    <!-- v2 Warm light palette — avoids sterile pure-white -->
+    <Color x:Key="BackgroundColor">#EDEDF2</Color>
     <Color x:Key="SurfaceColor">#FFFFFF</Color>
-    <Color x:Key="PanelColor">#EBEBEB</Color>
-    <Color x:Key="BorderColor">#D0D0D0</Color>
-    <Color x:Key="PrimaryTextColor">#1A1A1A</Color>
-    <Color x:Key="SecondaryTextColor">#6B6B6B</Color>
-    <Color x:Key="AccentColor">#0078D4</Color>
-    <Color x:Key="AccentHoverColor">#106EBE</Color>
-    <Color x:Key="SelectionColor">#CCE4F7</Color>
-    <Color x:Key="ToolbarColor">#F9F9F9</Color>
+    <Color x:Key="SurfaceRaisedColor">#F7F7FC</Color>
+    <Color x:Key="SurfaceInsetColor">#F0F0F6</Color>
+    <Color x:Key="PanelColor">#F0F0F5</Color>
+    <Color x:Key="BorderColor">#DDDDE4</Color>
+    <Color x:Key="BorderStrongColor">#C8C8D4</Color>
+    <Color x:Key="PrimaryTextColor">#1A1A2E</Color>
+    <Color x:Key="SecondaryTextColor">#666680</Color>
+    <Color x:Key="TertiaryTextColor">#AAAABC</Color>
+    <Color x:Key="AccentColor">#4A9EFF</Color>
+    <Color x:Key="AccentHoverColor">#2A8AEF</Color>
+    <Color x:Key="AccentDimColor">#E8F0FC</Color>
+    <Color x:Key="SelectionColor">#B3D4F7</Color>
+    <Color x:Key="HoverColor">#D0DEF0</Color>
+    <Color x:Key="ToolbarColor">#F4F4F9</Color>
+    <Color x:Key="SuccessColor">#16A34A</Color>
+    <Color x:Key="WarningColor">#D97706</Color>
+    <Color x:Key="DangerColor">#DC2626</Color>
+    <Color x:Key="RowAltColor">#F8F8FC</Color>
+    <Color x:Key="ProgressTrackColor">#E0E0EA</Color>
+
+    <!-- SRC / DST pane accent colors -->
+    <Color x:Key="PaneSrcBorderColor">#90BFFF</Color>
+    <Color x:Key="PaneSrcBgColor">#F0F5FF</Color>
+    <Color x:Key="PaneDstBorderColor">#6DD4A0</Color>
+    <Color x:Key="PaneDstBgColor">#F0FBF4</Color>
 
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
+    <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{StaticResource SurfaceRaisedColor}"/>
+    <SolidColorBrush x:Key="SurfaceInsetBrush" Color="{StaticResource SurfaceInsetColor}"/>
     <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}"/>
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}"/>
+    <SolidColorBrush x:Key="BorderStrongBrush" Color="{StaticResource BorderStrongColor}"/>
     <SolidColorBrush x:Key="PrimaryTextBrush" Color="{StaticResource PrimaryTextColor}"/>
     <SolidColorBrush x:Key="SecondaryTextBrush" Color="{StaticResource SecondaryTextColor}"/>
+    <SolidColorBrush x:Key="TertiaryTextBrush" Color="{StaticResource TertiaryTextColor}"/>
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
     <SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource AccentHoverColor}"/>
+    <SolidColorBrush x:Key="AccentDimBrush" Color="{StaticResource AccentDimColor}"/>
     <SolidColorBrush x:Key="SelectionBrush" Color="{StaticResource SelectionColor}"/>
+    <SolidColorBrush x:Key="HoverBrush" Color="{StaticResource HoverColor}"/>
     <SolidColorBrush x:Key="ToolbarBrush" Color="{StaticResource ToolbarColor}"/>
+    <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}"/>
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}"/>
+    <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}"/>
+    <SolidColorBrush x:Key="RowAltBrush" Color="{StaticResource RowAltColor}"/>
+    <SolidColorBrush x:Key="ProgressTrackBrush" Color="{StaticResource ProgressTrackColor}"/>
+    <SolidColorBrush x:Key="PaneSrcBorderBrush" Color="{StaticResource PaneSrcBorderColor}"/>
+    <SolidColorBrush x:Key="PaneSrcBgBrush" Color="{StaticResource PaneSrcBgColor}"/>
+    <SolidColorBrush x:Key="PaneDstBorderBrush" Color="{StaticResource PaneDstBorderColor}"/>
+    <SolidColorBrush x:Key="PaneDstBgBrush" Color="{StaticResource PaneDstBgColor}"/>
 
 </ResourceDictionary>
