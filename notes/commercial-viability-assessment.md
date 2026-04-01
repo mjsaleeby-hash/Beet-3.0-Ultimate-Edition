@@ -29,14 +29,14 @@
 - **Problem:** `_jobs` is a plain `List<T>` accessed from UI thread and timer thread with no lock. Can crash the scheduler silently via `InvalidOperationException` during enumeration.
 - **Fix:** Add `lock(_jobsLock)` around all reads/writes/iterations, or use `ImmutableList` with interlocked replace.
 - **Effort:** 1 hour
-- **Status:** Open
+- **Status:** RESOLVED (2026-04-01) — `SnapshotJob()` clones job data before handing to background tasks; only `LastRun` written back under lock
 
 ### 4. Silent Scheduler Death
 - **File:** `SchedulerService.cs`, line 28
 - **Problem:** `_ = RunAsync(_cts.Token)` fire-and-forgets. If `RunAsync` throws, the scheduler dies permanently with no UI indication.
 - **Fix:** Store the task; add top-level try/catch inside `RunAsync` that logs to `BackupLogService`, optionally restarts the loop, and surfaces a warning in the status bar.
 - **Effort:** 30 minutes
-- **Status:** Open
+- **Status:** RESOLVED (2026-04-01) — `SchedulerError` event fires on scheduler loop errors and job failures; `MainViewModel` surfaces message in status bar
 
 ### 5. Single-Instance Mutex
 - **Problem:** No mutex check on startup. Two instances can run simultaneously, both running schedulers and racing on JSON files.
@@ -94,7 +94,7 @@
 - **File:** `TransferService.cs`
 - **Problem:** Pre-check passes but drive fills up mid-copy. Per-file errors scroll past and are not persisted to the log.
 - **Fix:** Catch `IOException` with HResult `0x80070070` (`ERROR_DISK_FULL`); add `DiskFullErrors` counter to `TransferResult`.
-- **Status:** Open
+- **Status:** RESOLVED (2026-04-01) — per-file errors (disk full, locked file, checksum mismatch, general I/O) recorded in `TransferResult.FileErrors` and persisted to `BackupLogEntry.FileErrors`; "View Errors" button in Log dialog
 
 ---
 
@@ -186,7 +186,7 @@ All 21 fixes from the architect assessment were implemented across **14 files** 
 - **BackupLogEntry.Id get-only breaks JSON round-trip** — Deserialized entries get new GUIDs. Does not affect current functionality.
 - **ExecuteJobAsync fire-and-forget** — Scheduler job execution is fire-and-forget. Already mitigated by the top-level try/catch added in item 4.
 - **SaveJobs I/O inside lock** — File write happens while holding the jobs lock. Low risk given current usage patterns.
-- **CheckFreeSpace fails on UNC paths** — `DriveInfo` only accepts drive letters. Network backup targets may skip the free space pre-check.
+- **CheckFreeSpace fails on UNC paths** — `DriveInfo` only accepts drive letters. Network backup targets may skip the free space pre-check. **RESOLVED (2026-04-01)** — wrapped in try/catch; check silently skipped for UNC/relative paths.
 - **Search batch flush after cancellation** — A final partial batch may dispatch after cancellation is signaled. Cosmetic; no data impact.
 
 ### Build Outcome

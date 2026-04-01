@@ -123,6 +123,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _scheduler = scheduler;
         _log = log;
         IsDarkMode = theme.IsDark;
+        _scheduler.SchedulerError += OnSchedulerError;
         LoadDrives();
     }
 
@@ -145,9 +146,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         BottomTreeItems.Clear();
         foreach (var drive in _fs.GetDrives())
         {
-            Drives.Add(drive);
-            TopTreeItems.Add(new FolderTreeItem(drive));
-            BottomTreeItems.Add(new FolderTreeItem(drive));
+            try
+            {
+                Drives.Add(drive);
+                TopTreeItems.Add(new FolderTreeItem(drive));
+                BottomTreeItems.Add(new FolderTreeItem(drive));
+            }
+            catch (IOException) { /* Drive became unavailable between enumeration and access */ }
         }
     }
 
@@ -185,7 +190,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _transferCts?.Cancel();
         _transferCts = new CancellationTokenSource();
-        _pauseGate.Set();
+        // Create a fresh pause gate per transfer to avoid ObjectDisposedException
+        // and prevent a cancelled transfer from briefly resuming
+        var oldGate = _pauseGate;
+        _pauseGate = new ManualResetEventSlim(true);
+        oldGate.Set(); // unblock any old transfer so it can observe cancellation
+        oldGate.Dispose();
         IsTransferring = true;
         IsPaused = false;
         TransferProgressPercent = 0;
@@ -205,8 +215,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _scheduler.SchedulerError -= OnSchedulerError;
         _pauseGate.Dispose();
         _transferCts?.Dispose();
+        _topSizeCts?.Cancel(); _topSizeCts?.Dispose();
+        _bottomSizeCts?.Cancel(); _bottomSizeCts?.Dispose();
+        _topNavCts?.Cancel(); _topNavCts?.Dispose();
+        _bottomNavCts?.Cancel(); _bottomNavCts?.Dispose();
+        _searchCts?.Cancel(); _searchCts?.Dispose();
+    }
+
+    private void OnSchedulerError(string message)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+            dispatcher.BeginInvoke(() => StatusMessage = message);
+        else
+            StatusMessage = message;
     }
 
     private void OnTransferProgress(string msg) => StatusMessage = msg;
@@ -248,11 +273,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         // Cancel any previous in-flight navigation to prevent duplicate entries
         // when NavigateTop is called rapidly (e.g. tree selection events).
-        _topNavCts?.Cancel();
+        _topNavCts?.Cancel(); _topNavCts?.Dispose();
         var navCts = new CancellationTokenSource();
         _topNavCts = navCts;
 
-        _topSizeCts?.Cancel();
+        _topSizeCts?.Cancel(); _topSizeCts?.Dispose();
         _topSizeCts = new CancellationTokenSource();
         TopCurrentPath = path;
         TopPaneItems.Clear();
@@ -288,11 +313,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private async Task NavigateBottom(string path)
     {
         // Cancel any previous in-flight navigation to prevent duplicate entries.
-        _bottomNavCts?.Cancel();
+        _bottomNavCts?.Cancel(); _bottomNavCts?.Dispose();
         var navCts = new CancellationTokenSource();
         _bottomNavCts = navCts;
 
-        _bottomSizeCts?.Cancel();
+        _bottomSizeCts?.Cancel(); _bottomSizeCts?.Dispose();
         _bottomSizeCts = new CancellationTokenSource();
         BottomCurrentPath = path;
         BottomPaneItems.Clear();
@@ -374,7 +399,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         refreshTimer.Change(Timeout.Infinite, Timeout.Infinite);
 
-        await System.Windows.Application.Current!.Dispatcher.InvokeAsync(() =>
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null) return;
+        await dispatcher.InvokeAsync(() =>
         {
             if (isTop) IsTopCalculating = false;
             else IsBottomCalculating = false;

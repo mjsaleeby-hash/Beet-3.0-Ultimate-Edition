@@ -102,6 +102,14 @@
                     Background="#0078D4" Foreground="White"
                     BorderThickness="0" FontWeight="SemiBold"
                     ToolTip="Pause or resume a running backup"/>
+            <Button x:Name="ViewErrorsButton" Content="View Errors"
+                    Padding="16,8" Cursor="Hand"
+                    Click="ViewErrors_Click"
+                    IsEnabled="False"
+                    Margin="0,0,12,0"
+                    Background="#C42B1C" Foreground="White"
+                    BorderThickness="0" FontWeight="SemiBold"
+                    ToolTip="View per-file errors for this job"/>
             <Button x:Name="RetryButton" Content="&#x1F504; Retry Failed Job"
                     Padding="16,8" Cursor="Hand"
                     Click="Retry_Click" IsEnabled="False"
@@ -141,6 +149,12 @@
             </Button>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Open Log Folder"
+                        Background="#EBEBEB" Foreground="#1A1A1A"
+                        BorderBrush="#D0D0D0" BorderThickness="1"
+                        Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
+                        Click="OpenLogFolder_Click"
+                        ToolTip="Open the folder containing operational and crash logs"/>
                 <Button Content="Export CSV"
                         Background="#EBEBEB" Foreground="#1A1A1A"
                         BorderBrush="#D0D0D0" BorderThickness="1"

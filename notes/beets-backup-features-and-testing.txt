@@ -1,5 +1,5 @@
 Beets Backup — Feature List, Known Limitations, and Critical Testing Areas
-Last updated: 2026-03-25
+Last updated: 2026-04-01
 
 ================================================================================
 SECTION 1: COMPLETE FEATURE LIST
@@ -13,13 +13,14 @@ FILE MANAGER — LAYOUT AND NAVIGATION
 - Back/Forward/Up navigation with full history (browser-style)
 - Breadcrumb-style path display
 - Drive refresh button (hot-plug USB support)
+- Drive load errors caught per-drive (ejected drive during enumeration does not break list)
 
 FILE LIST
 - File list with columns: Name (with icon), Type, Size, Modified
 - Column sorting (ascending/descending) with folders always first
 - Multi-select file support (Ctrl+Click, Shift+Click)
 - Context menus (right-click) with keyboard shortcuts shown
-- Folder size calculation (async, with "Calculating..." indicator)
+- Folder size calculation (async, with "Calculating..." indicator; UI thread-safe)
 - Hidden file support (preserved during copy)
 
 SEARCH
@@ -38,20 +39,29 @@ FILE OPERATIONS
 - Drag and drop between panes
 
 TRANSFER OPTIONS
-- Transfer mode selection: Skip Existing (Merge), Keep Both, Replace
+- Transfer mode selection: Skip Existing (Merge), Keep Both, Replace, Mirror (Sync)
 - Skip Existing compares both file size AND last modified timestamp
 - Keep Both auto-renames with -1, -2 suffixes
+- Replace overwrites existing files
+- Mirror copies new/changed files then deletes destination-only files (with confirmation dialog)
 - Remove NTFS permissions option during transfer
 - Verify checksums (SHA256) after copy option
-- Pre-transfer free space check
+- Pre-transfer free space check (skipped safely for UNC/network paths)
+- Timestamp preservation: destination last-write time matches source after copy
 
 TRANSFER PROGRESS
 - Transfer progress bar with percentage and ETA
-- Pause/Resume active transfers
+- Pause/Resume active transfers (fresh ManualResetEventSlim per transfer)
 - Stop (cancel) active transfers
 - Disk-full detection with specific error reporting
 - Locked-file detection with specific error reporting
 - Directory failure tracking (separate from file failures)
+- Per-file error tracking: path + reason recorded for every failed file (capped at 200 per job)
+
+BANDWIDTH THROTTLING
+- "Limit Speed" checkbox in main toolbar (fixed 10 MB/s cap)
+- Per-job speed picker in scheduler dialog (1–100 MB/s options)
+- Chunked streaming with stopwatch-based rate limiting in TransferService
 
 SCHEDULED BACKUP JOBS
 - Scheduled backup jobs with custom names
@@ -60,18 +70,29 @@ SCHEDULED BACKUP JOBS
 - One-time scheduled backups
 - Per-job transfer mode selection
 - Per-job permission stripping option
+- Per-job checksum verification option
+- Per-job exclusion filters (by extension pattern and exact name)
+- Per-job speed limit option
+- Backup size estimation with "Estimate Size" button (respects exclusion filters)
 - Scheduled Jobs dialog to view/manage/delete jobs
 - Background scheduler with 1-minute resolution
-- Thread-safe job scheduler with failure recovery
+- Thread-safe job scheduler: SnapshotJob() clones job data before background execution
+- Scheduler errors surfaced in main window status bar via SchedulerError event
+- Missed backup detection on startup with Run All Now / Skip All dialog
+- LastRun tracking per job for accurate missed-backup detection
 
 BACKUP LOG
 - Backup log with detailed history (timestamp, job, status, source, stats, details)
-- Log statuses: Scheduled, Running, Complete, Failed
+- Log statuses: Scheduled, Running, Complete, Failed, Complete with N error(s)
 - Running jobs show progress bar in log
-- Export log to CSV
+- Per-file error records on log entries (FilesFailed count + List<FileError>)
+- "View Errors" button enabled when selected entry has file errors
+- Export log to CSV (newline-safe escaping)
+- "Open Log Folder" button opens %LocalAppData%\Beet's Backup\ in Explorer
 - Clear log (persists to disk)
 - Log capped at 500 entries (oldest dropped)
 - Stale "Running" entries auto-marked as Failed on startup
+- Debounced save (1-second delay) prevents I/O on every status tick
 
 DATA VISUALIZATION
 - Visual Mode toolbar button toggles between List view and donut pie chart
@@ -88,12 +109,15 @@ APPLICATION
 - Dark and Light theme support with runtime toggle
 - Theme preference persisted to settings
 - Single-instance enforcement (prevents duplicate app instances)
-- Crash logging to %LocalAppData%\Beet's Backup\crash.log
+- Crash logging to %LocalAppData%\Beet's Backup\crash_dump.log
 - Operational logging to %LocalAppData%\Beet's Backup\operational.log (10MB rotation)
+- FileLogger.LogDirectory (public) used by "Open Log Folder" feature
 - Atomic JSON saves (settings, jobs, log) — crash-safe
 - Portable single-file self-contained deployment (win-x64)
+- ServiceProvider disposed on app exit (all singleton services cleaned up properly)
 - Custom window with Segoe UI Variable font
 - Assembly version 3.0.0
+- 132-test xUnit suite (BeetsBackup.Tests/)
 
 ================================================================================
 SECTION 2: KNOWN LIMITATIONS
@@ -106,15 +130,13 @@ SECTION 2: KNOWN LIMITATIONS
 - Cannot open files from within the app (files must be opened via Windows Explorer)
 - No file preview/thumbnail support
 - No built-in auto-updater
-- UNC path free space check may fail (DriveInfo only accepts drive letters)
 - Recycle Bin delete called from thread pool — COM dialog could fail on non-STA thread (rare edge case)
 - BackupLogEntry.Id is get-only — deserialized entries get new GUIDs (doesn't affect current functionality)
 - No file filtering by date range or size range
 - No compression/encryption for backups
 - No backup verification/restore workflow
-- No email/notification on backup completion or failure
+- No email/toast notification on backup completion or failure
 - Scheduler requires app to be running (no Windows Service mode)
-- No bandwidth/throttle control for transfers
 - Windows only (WPF, .NET 8)
 
 ================================================================================
@@ -131,7 +153,9 @@ ATOMIC SAVES
 SCHEDULER
 - Scheduler: Run multiple scheduled jobs simultaneously, verify no crashes or data corruption
 - Scheduler: Verify scheduler recovers after an exception (doesn't die silently)
+- Scheduler: Verify SchedulerError event fires and message appears in status bar on job failure
 - Recurring job: Set a 6-hour recurring job, verify it fires on schedule and reschedules
+- Job snapshot: Mutate a scheduled job's settings mid-run, verify the running job is unaffected
 
 SINGLE INSTANCE
 - Single-instance: Launch two copies, verify second shows message and exits
@@ -139,8 +163,11 @@ SINGLE INSTANCE
 TRANSFER MODES
 - Skip Existing: Test with same-size files that have different timestamps — should copy
 - Skip Existing: Test with same-size, same-timestamp files — should skip
+- Skip Existing: After a copy, run again immediately — verify no files are re-copied (timestamp preservation)
 - Keep Both: Verify files get -1, -2 suffixes correctly
 - Replace: Verify existing files are overwritten
+- Mirror: Verify destination-only files are deleted after confirmation
+- Mirror: Verify source files not in destination are copied
 
 DELETE / RECYCLE BIN
 - Recycle Bin: Verify deleted files appear in Windows Recycle Bin, not permanently deleted
@@ -152,33 +179,49 @@ SEARCH
 FOLDER TREE
 - Folder tree: Expand a folder on a slow USB drive, verify UI doesn't freeze
 - Folder tree: Expand a folder on a network drive, verify no hang
+- Drive list: Eject a drive mid-enumeration during Refresh, verify remaining drives still load
 
 TRANSFER PROGRESS
 - Transfer progress: Verify progress bar reaches 100% on completion
 - Transfer progress: Verify ETA is reasonable
 - Pause/Resume: Pause mid-transfer, resume, verify completion is correct
+- Pause/Resume: Start a second transfer after one completes, verify no ObjectDisposedException
 - Stop: Cancel mid-transfer, verify partial files are handled cleanly
 
 ERROR HANDLING
-- Disk full: Fill destination drive mid-transfer, verify error reporting
-- Locked files: Copy a folder containing a file locked by another process, verify it's reported
+- Disk full: Fill destination drive mid-transfer, verify error reported in log and "View Errors" shows the file
+- Locked files: Copy a folder containing a file locked by another process, verify it's reported in "View Errors"
+- Checksum mismatch: Simulate a checksum failure, verify it appears in "View Errors"
+- Per-file errors: Trigger 200+ file errors, verify the list is capped at 200
+- UNC path: Schedule a backup to a \\server\share destination, verify no crash in free space check
 
 COPY OPTIONS
 - Checksum verify: Copy files with verify enabled, confirm SHA256 matches
 - Permission stripping: Copy files with permissions option, verify ACLs are reset
 - Hidden files: Copy hidden files/folders, verify hidden attribute preserved at destination
+- Timestamp preservation: Copy a file; verify destination LastWriteTime matches source
 
-SETTINGS / PERSISTENCE
-- Theme toggle: Switch themes, close app, reopen — verify theme persisted
+BANDWIDTH THROTTLING
+- Throttle: Enable 1 MB/s limit, copy a large file, verify transfer rate stays near the cap
+- Throttle: Set per-job speed in scheduler, verify rate respected during scheduled run
 
 LOG
 - Log cap: Generate 600+ log entries, verify oldest are dropped at 500
 - Stale entries: Force-kill app during a transfer, reopen — verify "Running" entry shows as "Failed"
 - Clear log: Clear log, close app, reopen — verify log stays cleared
-- Export CSV: Export log, open in Excel — verify formatting
+- Export CSV: Export log, open in Excel — verify formatting and no broken rows from newlines
+- View Errors: Select a log entry with failures, verify "View Errors" button enables and shows correct file list
+- View Errors: Select a log entry with no failures, verify "View Errors" button is disabled
+- Open Log Folder: Click button, verify Explorer opens to %LocalAppData%\Beet's Backup\
+- Debounced save: Rapidly update log status 10x, verify only ~1 disk write occurs per second
+
+SETTINGS / PERSISTENCE
+- Theme toggle: Switch themes, close app, reopen — verify theme persisted
 
 SCHEDULER DIALOG
 - Schedule dialog: Create job with multiple sources, verify all sources backed up
+- Exclusion filters: Add *.tmp filter, verify .tmp files are excluded from transfer
+- Estimate Size: Click Estimate Size, verify count and bytes are reasonable
 
 LARGE TRANSFERS
 - Large transfer: Copy 50GB+ of data, verify completion and accurate stats
@@ -212,3 +255,8 @@ VISUAL MODE (PIE CHART)
 - Enable Visual Mode in split-pane mode — verify top and bottom panes each show their own independent chart
 - Toggle back to List View — verify the file list returns with all columns intact
 - Open a folder with 0 or 1 items in Visual Mode — verify no crash or empty-chart rendering errors
+
+SHUTDOWN / DISPOSAL
+- Close app while a folder size calculation is in progress — verify no NullReferenceException from Application.Current
+- Close app while a scheduled job is running — verify ServiceProvider.Dispose() cleans up without errors
+- Close app while a transfer is paused — verify no ObjectDisposedException from pause gate disposal

@@ -186,18 +186,21 @@ public class TransferService
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
                 {
                     result.DiskFullErrors++;
+                    result.AddFileError(file, "Disk full");
                     FileLogger.Error($"Disk full: {file}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(file)} — not enough space");
                 }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
                 {
                     result.FilesLocked++;
+                    result.AddFileError(file, "File is in use");
                     FileLogger.Warn($"File locked: {file}");
                     progress?.Report($"LOCKED: {Path.GetFileName(file)} — file is in use");
                 }
                 catch (Exception ex)
                 {
                     result.FilesFailed++;
+                    result.AddFileError(file, ex.Message);
                     FileLogger.LogException($"File copy failed: {file}", ex);
                     progress?.Report($"ERROR: {Path.GetFileName(file)} — {ex.Message}");
                 }
@@ -213,18 +216,21 @@ public class TransferService
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
                 {
                     result.DiskFullErrors++;
+                    result.AddFileError(dir, "Disk full");
                     FileLogger.Error($"Disk full: {dir}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(dir)} — not enough space");
                 }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
                 {
                     result.FilesLocked++;
+                    result.AddFileError(dir, "Directory is in use");
                     FileLogger.Warn($"Directory locked: {dir}");
                     progress?.Report($"LOCKED: {Path.GetFileName(dir)} — file is in use");
                 }
                 catch (Exception ex)
                 {
                     result.DirectoriesFailed++;
+                    result.AddFileError(dir, ex.Message);
                     FileLogger.LogException($"Directory copy failed: {dir}", ex);
                     progress?.Report($"ERROR: {Path.GetFileName(dir)} — {ex.Message}");
                 }
@@ -301,6 +307,7 @@ public class TransferService
                 if (!sourceHash.SequenceEqual(destHash))
                 {
                     result.ChecksumMismatches++;
+                    result.AddFileError(dest, "Checksum mismatch after copy");
                     progress?.Report($"CHECKSUM MISMATCH: {Path.GetFileName(dest)}");
                 }
             }
@@ -315,6 +322,7 @@ public class TransferService
             if (!sourceHash.SequenceEqual(destHash))
             {
                 result.ChecksumMismatches++;
+                result.AddFileError(dest, "Checksum mismatch after copy");
                 progress?.Report($"CHECKSUM MISMATCH: {Path.GetFileName(dest)}");
             }
         }
@@ -494,11 +502,22 @@ public class TransferService
     private static void CheckFreeSpace(List<string> sourcePaths, string destinationDir)
     {
         long totalSize = EstimateTotalSize(sourcePaths);
-        var driveInfo = new DriveInfo(Path.GetPathRoot(destinationDir)!);
-        long available = driveInfo.AvailableFreeSpace;
 
-        if (totalSize > available)
-            throw new InsufficientSpaceException(totalSize, available);
+        var root = Path.GetPathRoot(destinationDir);
+        if (string.IsNullOrEmpty(root)) return; // relative path — skip check
+
+        try
+        {
+            var driveInfo = new DriveInfo(root);
+            long available = driveInfo.AvailableFreeSpace;
+
+            if (totalSize > available)
+                throw new InsufficientSpaceException(totalSize, available);
+        }
+        catch (ArgumentException)
+        {
+            // UNC/network paths are not supported by DriveInfo — skip check
+        }
     }
 
     private static int CountFiles(string path, IReadOnlyList<string>? exclusions = null)

@@ -28,6 +28,7 @@ public class SchedulerService : IDisposable
     }
 
     public event Action? JobsChanged;
+    public event Action<string>? SchedulerError;
 
     public SchedulerService(TransferService transfer, BackupLogService log)
     {
@@ -56,9 +57,11 @@ public class SchedulerService : IDisposable
         foreach (var job in jobs)
         {
             FileLogger.Info($"Running missed job: '{job.Name}'");
+            // Snapshot job data before launching background task to avoid race conditions
+            var snapshot = SnapshotJob(job);
             _ = Task.Run(async () =>
             {
-                try { await ExecuteJobAsync(job); }
+                try { await ExecuteJobAsync(snapshot, job); }
                 catch (Exception ex) { FileLogger.LogException($"Missed job failed: '{job.Name}'", ex); }
             });
             lock (_jobsLock)
@@ -131,9 +134,11 @@ public class SchedulerService : IDisposable
 
                 foreach (var job in dueJobs)
                 {
+                    // Snapshot job data before launching background task to avoid race conditions
+                    var snapshot = SnapshotJob(job);
                     _ = Task.Run(async () =>
                     {
-                        try { await ExecuteJobAsync(job); }
+                        try { await ExecuteJobAsync(snapshot, job); }
                         catch (Exception jobEx) { FileLogger.LogException($"Scheduled job failed: '{job.Name}'", jobEx); }
                     });
                     lock (_jobsLock)
@@ -149,64 +154,74 @@ public class SchedulerService : IDisposable
             {
                 LastSchedulerError = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Scheduler error: {ex.Message}";
                 FileLogger.LogException("Scheduler loop error", ex);
+                SchedulerError?.Invoke($"Scheduler error: {ex.Message}");
             }
         }
     }
 
-    private async Task ExecuteJobAsync(ScheduledJob job)
+    /// <summary>
+    /// Executes a job using snapshotted data for thread safety.
+    /// The snapshot is used for all read operations; the original job is only
+    /// updated (LastRun) under lock in the finally block.
+    /// </summary>
+    private async Task ExecuteJobAsync(ScheduledJob snapshot, ScheduledJob originalJob)
     {
         var logEntry = new BackupLogEntry
         {
-            JobName = job.Name,
-            SourcePath = string.Join("; ", job.SourcePaths),
-            DestinationPath = job.DestinationPath,
-            SourcePaths = new List<string>(job.SourcePaths),
-            StripPermissions = job.StripPermissions,
-            TransferMode = job.TransferMode,
+            JobName = snapshot.Name,
+            SourcePath = string.Join("; ", snapshot.SourcePaths),
+            DestinationPath = snapshot.DestinationPath,
+            SourcePaths = new List<string>(snapshot.SourcePaths),
+            StripPermissions = snapshot.StripPermissions,
+            TransferMode = snapshot.TransferMode,
             Status = BackupStatus.Running,
             Message = "Estimating size..."
         };
         _log.Add(logEntry);
-        FileLogger.Info($"Scheduled job started: '{job.Name}' — {string.Join("; ", job.SourcePaths)} → {job.DestinationPath}");
+        FileLogger.Info($"Scheduled job started: '{snapshot.Name}' — {string.Join("; ", snapshot.SourcePaths)} → {snapshot.DestinationPath}");
 
         var pauseGate = new ManualResetEventSlim(true);
         lock (_jobsLock) { _pauseGates[logEntry.Id] = pauseGate; }
 
         try
         {
-            var exclusions = job.ExclusionFilters.Count > 0 ? job.ExclusionFilters : null;
+            var exclusions = snapshot.ExclusionFilters.Count > 0 ? snapshot.ExclusionFilters : null;
 
-            var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(job.SourcePaths, exclusions));
+            var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(snapshot.SourcePaths, exclusions));
             _log.UpdateStatus(logEntry.Id, BackupStatus.Running, $"Transfer in progress — {FormatBytes(estimatedSize)} estimated");
-            FileLogger.Info($"Estimated size for '{job.Name}': {FormatBytes(estimatedSize)}");
+            FileLogger.Info($"Estimated size for '{snapshot.Name}': {FormatBytes(estimatedSize)}");
 
             var percentProgress = new Progress<int>(pct =>
                 _log.UpdateProgress(logEntry.Id, pct));
 
             var result = await _transfer.CopyAsync(
-                job.SourcePaths,
-                job.DestinationPath,
-                job.StripPermissions,
-                job.TransferMode,
+                snapshot.SourcePaths,
+                snapshot.DestinationPath,
+                snapshot.StripPermissions,
+                snapshot.TransferMode,
                 progressPercent: percentProgress,
                 pauseToken: pauseGate,
-                verifyChecksums: job.VerifyChecksums,
+                verifyChecksums: snapshot.VerifyChecksums,
                 exclusions: exclusions,
-                throttleBytesPerSec: job.ThrottleMBps > 0 ? (long)job.ThrottleMBps * 1024 * 1024 : 0);
+                throttleBytesPerSec: snapshot.ThrottleMBps > 0 ? (long)snapshot.ThrottleMBps * 1024 * 1024 : 0);
 
+            var totalFailed = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
-                result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles);
-            FileLogger.Info($"Scheduled job completed: '{job.Name}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped");
+                result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles,
+                totalFailed, result.FileErrors);
+            FileLogger.Info($"Scheduled job completed: '{snapshot.Name}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped{(totalFailed > 0 ? $", {totalFailed} failed" : "")}");
         }
         catch (InsufficientSpaceException)
         {
-            FileLogger.Error($"Scheduled job failed: '{job.Name}' — insufficient disk space");
+            FileLogger.Error($"Scheduled job failed: '{snapshot.Name}' — insufficient disk space");
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, "Not enough disk space on the destination drive.");
+            SchedulerError?.Invoke($"Job '{snapshot.Name}' failed — insufficient disk space");
         }
         catch (Exception ex)
         {
-            FileLogger.LogException($"Scheduled job failed: '{job.Name}'", ex);
+            FileLogger.LogException($"Scheduled job failed: '{snapshot.Name}'", ex);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, ex.Message);
+            SchedulerError?.Invoke($"Job '{snapshot.Name}' failed — {ex.Message}");
         }
         finally
         {
@@ -214,10 +229,31 @@ public class SchedulerService : IDisposable
             {
                 _pauseGates.Remove(logEntry.Id);
                 pauseGate.Dispose();
-                job.LastRun = DateTime.Now;
+                originalJob.LastRun = DateTime.Now;
                 SaveJobs();
             }
         }
+    }
+
+    private static ScheduledJob SnapshotJob(ScheduledJob job)
+    {
+        return new ScheduledJob
+        {
+            Id = job.Id,
+            Name = job.Name,
+            SourcePaths = new List<string>(job.SourcePaths),
+            DestinationPath = job.DestinationPath,
+            StripPermissions = job.StripPermissions,
+            VerifyChecksums = job.VerifyChecksums,
+            TransferMode = job.TransferMode,
+            ExclusionFilters = new List<string>(job.ExclusionFilters),
+            ThrottleMBps = job.ThrottleMBps,
+            IsRecurring = job.IsRecurring,
+            RecurInterval = job.RecurInterval,
+            NextRun = job.NextRun,
+            LastRun = job.LastRun,
+            IsEnabled = job.IsEnabled
+        };
     }
 
     public void PauseJob(Guid logEntryId)
@@ -284,9 +320,11 @@ public class SchedulerService : IDisposable
                 logEntry.TransferMode,
                 progressPercent: percentProgress);
 
+            var totalFailed = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
-                result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles);
-            FileLogger.Info($"Retry completed: '{logEntry.JobName}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped");
+                result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles,
+                totalFailed, result.FileErrors);
+            FileLogger.Info($"Retry completed: '{logEntry.JobName}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped{(totalFailed > 0 ? $", {totalFailed} failed" : "")}");
         }
         catch (InsufficientSpaceException)
         {

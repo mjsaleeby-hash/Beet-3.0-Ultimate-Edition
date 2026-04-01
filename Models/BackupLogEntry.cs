@@ -25,7 +25,9 @@ public partial class BackupLogEntry : ObservableObject
 
     public int FilesCopied { get; set; }
     public int FilesSkipped { get; set; }
+    public int FilesFailed { get; set; }
     public long BytesTransferred { get; set; }
+    public List<FileError> FileErrors { get; set; } = new();
 
     private DateTime _timestamp = DateTime.Now;
     public DateTime Timestamp
@@ -45,7 +47,7 @@ public partial class BackupLogEntry : ObservableObject
     public string StatusDisplay => Status.ToString();
     public string TimestampDisplay => Timestamp.ToString("yyyy-MM-dd  HH:mm:ss");
     public string StatsDisplay => Status == BackupStatus.Complete
-        ? $"{FilesCopied} copied, {FilesSkipped} skipped, {FormatBytes(BytesTransferred)}"
+        ? $"{FilesCopied} copied, {FilesSkipped} skipped{(FilesFailed > 0 ? $", {FilesFailed} failed" : "")}, {FormatBytes(BytesTransferred)}"
         : string.Empty;
 
     private static string FormatBytes(long bytes)

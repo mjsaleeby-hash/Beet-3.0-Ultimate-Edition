@@ -1,3 +1,52 @@
+# Beets Backup -- Changes for 2026-04-01
+
+## Bug Fixes — Critical
+
+- **Scheduler race condition** — `SnapshotJob()` clones job data before background execution; `ExecuteJobAsync` reads snapshot only; `LastRun` written back under lock
+- **`_pauseGate` ObjectDisposedException** — fresh `ManualResetEventSlim` created per transfer, old one disposed after signaling
+- **SaveJobs serialization race** — resolved by snapshot fix above
+
+## Bug Fixes — High
+
+- **Infinite loop on `TimeSpan.Zero`** — `UpdateNextRun` now guards `> TimeSpan.Zero`
+- **BackupLogService I/O jank** — `Save()` debounced with 1-second delay
+- **FileSystemItem.Size cross-thread** — `CalculateDirectorySizeAsync` marshals Size setter to UI thread via `Dispatcher.InvokeAsync`
+- **CheckFreeSpace UNC crash** — `DriveInfo` wrapped in try/catch; check skipped for UNC/relative paths
+- **Timestamp preservation** — `FileSystemService.CopyFile` now calls `File.SetLastWriteTimeUtc` after copy; fixes incremental backups re-copying unchanged files
+
+## Bug Fixes — Medium / Low
+
+- **Null `Application.Current` on shutdown** — null guard added in `CalculateFolderSizesWithProgressAsync`
+- **SchedulerService never disposed** — `App.OnExit` disposes `ServiceProvider`
+- **TimeSpan locale sensitivity** — `NullableTimeSpanConverter` uses `CultureInfo.InvariantCulture`
+- **CancellationTokenSource leak** — old CTS instances disposed before creating new ones
+- **Drive ejection race** — `LoadDrives` catches `IOException` per drive
+- **CSV newline escaping** — `Escape()` strips `\r`, replaces `\n` with space
+
+## New Features
+
+### "Open Log Folder" Button (Log Dialog)
+- Opens `%LocalAppData%\Beet's Backup\` in Explorer from the Log dialog
+- `FileLogger.LogDir` renamed to `FileLogger.LogDirectory` (now `public`)
+
+### Scheduler Error Surfacing (Status Bar)
+- `SchedulerService.SchedulerError` event fires on loop errors and job failures
+- `MainViewModel` subscribes and displays the message in the status bar (UI-thread marshaled)
+- Unsubscribed in `Dispose()`
+
+### Per-File Error Tracking
+- `TransferResult.FileErrors` — `List<FileError>` capped at 200 via `AddFileError(path, reason)`
+- `FileError` class: `Path` + `Reason` properties
+- Every catch point in `TransferService.CopyItem` records a `FileError`
+- `BackupLogEntry.FilesFailed` count + `BackupLogEntry.FileErrors` list persisted to JSON
+- `StatsDisplay` shows "Complete with N error(s)" when failures present
+- Red **"View Errors"** button in Log dialog — enabled when selected entry has errors; shows MessageBox with full file list
+
+## Test Suite
+- **132 tests passing** (unit, service, viewmodel, edge case, stress, data integrity)
+
+---
+
 # Beets Backup -- Changes for 2026-03-25
 
 ## New Features

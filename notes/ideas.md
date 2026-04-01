@@ -1,3 +1,28 @@
+## 2026-04-01 — Session Notes
+
+### Reliability / Correctness Work Completed
+
+This session was focused entirely on stability and correctness rather than new user-visible features. Key themes:
+
+- **Thread safety** — scheduler job snapshot pattern eliminates all shared-object races between UI and timer threads
+- **Resource lifecycle** — CTS disposal, pause gate re-creation, ServiceProvider teardown on exit
+- **Data fidelity** — timestamp preservation fixes incremental backup re-copy regression; InvariantCulture fixes locale-sensitive TimeSpan round-trip
+- **Error visibility** — per-file error tracking and "View Errors" button gives users actionable failure information instead of a bare count
+- **Operations accessibility** — "Open Log Folder" button surfaces all diagnostic files without users needing to know the AppData path
+
+### Remaining Viability Gaps (from 2026-03-24 assessment, still open)
+
+- Item 1: Move data-loss (source delete on partial failure) — still Open
+- Item 2: Atomic JSON saves — still Open
+- Item 5: Single-instance mutex — still Open
+- Item 6: Professional error messages ("dummy!" text) — still Open
+- Items 7–12: High priority items from assessment — still Open
+- Items 14–22: Medium/low priority items — still Open
+
+Test count is now **132 passing**.
+
+---
+
 ## 2026-03-29 — UI Overhaul Discussion
 
 ### UI Modernization Options Evaluated

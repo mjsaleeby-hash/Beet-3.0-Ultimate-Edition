@@ -1,5 +1,6 @@
 using BeetsBackup.Models;
 using BeetsBackup.Services;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -83,6 +84,9 @@ public partial class LogDialog : Window
             && entry.Status == BackupStatus.Failed
             && HasRetryInfo(entry);
 
+        ViewErrorsButton.IsEnabled = LogList.SelectedItem is BackupLogEntry errEntry
+            && errEntry.FileErrors.Count > 0;
+
         if (LogList.SelectedItem is BackupLogEntry selected && _scheduler.IsJobRunning(selected.Id))
         {
             PauseResumeButton.IsEnabled = true;
@@ -99,7 +103,28 @@ public partial class LogDialog : Window
         => (entry.SourcePaths.Count > 0 || !string.IsNullOrEmpty(entry.SourcePath))
            && !string.IsNullOrEmpty(entry.DestinationPath);
 
-    private static string Escape(string value) => value.Replace("\"", "\"\"");
+    private void ViewErrors_Click(object sender, RoutedEventArgs e)
+    {
+        if (LogList.SelectedItem is not BackupLogEntry entry || entry.FileErrors.Count == 0) return;
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"File errors for \"{entry.JobName}\" ({entry.FileErrors.Count} error{(entry.FileErrors.Count != 1 ? "s" : "")}):");
+        sb.AppendLine();
+        foreach (var err in entry.FileErrors)
+            sb.AppendLine($"  {err.Path}\n    {err.Reason}\n");
+
+        MessageBox.Show(sb.ToString(), $"File Errors — {entry.JobName}",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private void OpenLogFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var logDir = FileLogger.LogDirectory;
+        Directory.CreateDirectory(logDir);
+        Process.Start(new ProcessStartInfo { FileName = logDir, UseShellExecute = true });
+    }
+
+    private static string Escape(string value) => value.Replace("\"", "\"\"").Replace("\r", "").Replace("\n", " ");
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }

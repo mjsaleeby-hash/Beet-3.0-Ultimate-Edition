@@ -54,7 +54,12 @@ public class FileSystemItem : INotifyPropertyChanged
         if (!IsDirectory) return;
         var path = FullPath;
         var size = await Task.Run(() => CalculateDirectorySize(path, cancellationToken), cancellationToken);
-        if (!cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested) return;
+        // Marshal to UI thread to avoid cross-thread binding exceptions
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+            await dispatcher.InvokeAsync(() => Size = size);
+        else
             Size = size;
     }
 

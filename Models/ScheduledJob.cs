@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace BeetsBackup.Models;
@@ -40,7 +41,7 @@ public class ScheduledJob
 
     public void UpdateNextRun()
     {
-        if (IsRecurring && RecurInterval.HasValue)
+        if (IsRecurring && RecurInterval.HasValue && RecurInterval.Value > TimeSpan.Zero)
         {
             var now = DateTime.Now;
             while (NextRun <= now)
@@ -55,13 +56,13 @@ public class NullableTimeSpanConverter : JsonConverter<TimeSpan?>
     {
         if (reader.TokenType == System.Text.Json.JsonTokenType.Null) return null;
         var str = reader.GetString();
-        return str != null ? TimeSpan.Parse(str) : null;
+        return str != null ? TimeSpan.Parse(str, CultureInfo.InvariantCulture) : null;
     }
 
     public override void Write(System.Text.Json.Utf8JsonWriter writer, TimeSpan? value, System.Text.Json.JsonSerializerOptions options)
     {
         if (value.HasValue)
-            writer.WriteStringValue(value.Value.ToString());
+            writer.WriteStringValue(value.Value.ToString("c", CultureInfo.InvariantCulture));
         else
             writer.WriteNullValue();
     }

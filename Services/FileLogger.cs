@@ -7,12 +7,12 @@ namespace BeetsBackup.Services;
 
 public static class FileLogger
 {
-    private static readonly string LogDir = Path.Combine(
+    public static readonly string LogDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Beet's Backup");
 
-    private static readonly string LogPath = Path.Combine(LogDir, "operational.log");
-    private static readonly string CrashDumpPath = Path.Combine(LogDir, "crash_dump.log");
+    private static readonly string LogPath = Path.Combine(LogDirectory, "operational.log");
+    private static readonly string CrashDumpPath = Path.Combine(LogDirectory, "crash_dump.log");
 
     private static readonly object _lock = new();
     private const long MaxSizeBytes = 10 * 1024 * 1024; // 10 MB
@@ -23,7 +23,7 @@ public static class FileLogger
         {
             lock (_lock)
             {
-                Directory.CreateDirectory(LogDir);
+                Directory.CreateDirectory(LogDirectory);
                 RotateIfNeeded(LogPath);
                 File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}\n");
             }
@@ -48,7 +48,7 @@ public static class FileLogger
     {
         try
         {
-            Directory.CreateDirectory(LogDir);
+            Directory.CreateDirectory(LogDirectory);
             RotateIfNeeded(CrashDumpPath);
 
             var process = Process.GetCurrentProcess();

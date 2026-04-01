@@ -72,6 +72,8 @@ public partial class App : Application
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
         FileLogger.Info("═══ Application shutting down ═══");
+        try { (Services as IDisposable)?.Dispose(); }
+        catch (Exception ex) { FileLogger.LogException("Error disposing services", ex); }
         try { _singleInstanceMutex?.ReleaseMutex(); }
         catch (ApplicationException) { /* Mutex not owned — second instance path */ }
         _singleInstanceMutex?.Dispose();

@@ -2,6 +2,7 @@ using BeetsBackup.Models;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
+using System.Windows.Threading;
 using Application = System.Windows.Application;
 
 namespace BeetsBackup.Services;
@@ -11,6 +12,10 @@ public class BackupLogService
     private static readonly string LogPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Beet's Backup", "backup_log.json");
+
+    private bool _savePending;
+    private DateTime _lastSave = DateTime.MinValue;
+    private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(1);
 
     public ObservableCollection<BackupLogEntry> Entries { get; } = new();
 
@@ -83,7 +88,7 @@ public class BackupLogService
         });
     }
 
-    public void UpdateStats(Guid id, BackupStatus status, int filesCopied, int filesSkipped, long bytesTransferred, int totalFiles = 0)
+    public void UpdateStats(Guid id, BackupStatus status, int filesCopied, int filesSkipped, long bytesTransferred, int totalFiles = 0, int filesFailed = 0, List<FileError>? fileErrors = null)
     {
         RunOnUiThread(() =>
         {
@@ -92,10 +97,13 @@ public class BackupLogService
             entry.Status = status;
             entry.FilesCopied = filesCopied;
             entry.FilesSkipped = filesSkipped;
+            entry.FilesFailed = filesFailed;
             entry.BytesTransferred = bytesTransferred;
             entry.TotalFiles = totalFiles;
             entry.ProgressPercent = 100;
-            entry.Message = "Complete";
+            entry.Message = filesFailed > 0 ? $"Complete with {filesFailed} error(s)" : "Complete";
+            if (fileErrors != null && fileErrors.Count > 0)
+                entry.FileErrors = fileErrors;
             entry.Timestamp = DateTime.Now;
             Save();
         });
@@ -119,6 +127,28 @@ public class BackupLogService
 
     private void Save()
     {
+        var now = DateTime.UtcNow;
+        if (now - _lastSave < SaveDebounce)
+        {
+            // Schedule a deferred save if one isn't already pending
+            if (!_savePending)
+            {
+                _savePending = true;
+                var dispatcher = Application.Current?.Dispatcher;
+                dispatcher?.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+                {
+                    _savePending = false;
+                    SaveNow();
+                });
+            }
+            return;
+        }
+        SaveNow();
+    }
+
+    private void SaveNow()
+    {
+        _lastSave = DateTime.UtcNow;
         try
         {
             var dir = Path.GetDirectoryName(LogPath)!;

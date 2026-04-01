@@ -41,6 +41,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 - **Jobs persist to disk** and survive app restarts
 - **Missed backup detection** — on startup, detects jobs that were missed while the app was closed and prompts to run them immediately or skip
 - **Runs in the background** via a `PeriodicTimer` while the app is open
+- **Scheduler errors surfaced in status bar** — job failures and scheduler loop errors are reported immediately in the main window status bar
 - **Per-job settings** for transfer mode, permission stripping, checksum verification, and exclusion filters
 - **Exclusion filters** — skip files by extension pattern (e.g. `*.tmp`, `*.log`) or exact name (e.g. `Thumbs.db`, `node_modules`)
 - **Backup size estimation** — "Estimate Size" button calculates total source size and file count respecting active filters; auto-runs at job start
@@ -51,10 +52,13 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 - **Persistent JSON log** of all backup operations
 - **Real-time progress bars** for currently running jobs
 - **Color-coded status** indicators: Scheduled, Running, Complete, Failed
-- **Detailed stats** including file counts and bytes transferred
+- **Detailed stats** including file counts, bytes transferred, and failure count
+- **Per-file error tracking** — each failed file records its path and reason (disk full, locked, checksum mismatch, etc.), capped at 200 entries per job
+- **"View Errors" button** — enabled when the selected log entry has file errors; shows a list of all failed files with reasons
 - **Pause button** for running jobs, always visible in the log dialog
 - **Retry button** for failed jobs
 - **Export to CSV** for external reporting
+- **"Open Log Folder" button** — opens `%LocalAppData%\Beet's Backup\` in Explorer for direct access to log files
 - **Clear log** to reset history
 
 ### UI / UX
@@ -109,7 +113,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 8. **Enable checksum verification** or **permission stripping** via the toolbar checkboxes as needed.
 9. **Monitor progress** in the status bar, and use pause, resume, or stop controls during transfers.
 10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, permission options, checksum verification, and exclusion filters. Use "Estimate Size" to preview how much data will be transferred.
-11. **Review backup history** in the log dialog to see past and active operations, then export to CSV if needed.
+11. **Review backup history** in the log dialog to see past and active operations. Use **"View Errors"** on any entry with failures to see which files failed and why. Use **"Open Log Folder"** for direct access to all log files. Export to CSV if needed.
 
 > **Tip:** The app must remain running for scheduled backups to execute. To launch it automatically at login, create a shortcut to `BeetsBackup.exe` in your Windows startup folder (press `Win+R`, type `shell:startup`, and place the shortcut there).
 
@@ -120,17 +124,19 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 ```
 ├── Views/               UI (MainWindow, PieChartControl, dialogs: Schedule, Jobs, Log, Rename, TransferMode)
 ├── ViewModels/          Presentation logic (MVVM)
-├── Models/              Data types (FileSystemItem, DriveItem, ScheduledJob, TransferResult, PieSlice, etc.)
+├── Models/              Data types (FileSystemItem, DriveItem, ScheduledJob, TransferResult, FileError, PieSlice, etc.)
 ├── Services/            Core logic
-│   ├── FileSystemService    Drive & file enumeration, rename
-│   ├── TransferService      Copy/move with dedup, permission stripping, checksum verification
-│   ├── SchedulerService     Periodic backup job runner with disk persistence
-│   ├── BackupLogService     JSON-based backup history
+│   ├── FileSystemService    Drive & file enumeration, rename, timestamp-preserving copy
+│   ├── TransferService      Copy/move with dedup, permission stripping, checksum verification, per-file error tracking
+│   ├── SchedulerService     Periodic backup job runner with disk persistence and SchedulerError event
+│   ├── BackupLogService     JSON-based backup history with debounced saves
+│   ├── FileLogger           Operational log + crash dump writer (LogDirectory: %LocalAppData%\Beet's Backup\)
 │   ├── SettingsService      User preferences
 │   └── ThemeService         Light/dark mode
 ├── Helpers/             Value converters for WPF bindings
 ├── Themes/              Light.xaml & Dark.xaml resource dictionaries
 ├── Assets/              App icon & logo
+├── BeetsBackup.Tests/   xUnit test project (132 tests)
 └── mockups/             HTML design mockups (data-distribution-chart.html, etc.)
 ```
 

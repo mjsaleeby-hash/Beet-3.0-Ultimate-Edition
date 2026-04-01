@@ -62,8 +62,10 @@ public class FileSystemService
     public void CopyFile(string source, string dest, bool stripPermissions)
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
+        var srcLastWrite = File.GetLastWriteTimeUtc(source);
 
         File.Copy(source, dest, overwrite: true);
+        File.SetLastWriteTimeUtc(dest, srcLastWrite);
 
         if (stripPermissions)
             ResetFilePermissions(dest);
