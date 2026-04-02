@@ -1,6 +1,8 @@
 using BeetsBackup.Models;
 using BeetsBackup.ViewModels;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -31,6 +33,18 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.HasSearchResults))
+        {
+            var width = Vm.HasSearchResults ? 240.0 : 0.0;
+            TopPathColumn.Width = width;
+            SplitTopPathColumn.Width = width;
+            SplitBottomPathColumn.Width = width;
+        }
     }
 
     // -- Tree selection --
@@ -244,6 +258,25 @@ public partial class MainWindow : Window
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         e.Handled = true;
+    }
+
+    // -- Context menu: Open in Explorer --
+    private void OpenInExplorer_Click(object sender, RoutedEventArgs e)
+    {
+        var item = TopPaneList.SelectedItem as FileSystemItem
+                ?? SplitTopList.SelectedItem as FileSystemItem
+                ?? SplitBottomList.SelectedItem as FileSystemItem;
+        if (item == null) return;
+
+        if (item.IsDirectory)
+        {
+            Process.Start(new ProcessStartInfo { FileName = item.FullPath, UseShellExecute = true });
+        }
+        else
+        {
+            // Select the file in Explorer
+            Process.Start("explorer.exe", $"/select,\"{item.FullPath}\"");
+        }
     }
 
     // -- Context menu: single pane --

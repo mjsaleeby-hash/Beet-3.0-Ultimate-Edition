@@ -72,7 +72,14 @@ public partial class App : Application
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
         FileLogger.Info("═══ Application shutting down ═══");
-        try { (Services as IDisposable)?.Dispose(); }
+        // Dispose services on a background thread with a timeout to avoid
+        // deadlocking the UI thread if a scheduler job is in progress
+        try
+        {
+            var disposeTask = Task.Run(() => (Services as IDisposable)?.Dispose());
+            if (!disposeTask.Wait(TimeSpan.FromSeconds(5)))
+                FileLogger.Warn("Service disposal timed out after 5 seconds");
+        }
         catch (Exception ex) { FileLogger.LogException("Error disposing services", ex); }
         try { _singleInstanceMutex?.ReleaseMutex(); }
         catch (ApplicationException) { /* Mutex not owned — second instance path */ }

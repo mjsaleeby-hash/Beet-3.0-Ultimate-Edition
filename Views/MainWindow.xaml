@@ -607,6 +607,8 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
+                                    <GridViewColumn x:Name="TopPathColumn" Header="Path" Width="0"
+                                                    DisplayMemberBinding="{Binding DirectoryPath}"/>
                                     <GridViewColumn Header="Type" Width="120" DisplayMemberBinding="{Binding TypeDisplay}"/>
                                     <GridViewColumn Header="Size" Width="100" DisplayMemberBinding="{Binding SizeDisplay}"/>
                                     <GridViewColumn Header="Modified" Width="160" DisplayMemberBinding="{Binding Modified}"/>
@@ -625,6 +627,8 @@
                             </ListView.View>
                             <ListView.ContextMenu>
                                 <ContextMenu>
+                                    <MenuItem Header="Open in Explorer" Click="OpenInExplorer_Click"/>
+                                    <Separator/>
                                     <MenuItem Header="Copy" Click="Copy_Click"/>
                                     <MenuItem Header="Cut" Click="Cut_Click"/>
                                     <MenuItem Header="Paste" Click="Paste_Click"/>
@@ -786,6 +790,8 @@
                                                     </DataTemplate>
                                                 </GridViewColumn.CellTemplate>
                                             </GridViewColumn>
+                                            <GridViewColumn x:Name="SplitTopPathColumn" Header="Path" Width="0"
+                                                            DisplayMemberBinding="{Binding DirectoryPath}"/>
                                             <GridViewColumn Header="Type" Width="100" DisplayMemberBinding="{Binding TypeDisplay}"/>
                                             <GridViewColumn Header="Size" Width="90" DisplayMemberBinding="{Binding SizeDisplay}"/>
                                             <GridViewColumn Width="50">
@@ -803,6 +809,8 @@
                                     </ListView.View>
                                     <ListView.ContextMenu>
                                         <ContextMenu>
+                                            <MenuItem Header="Open in Explorer" Click="OpenInExplorer_Click"/>
+                                            <Separator/>
                                             <MenuItem Header="Copy to Bottom" Click="CopyToBottom_Click"/>
                                             <MenuItem Header="Cut to Bottom" Click="CutToBottom_Click"/>
                                             <Separator/>
@@ -1026,6 +1034,8 @@
                                                     </DataTemplate>
                                                 </GridViewColumn.CellTemplate>
                                             </GridViewColumn>
+                                            <GridViewColumn x:Name="SplitBottomPathColumn" Header="Path" Width="0"
+                                                            DisplayMemberBinding="{Binding DirectoryPath}"/>
                                             <GridViewColumn Header="Type" Width="100" DisplayMemberBinding="{Binding TypeDisplay}"/>
                                             <GridViewColumn Header="Size" Width="90" DisplayMemberBinding="{Binding SizeDisplay}"/>
                                             <GridViewColumn Width="50">
@@ -1043,6 +1053,8 @@
                                     </ListView.View>
                                     <ListView.ContextMenu>
                                         <ContextMenu>
+                                            <MenuItem Header="Open in Explorer" Click="OpenInExplorer_Click"/>
+                                            <Separator/>
                                             <MenuItem Header="Copy to Top" Click="CopyToTop_Click"/>
                                             <MenuItem Header="Cut to Top" Click="CutToTop_Click"/>
                                             <Separator/>

@@ -86,6 +86,7 @@ public class FileSystemItem : INotifyPropertyChanged
         catch { return 0; }
     }
 
+    public string DirectoryPath => Path.GetDirectoryName(FullPath) ?? string.Empty;
     public string TypeDisplay => IsDirectory ? "Folder" : Path.GetExtension(Name).TrimStart('.').ToUpper() + " File";
     public string Icon => IsDirectory ? "📁" : "📄";
 

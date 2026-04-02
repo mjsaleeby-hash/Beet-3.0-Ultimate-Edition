@@ -386,12 +386,21 @@ public class SchedulerService : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
-        try { _runTask?.GetAwaiter().GetResult(); } catch { }
-        _ticker.Dispose();
+        _ticker.Dispose(); // Causes WaitForNextTickAsync to return false immediately
+        // Wait briefly for the scheduler loop to exit — don't block indefinitely
+        // as that can deadlock when Dispose is called from the UI thread
+        if (_runTask != null)
+        {
+            if (!_runTask.Wait(TimeSpan.FromSeconds(3)))
+                FileLogger.Warn("Scheduler task did not exit within 3 seconds — abandoning wait");
+        }
         lock (_jobsLock)
         {
             foreach (var gate in _pauseGates.Values)
+            {
+                gate.Set(); // Unblock any paused jobs so they can observe cancellation
                 gate.Dispose();
+            }
             _pauseGates.Clear();
         }
         _cts.Dispose();

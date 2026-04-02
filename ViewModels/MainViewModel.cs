@@ -470,7 +470,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     // --- Deep search ---
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ExecuteDeepSearchAsync()
     {
         // Cancel and dispose any in-progress search
@@ -488,11 +488,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (string.IsNullOrEmpty(TopCurrentPath))
+        {
+            StatusMessage = "Select a drive or navigate to a folder first, then search.";
+            return;
+        }
+
         _searchCts = new CancellationTokenSource();
         var token = _searchCts.Token;
         IsSearching = true;
         HasSearchResults = true;
         ShowNoResults = false;
+        StatusMessage = $"Searching \"{TopCurrentPath}\" for \"{DeepSearchQuery.Trim()}\"...";
 
         var query = DeepSearchQuery.Trim();
         bool isExtensionSearch = query.StartsWith('.');
@@ -501,29 +508,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
         TopPaneItems.Clear();
         _filteredTopView?.Refresh();
 
+        var searchRoot = TopCurrentPath;
         var dispatcher = System.Windows.Application.Current.Dispatcher;
 
         await Task.Run(() =>
         {
-            // Determine root paths to search
-            var roots = new List<string>();
-            if (!string.IsNullOrEmpty(TopCurrentPath) && Directory.Exists(TopCurrentPath))
-                roots.Add(TopCurrentPath);
-            else
-            {
-                foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
-                    roots.Add(drive.RootDirectory.FullName);
-            }
-
-            foreach (var root in roots)
-            {
-                if (token.IsCancellationRequested) return;
-                SearchDirectoryRecursive(root, query, isExtensionSearch, token, dispatcher);
-            }
+            if (token.IsCancellationRequested) return;
+            SearchDirectoryRecursive(searchRoot, query, isExtensionSearch, token, dispatcher);
         }, token).ContinueWith(_ => { }, TaskScheduler.Default);
 
         IsSearching = false;
-        ShowNoResults = !token.IsCancellationRequested && TopPaneItems.Count == 0;
+        if (token.IsCancellationRequested) return;
+        ShowNoResults = TopPaneItems.Count == 0;
+        StatusMessage = TopPaneItems.Count > 0
+            ? $"Found {TopPaneItems.Count} result{(TopPaneItems.Count != 1 ? "s" : "")} for \"{query}\""
+            : $"No results for \"{query}\"";
     }
 
     private void SearchDirectoryRecursive(string directory, string query, bool isExtensionSearch, CancellationToken token, System.Windows.Threading.Dispatcher dispatcher)
