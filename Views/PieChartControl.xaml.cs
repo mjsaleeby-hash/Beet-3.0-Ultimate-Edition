@@ -1,5 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
+
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -89,21 +89,7 @@ public partial class PieChartControl : UserControl
     private static void OnSlicesChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var control = (PieChartControl)d;
-
-        if (e.OldValue is ObservableCollection<PieSlice> oldCol)
-            oldCol.CollectionChanged -= control.OnSlicesCollectionChanged;
-
-        if (e.NewValue is ObservableCollection<PieSlice> newCol)
-        {
-            newCol.CollectionChanged += control.OnSlicesCollectionChanged;
-        }
-
         control.RebuildChart();
-    }
-
-    private void OnSlicesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        RebuildChart();
     }
 
     private static void OnTotalSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

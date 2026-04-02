@@ -18,6 +18,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly TransferService _transfer;
     private readonly SchedulerService _scheduler;
     private readonly BackupLogService _log;
+    private readonly SettingsService _settings;
 
     // --- Theme ---
     [ObservableProperty] private bool _isDarkMode;
@@ -27,6 +28,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _verifyChecksums;
     [ObservableProperty] private bool _throttleTransfer;
     [ObservableProperty] private bool _isSplitPane;
+
+    // --- Options ---
+    [ObservableProperty] private bool _launchAtStartup;
 
     // --- Pane data ---
     public ObservableCollection<DriveItem> Drives { get; } = new();
@@ -88,8 +92,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isBottomCalculating;
     [ObservableProperty] private string _topTotalSize = "";
     [ObservableProperty] private string _bottomTotalSize = "";
-    public ObservableCollection<PieSlice> TopPieSlices { get; } = new();
-    public ObservableCollection<PieSlice> BottomPieSlices { get; } = new();
+    [ObservableProperty] private ObservableCollection<PieSlice> _topPieSlices = new();
+    [ObservableProperty] private ObservableCollection<PieSlice> _bottomPieSlices = new();
 
     // --- Status ---
     [ObservableProperty] private string _statusMessage = "Ready";
@@ -115,16 +119,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _topNavCts;
     private CancellationTokenSource? _bottomNavCts;
 
-    public MainViewModel(ThemeService theme, FileSystemService fs, TransferService transfer, SchedulerService scheduler, BackupLogService log)
+    public MainViewModel(ThemeService theme, FileSystemService fs, TransferService transfer, SchedulerService scheduler, BackupLogService log, SettingsService settings)
     {
         _theme = theme;
         _fs = fs;
         _transfer = transfer;
         _scheduler = scheduler;
         _log = log;
+        _settings = settings;
         IsDarkMode = theme.IsDark;
+        LaunchAtStartup = settings.LaunchAtStartup;
         _scheduler.SchedulerError += OnSchedulerError;
         LoadDrives();
+    }
+
+    partial void OnLaunchAtStartupChanged(bool value)
+    {
+        _settings.LaunchAtStartup = value;
     }
 
     private ICollectionView CreateFilteredView(ObservableCollection<FileSystemItem> source)
@@ -291,11 +302,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsTopCalculating = true;
         if (IsTopVisualMode)
         {
-            TopPieSlices.Clear();
+            TopPieSlices = new();
             TopTotalSize = "";
         }
         var sizeCts = _topSizeCts;
-        _ = CalculateFolderSizesWithProgressAsync(TopPaneItems, TopPieSlices, true, sizeCts.Token);
+        _ = CalculateFolderSizesWithProgressAsync(TopPaneItems, true, sizeCts.Token);
 
         if (!_isNavigatingHistory)
         {
@@ -331,11 +342,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsBottomCalculating = true;
         if (IsBottomVisualMode)
         {
-            BottomPieSlices.Clear();
+            BottomPieSlices = new();
             BottomTotalSize = "";
         }
         var sizeCts = _bottomSizeCts;
-        _ = CalculateFolderSizesWithProgressAsync(BottomPaneItems, BottomPieSlices, false, sizeCts.Token);
+        _ = CalculateFolderSizesWithProgressAsync(BottomPaneItems, false, sizeCts.Token);
 
         if (!_isNavigatingBottomHistory)
         {
@@ -365,7 +376,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async Task CalculateFolderSizesWithProgressAsync(
         ObservableCollection<FileSystemItem> items,
-        ObservableCollection<PieSlice> slices,
         bool isTop,
         CancellationToken cancellationToken)
     {
@@ -384,7 +394,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             if (cancellationToken.IsCancellationRequested) return;
             if ((isTop && IsTopVisualMode) || (!isTop && IsBottomVisualMode))
-                System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => BuildPieSlices(items, slices, isTop));
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => BuildPieSlices(items, isTop));
         }, null, TimeSpan.FromMilliseconds(800), TimeSpan.FromMilliseconds(800));
 
         try
@@ -917,7 +927,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         IsTopVisualMode = !IsTopVisualMode;
         if (IsTopVisualMode)
-            BuildPieSlices(TopPaneItems, TopPieSlices, true);
+            BuildPieSlices(TopPaneItems, true);
     }
 
     [RelayCommand]
@@ -925,23 +935,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         IsBottomVisualMode = !IsBottomVisualMode;
         if (IsBottomVisualMode)
-            BuildPieSlices(BottomPaneItems, BottomPieSlices, false);
+            BuildPieSlices(BottomPaneItems, false);
     }
 
-    internal void BuildPieSlices(ObservableCollection<FileSystemItem> items, ObservableCollection<PieSlice> slices, bool isTop)
+    internal void BuildPieSlices(ObservableCollection<FileSystemItem> items, bool isTop)
     {
-        slices.Clear();
-
         var sorted = items
             .Where(i => i.Size > 0)
+            .GroupBy(i => i.FullPath).Select(g => g.First()) // deduplicate
             .OrderByDescending(i => i.Size)
             .Take(10)
             .ToList();
 
         if (sorted.Count == 0)
         {
-            if (isTop) TopTotalSize = "";
-            else BottomTotalSize = "";
+            if (isTop) { TopTotalSize = ""; TopPieSlices = new(); }
+            else { BottomTotalSize = ""; BottomPieSlices = new(); }
             return;
         }
 
@@ -951,12 +960,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (isTop) TopTotalSize = FileSystemItem.FormatBytes(totalSize);
         else BottomTotalSize = FileSystemItem.FormatBytes(totalSize);
 
+        // Build into a local list, then assign as a new collection atomically
+        // to avoid per-item CollectionChanged event storms in the PieChartControl.
+        var newSlices = new ObservableCollection<PieSlice>();
+
         double angle = 0;
         for (int i = 0; i < sorted.Count; i++)
         {
             double pct = (double)sorted[i].Size / totalSize * 100.0;
             double sweep = pct / 100.0 * 360.0;
-            slices.Add(new PieSlice
+            newSlices.Add(new PieSlice
             {
                 Name = sorted[i].Name,
                 Icon = sorted[i].Icon,
@@ -980,7 +993,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             double otherPct = (double)otherSize / totalSize * 100.0;
             double otherSweep = otherPct / 100.0 * 360.0;
-            slices.Add(new PieSlice
+            newSlices.Add(new PieSlice
             {
                 Name = "Other",
                 Icon = "\u2026",
@@ -993,13 +1006,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Index = sorted.Count,
             });
         }
+
+        // Assign the fully-built collection in one shot — triggers exactly
+        // one PropertyChanged + one OnSlicesChanged in the PieChartControl
+        if (isTop) TopPieSlices = newSlices;
+        else BottomPieSlices = newSlices;
     }
 
     private void RebuildPieSlicesIfNeeded()
     {
         if (IsTopVisualMode)
-            BuildPieSlices(TopPaneItems, TopPieSlices, true);
+            BuildPieSlices(TopPaneItems, true);
         if (IsBottomVisualMode)
-            BuildPieSlices(BottomPaneItems, BottomPieSlices, false);
+            BuildPieSlices(BottomPaneItems, false);
     }
 }

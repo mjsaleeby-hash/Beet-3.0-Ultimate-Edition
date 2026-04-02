@@ -19,7 +19,7 @@ public class MainViewModelTests
         var transfer = new TransferService(fs);
         var log = new BackupLogService();
         var scheduler = new SchedulerService(transfer, log);
-        return new MainViewModel(theme, fs, transfer, scheduler, log);
+        return new MainViewModel(theme, fs, transfer, scheduler, log, settings);
     }
 
     private static FileSystemItem MakeFileItem(string dir, string name, long size)
@@ -103,11 +103,10 @@ public class MainViewModelTests
     {
         var vm = CreateViewModel();
         var items = new ObservableCollection<FileSystemItem>();
-        var slices = new ObservableCollection<PieSlice>();
 
-        vm.BuildPieSlices(items, slices, true);
+        vm.BuildPieSlices(items, true);
 
-        slices.Should().BeEmpty();
+        vm.TopPieSlices.Should().BeEmpty();
     }
 
     [Fact]
@@ -120,10 +119,10 @@ public class MainViewModelTests
         {
             MakeFileItem(tmp.Path, "only.bin", 1000)
         };
-        var slices = new ObservableCollection<PieSlice>();
 
-        vm.BuildPieSlices(items, slices, true);
+        vm.BuildPieSlices(items, true);
 
+        var slices = vm.TopPieSlices;
         slices.Should().HaveCount(1);
         slices[0].SweepAngle.Should().BeApproximately(360.0, 0.01);
         slices[0].Percentage.Should().BeApproximately(100.0, 0.01);
@@ -138,12 +137,11 @@ public class MainViewModelTests
         var items = new ObservableCollection<FileSystemItem>();
         for (int i = 1; i <= 10; i++)
             items.Add(MakeFileItem(tmp.Path, $"file{i}.bin", i * 100));
-        var slices = new ObservableCollection<PieSlice>();
 
-        vm.BuildPieSlices(items, slices, true);
+        vm.BuildPieSlices(items, true);
 
-        slices.Should().HaveCount(10);
-        slices.Should().NotContain(s => s.Name == "Other");
+        vm.TopPieSlices.Should().HaveCount(10);
+        vm.TopPieSlices.Should().NotContain(s => s.Name == "Other");
     }
 
     [Fact]
@@ -155,10 +153,10 @@ public class MainViewModelTests
         var items = new ObservableCollection<FileSystemItem>();
         for (int i = 1; i <= 15; i++)
             items.Add(MakeFileItem(tmp.Path, $"file{i}.bin", i * 100));
-        var slices = new ObservableCollection<PieSlice>();
 
-        vm.BuildPieSlices(items, slices, true);
+        vm.BuildPieSlices(items, true);
 
+        var slices = vm.TopPieSlices;
         // 10 top slices + 1 "Other"
         slices.Should().HaveCount(11);
         slices.Last().Name.Should().Be("Other");
@@ -177,10 +175,10 @@ public class MainViewModelTests
             MakeFileItem(tmp.Path, "photo.jpg", 3000),
             MakeDirItem(tmp.Path, "Music", 2000),
         };
-        var slices = new ObservableCollection<PieSlice>();
 
-        vm.BuildPieSlices(items, slices, true);
+        vm.BuildPieSlices(items, true);
 
+        var slices = vm.TopPieSlices;
         slices.Should().HaveCount(3);
         slices.Select(s => s.Name).Should().Contain("Documents");
         slices.Select(s => s.Name).Should().Contain("photo.jpg");
@@ -199,10 +197,10 @@ public class MainViewModelTests
             MakeFileItem(tmp.Path, "b.bin", 300),
             MakeFileItem(tmp.Path, "c.bin", 200),
         };
-        var slices = new ObservableCollection<PieSlice>();
 
-        vm.BuildPieSlices(items, slices, true);
+        vm.BuildPieSlices(items, true);
 
+        var slices = vm.TopPieSlices;
         double totalSweep = slices.Sum(s => s.SweepAngle);
         totalSweep.Should().BeApproximately(360.0, 0.01);
 
