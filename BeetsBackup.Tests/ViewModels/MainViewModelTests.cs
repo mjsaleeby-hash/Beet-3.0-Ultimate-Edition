@@ -19,7 +19,8 @@ public class MainViewModelTests
         var transfer = new TransferService(fs);
         var log = new BackupLogService();
         var scheduler = new SchedulerService(transfer, log);
-        return new MainViewModel(theme, fs, transfer, scheduler, log, settings);
+        var update = new UpdateService(settings);
+        return new MainViewModel(theme, fs, transfer, scheduler, log, settings, update);
     }
 
     private static FileSystemItem MakeFileItem(string dir, string name, long size)

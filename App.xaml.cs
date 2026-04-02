@@ -47,12 +47,22 @@ public partial class App : Application
         Services.GetRequiredService<ThemeService>().ApplySaved();
 
         var mainWindow = Services.GetRequiredService<MainWindow>();
-        mainWindow.Show();
 
         // Check for missed backups before starting the scheduler
         var scheduler = Services.GetRequiredService<SchedulerService>();
         var missedJobs = scheduler.GetMissedJobs();
-        if (missedJobs.Count > 0)
+        bool hasMissedBackups = missedJobs.Count > 0;
+
+        // Launch minimized if startup-launched and no missed backups to handle
+        if (settings.LaunchAtStartup && !hasMissedBackups)
+        {
+            mainWindow.WindowState = System.Windows.WindowState.Minimized;
+            FileLogger.Info("Launched minimized (startup mode, no missed backups)");
+        }
+
+        mainWindow.Show();
+
+        if (hasMissedBackups)
         {
             FileLogger.Info($"Detected {missedJobs.Count} missed backup(s)");
             var dialog = new MissedBackupsDialog(scheduler, missedJobs);
@@ -67,6 +77,9 @@ public partial class App : Application
 
         scheduler.Start();
         FileLogger.Info("Application started successfully");
+
+        // Check for updates in the background (non-blocking)
+        _ = CheckForUpdatesAsync(mainWindow);
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)
@@ -105,6 +118,22 @@ public partial class App : Application
         e.SetObserved();
     }
 
+    private static async Task CheckForUpdatesAsync(MainWindow mainWindow)
+    {
+        try
+        {
+            // Small delay so the UI has time to fully load
+            await Task.Delay(3000);
+            var vm = mainWindow.DataContext as MainViewModel;
+            if (vm != null)
+                await vm.CheckForUpdatesCommand.ExecuteAsync(null);
+        }
+        catch (Exception ex)
+        {
+            FileLogger.Info($"Background update check failed: {ex.Message}");
+        }
+    }
+
     private static void ConfigureServices(ServiceCollection services)
     {
         // Services
@@ -114,6 +143,7 @@ public partial class App : Application
         services.AddSingleton<TransferService>();
         services.AddSingleton<BackupLogService>();
         services.AddSingleton<SchedulerService>();
+        services.AddSingleton<UpdateService>();
 
         // ViewModels
         services.AddTransient<MainViewModel>();

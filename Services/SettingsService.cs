@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -6,6 +7,8 @@ namespace BeetsBackup.Services;
 public class SettingsData
 {
     public bool IsDarkMode { get; set; } = true;
+    public bool LaunchAtStartup { get; set; }
+    public string? SkippedVersion { get; set; }
 }
 
 public class SettingsService
@@ -20,6 +23,70 @@ public class SettingsService
     {
         get => Data.IsDarkMode;
         set => Data.IsDarkMode = value;
+    }
+
+    public bool LaunchAtStartup
+    {
+        get => Data.LaunchAtStartup;
+        set
+        {
+            Data.LaunchAtStartup = value;
+            ApplyStartupShortcut(value);
+            Save();
+        }
+    }
+
+    private static readonly string StartupFolder =
+        Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+
+    private static readonly string ShortcutPath =
+        Path.Combine(StartupFolder, "Beet's Backup.lnk");
+
+    public bool StartupShortcutExists => File.Exists(ShortcutPath);
+
+    private static void ApplyStartupShortcut(bool enable)
+    {
+        try
+        {
+            if (enable)
+            {
+                if (File.Exists(ShortcutPath)) return; // already exists
+                var exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrEmpty(exePath)) return;
+                CreateShortcut(ShortcutPath, exePath);
+            }
+            else
+            {
+                if (File.Exists(ShortcutPath))
+                    File.Delete(ShortcutPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("Failed to manage startup shortcut", ex);
+        }
+    }
+
+    private static void CreateShortcut(string shortcutPath, string targetPath)
+    {
+        // Use PowerShell to create a .lnk shortcut (avoids COM interop dependency)
+        var ps = $"""
+            $ws = New-Object -ComObject WScript.Shell;
+            $sc = $ws.CreateShortcut('{shortcutPath.Replace("'", "''")}');
+            $sc.TargetPath = '{targetPath.Replace("'", "''")}';
+            $sc.WorkingDirectory = '{Path.GetDirectoryName(targetPath)!.Replace("'", "''")}';
+            $sc.Description = 'Beet''s Backup';
+            $sc.Save()
+            """;
+        var psi = new ProcessStartInfo
+        {
+            FileName = "powershell.exe",
+            Arguments = $"-NoProfile -NonInteractive -Command \"{ps.Replace("\"", "\\\"")}\"",
+            CreateNoWindow = true,
+            UseShellExecute = false,
+        };
+        using var proc = Process.Start(psi);
+        proc?.WaitForExit(5000);
     }
 
     public void Load()

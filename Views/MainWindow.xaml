@@ -389,6 +389,20 @@
                     <Button Content="Log" Margin="0,0,4,0"
                             Style="{StaticResource ToolbarButton}"
                             Command="{Binding OpenLogDialogCommand}"/>
+                    <Button x:Name="OptionsButton" Content="Options" Margin="0,0,4,0"
+                            Style="{StaticResource ToolbarButton}"
+                            Click="OptionsButton_Click">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="OptionsMenu">
+                                <MenuItem IsCheckable="True"
+                                          Header="Launch at Startup"
+                                          IsChecked="{Binding LaunchAtStartup}"/>
+                                <Separator/>
+                                <MenuItem Header="Check for Updates"
+                                          Command="{Binding CheckForUpdatesCommand}"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                 </StackPanel>
 
                 <!-- Right side: toggles + theme button (Dock=Right, so they anchor right) -->
@@ -1087,7 +1101,22 @@
                 <TextBlock Grid.Column="0"
                            Text="{Binding StatusMessage}"
                            Foreground="{DynamicResource SecondaryTextBrush}"
-                           FontSize="13" VerticalAlignment="Center"/>
+                           FontSize="13" VerticalAlignment="Center"
+                           Visibility="{Binding IsUpdateAvailable, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                <!-- Update notification banner (replaces status text when update is available) -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
+                            Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="{Binding UpdateMessage}"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Button Content="Download" Margin="10,0,0,0" Padding="8,2"
+                            Style="{StaticResource ToolbarButton}"
+                            Foreground="{DynamicResource AccentBrush}"
+                            Command="{Binding OpenUpdatePageCommand}"/>
+                    <Button Content="Dismiss" Margin="4,0,0,0" Padding="8,2"
+                            Style="{StaticResource ToolbarButton}"
+                            Command="{Binding DismissUpdateCommand}"/>
+                </StackPanel>
                 <ProgressBar Grid.Column="1"
                              Value="{Binding TransferProgressPercent}"
                              Maximum="100" Width="160" Height="4"
