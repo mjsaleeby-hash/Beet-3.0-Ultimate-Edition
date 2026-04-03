@@ -1,3 +1,46 @@
+# Beets Backup -- Changes for 2026-04-03
+
+## New Features
+
+### System Tray Support
+
+- Closing or minimizing the main window now hides the app to the Windows system tray instead of quitting
+- A tray icon is always present while the app is running
+- Right-clicking the tray icon shows a context menu with **Show/Hide** and **Quit** options
+- The only way to fully exit the app is via the tray menu **Quit** action
+- Double-clicking the tray icon toggles the window visible/hidden
+
+### Single-Instance Show (Upgraded from Error)
+
+- Launching a second instance of the app now signals the already-running first instance to show and bring its window to the foreground (e.g., if it was hidden in the tray)
+- The second instance then exits cleanly
+- Previously this just showed an "already running" error and exited without restoring the window
+
+### Smart Startup Behavior (`--startup` flag)
+
+- The Windows startup folder shortcut created by **Launch at Startup** now includes the `--startup` flag
+- When launched with `--startup` (i.e., at Windows login), the app hides immediately to the system tray — no window shown
+- When launched manually (without the flag), the window always opens normally
+- If missed backups are detected on a `--startup` launch, the window opens at normal size so the missed-backup dialog is visible
+- This gives clean background behavior for the common case without sacrificing discoverability on manual launch
+
+### Light Mode Polish
+
+- Warmer gray tones replace the previous cool/blue-tinted grays throughout the light theme
+- Dedicated brush resource keys added for:
+  - Toggle/pill controls — correct fill and thumb colors in light mode
+  - Drive usage rings — accurate ring color and background arc in light mode
+  - Donut chart center fill — correct background for the hollow center of the pie chart in light mode
+- All new keys follow the existing `DynamicResource` pattern so they respond instantly to theme switches
+
+### Namespace Disambiguation (Internal Fix)
+
+- Resolved ambiguous type references caused by `System.Windows.Forms` and WPF coexisting in the same assembly (leftover from the `FolderBrowserDialog` era)
+- Explicit `using` aliases and fully-qualified type names added where needed
+- No user-visible behavior change; fixes compilation warnings and prevents future collision bugs
+
+---
+
 # Beets Backup -- Changes for 2026-04-01
 
 ## Bug Fixes — Critical

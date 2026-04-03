@@ -1,5 +1,5 @@
 Beets Backup — Feature List, Known Limitations, and Critical Testing Areas
-Last updated: 2026-04-01
+Last updated: 2026-04-03
 
 ================================================================================
 SECTION 1: COMPLETE FEATURE LIST
@@ -108,7 +108,11 @@ DATA VISUALIZATION
 APPLICATION
 - Dark and Light theme support with runtime toggle
 - Theme preference persisted to settings
-- Single-instance enforcement (prevents duplicate app instances)
+- Light mode polish: warmer grays, dedicated brush keys for toggles, drive usage rings, and donut chart center
+- System tray support — close/minimize hides to tray; tray icon right-click menu shows Show/Hide and Quit; only exit via Quit in tray menu
+- Single-instance enforcement — second instance signals first instance to show its window and foreground, then exits; no "already running" error
+- Smart startup behavior — --startup flag (set by Launch at Startup shortcut) hides to tray on login; manual launch always shows window; missed backups override tray-hide to show window
+- GitHub Releases update checker — checks on startup; accent-colored banner with Download, Dismiss, Skip Version options; skipped versions persisted; also accessible via Options > Check for Updates
 - Crash logging to %LocalAppData%\Beet's Backup\crash_dump.log
 - Operational logging to %LocalAppData%\Beet's Backup\operational.log (10MB rotation)
 - FileLogger.LogDirectory (public) used by "Open Log Folder" feature
@@ -117,6 +121,7 @@ APPLICATION
 - ServiceProvider disposed on app exit (all singleton services cleaned up properly)
 - Custom window with Segoe UI Variable font
 - Assembly version 3.0.0
+- Namespace disambiguation — explicit aliases prevent WinForms/WPF type collisions
 - 132-test xUnit suite (BeetsBackup.Tests/)
 
 ================================================================================
@@ -129,7 +134,7 @@ SECTION 2: KNOWN LIMITATIONS
 - No incremental/differential backup (always full comparison)
 - Cannot open files from within the app (files must be opened via Windows Explorer)
 - No file preview/thumbnail support
-- No built-in auto-updater
+- Update checker notifies but does not auto-install updates (user must download manually)
 - Recycle Bin delete called from thread pool — COM dialog could fail on non-STA thread (rare edge case)
 - BackupLogEntry.Id is get-only — deserialized entries get new GUIDs (doesn't affect current functionality)
 - No file filtering by date range or size range
