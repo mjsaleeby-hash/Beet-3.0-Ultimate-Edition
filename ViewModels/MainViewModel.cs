@@ -8,6 +8,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows.Data;
 using System.Windows.Media;
+using Color = System.Windows.Media.Color;
 
 namespace BeetsBackup.ViewModels;
 
@@ -959,16 +960,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private static readonly Color[] PieColors =
     [
-        Color.FromRgb(0x4C, 0xC2, 0xFF), // blue
-        Color.FromRgb(0xFF, 0x6B, 0x8A), // rose
-        Color.FromRgb(0x4A, 0xDE, 0x80), // green
-        Color.FromRgb(0xF5, 0x9E, 0x0B), // amber
-        Color.FromRgb(0xA7, 0x8B, 0xFA), // violet
-        Color.FromRgb(0xF8, 0x71, 0x71), // red
-        Color.FromRgb(0x38, 0xBD, 0xF8), // sky
-        Color.FromRgb(0xFB, 0x92, 0x3C), // orange
-        Color.FromRgb(0x34, 0xD3, 0x99), // emerald
-        Color.FromRgb(0xE8, 0x79, 0xF9), // fuchsia
+        Color.FromRgb(0x38, 0xA8, 0xEB), // blue (darkened for light mode contrast)
+        Color.FromRgb(0xF0, 0x5C, 0x7A), // rose
+        Color.FromRgb(0x2E, 0xBD, 0x60), // green (darkened for light mode contrast)
+        Color.FromRgb(0xE8, 0x90, 0x08), // amber
+        Color.FromRgb(0x93, 0x78, 0xE8), // violet
+        Color.FromRgb(0xE8, 0x5C, 0x5C), // red
+        Color.FromRgb(0x28, 0x9E, 0xDD), // sky (darkened for light mode contrast)
+        Color.FromRgb(0xEB, 0x82, 0x2C), // orange
+        Color.FromRgb(0x22, 0xB5, 0x80), // emerald (darkened for light mode contrast)
+        Color.FromRgb(0xD4, 0x66, 0xE8), // fuchsia
     ];
 
     [RelayCommand]
@@ -1051,7 +1052,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 Percentage = otherPct,
                 StartAngle = angle,
                 SweepAngle = otherSweep,
-                FillColor = Color.FromRgb(0x60, 0x60, 0x70),
+                FillColor = Color.FromRgb(0x88, 0x88, 0x98),
                 Index = sorted.Count,
             });
         }

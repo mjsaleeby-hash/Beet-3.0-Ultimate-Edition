@@ -30,6 +30,15 @@
     <Color x:Key="PaneDstBorderColor">#2D8A50</Color>
     <Color x:Key="PaneDstBgColor">#142218</Color>
 
+    <!-- Dedicated overrides (dark mode uses existing semantic values) -->
+    <Color x:Key="ToggleTrackOffColor">#3A3A58</Color>
+    <Color x:Key="RingTrackColor">#2A2A44</Color>
+    <Color x:Key="DonutCenterColor">#1E1E30</Color>
+
+    <SolidColorBrush x:Key="ToggleTrackOffBrush" Color="{StaticResource ToggleTrackOffColor}"/>
+    <SolidColorBrush x:Key="RingTrackBrush" Color="{StaticResource RingTrackColor}"/>
+    <SolidColorBrush x:Key="DonutCenterBrush" Color="{StaticResource DonutCenterColor}"/>
+
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}"/>
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}"/>
     <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{StaticResource SurfaceRaisedColor}"/>

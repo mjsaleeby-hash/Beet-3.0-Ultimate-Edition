@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
+using Color = System.Windows.Media.Color;
 
 namespace BeetsBackup.Models;
 
@@ -17,6 +18,7 @@ public class PieSlice : INotifyPropertyChanged
     public int Index { get; init; }
     public string? FullPath { get; init; }
     public bool IsDirectory { get; init; }
+    public bool IsNegligible => Percentage < 0.05;
 
     private bool _isHighlighted;
     public bool IsHighlighted

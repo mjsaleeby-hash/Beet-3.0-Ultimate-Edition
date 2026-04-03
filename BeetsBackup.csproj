@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>BeetsBackup</AssemblyName>
     <RootNamespace>BeetsBackup</RootNamespace>
     <ApplicationIcon>Assets\Beets Backup IMG.ico</ApplicationIcon>

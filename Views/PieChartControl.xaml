@@ -91,7 +91,7 @@
                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                HorizontalAlignment="Right" VerticalAlignment="Center"/>
 
-                                    <TextBlock Grid.Column="4" FontSize="12" FontWeight="SemiBold"
+                                    <TextBlock x:Name="PctText" Grid.Column="4" FontSize="12" FontWeight="SemiBold"
                                                HorizontalAlignment="Right" VerticalAlignment="Center"
                                                Text="{Binding Percentage, StringFormat={}{0:0.0}%}">
                                         <TextBlock.Foreground>
@@ -104,6 +104,11 @@
                                 <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
                                     <Setter TargetName="LegendBorder" Property="Background"
                                             Value="{DynamicResource SelectionBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsNegligible}" Value="True">
+                                    <Setter TargetName="PctText" Property="Foreground"
+                                            Value="{DynamicResource SecondaryTextBrush}"/>
+                                    <Setter TargetName="PctText" Property="FontWeight" Value="Normal"/>
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>

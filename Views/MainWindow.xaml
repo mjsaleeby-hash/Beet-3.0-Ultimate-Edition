@@ -53,7 +53,7 @@
                     <Grid Grid.Column="1" Width="30" Height="30" Margin="6,0,0,0"
                           VerticalAlignment="Center" ToolTip="{Binding DriveInfo.FreeSpaceDisplay}">
                         <Ellipse Width="24" Height="24"
-                                 Stroke="{DynamicResource BorderStrongBrush}" StrokeThickness="3" Fill="Transparent"/>
+                                 Stroke="{DynamicResource RingTrackBrush}" StrokeThickness="3" Fill="Transparent"/>
                         <Path Stroke="{DynamicResource AccentBrush}" StrokeThickness="3"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Data="{Binding DriveInfo.UsagePercent, Converter={StaticResource UsageToArcConverter}}"
@@ -223,10 +223,10 @@
                     <ControlTemplate TargetType="ToggleButton">
                         <Grid>
                             <Border x:Name="Track"
-                                    Background="{DynamicResource BorderStrongBrush}"
+                                    Background="{DynamicResource ToggleTrackOffBrush}"
                                     CornerRadius="9"
                                     BorderThickness="1"
-                                    BorderBrush="{DynamicResource BorderStrongBrush}"/>
+                                    BorderBrush="{DynamicResource ToggleTrackOffBrush}"/>
                             <Ellipse x:Name="Knob"
                                      Width="12" Height="12"
                                      Fill="{DynamicResource SecondaryTextBrush}"

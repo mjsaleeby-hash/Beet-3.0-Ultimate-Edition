@@ -14,20 +14,31 @@ public partial class App : Application
 {
     public static IServiceProvider Services { get; private set; } = null!;
     private Mutex? _singleInstanceMutex;
+    private EventWaitHandle? _showSignal;
+    private CancellationTokenSource? _showSignalCts;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        // Single-instance guard
+        // Single-instance guard — if already running, signal the first instance to show its window
         _singleInstanceMutex = new Mutex(true, "BeetsBackup_SingleInstance_Mutex", out bool createdNew);
         if (!createdNew)
         {
-            MessageBox.Show("Beet's Backup is already running.", "Beet's Backup",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            try
+            {
+                using var signal = EventWaitHandle.OpenExisting("BeetsBackup_ShowWindow_Signal");
+                signal.Set();
+            }
+            catch { /* first instance hasn't created the signal yet — rare race condition */ }
             Current.Shutdown();
             return;
         }
+
+        // Create the signal that a second instance can use to wake us
+        _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "BeetsBackup_ShowWindow_Signal");
+        _showSignalCts = new CancellationTokenSource();
+        StartShowSignalListener();
 
         // Global exception handlers
         DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -53,14 +64,17 @@ public partial class App : Application
         var missedJobs = scheduler.GetMissedJobs();
         bool hasMissedBackups = missedJobs.Count > 0;
 
-        // Launch minimized if startup-launched and no missed backups to handle
-        if (settings.LaunchAtStartup && !hasMissedBackups)
+        // Launch to tray only when auto-started by Windows (--startup flag from shortcut)
+        bool isAutoStartup = Environment.GetCommandLineArgs().Contains("--startup", StringComparer.OrdinalIgnoreCase);
+        if (isAutoStartup && !hasMissedBackups)
         {
-            mainWindow.WindowState = System.Windows.WindowState.Minimized;
-            FileLogger.Info("Launched minimized (startup mode, no missed backups)");
+            // Don't show window — it's already in the tray via InitializeTrayIcon
+            FileLogger.Info("Launched to system tray (auto-startup, no missed backups)");
         }
-
-        mainWindow.Show();
+        else
+        {
+            mainWindow.Show();
+        }
 
         if (hasMissedBackups)
         {
@@ -94,6 +108,9 @@ public partial class App : Application
                 FileLogger.Warn("Service disposal timed out after 5 seconds");
         }
         catch (Exception ex) { FileLogger.LogException("Error disposing services", ex); }
+        _showSignalCts?.Cancel();
+        _showSignal?.Dispose();
+        _showSignalCts?.Dispose();
         try { _singleInstanceMutex?.ReleaseMutex(); }
         catch (ApplicationException) { /* Mutex not owned — second instance path */ }
         _singleInstanceMutex?.Dispose();
@@ -116,6 +133,35 @@ public partial class App : Application
     {
         FileLogger.WriteCrashDump("TaskScheduler.UnobservedTaskException", e.Exception);
         e.SetObserved();
+    }
+
+    private void StartShowSignalListener()
+    {
+        var cts = _showSignalCts!;
+        var signal = _showSignal!;
+        Task.Run(() =>
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                try
+                {
+                    bool signaled = signal.WaitOne(1000);
+                    if (cts.IsCancellationRequested) break;
+                    if (!signaled) continue; // timeout, not a signal
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        var mainWindow = Windows.OfType<MainWindow>().FirstOrDefault();
+                        if (mainWindow != null)
+                        {
+                            mainWindow.Show();
+                            mainWindow.WindowState = System.Windows.WindowState.Normal;
+                            mainWindow.Activate();
+                        }
+                    });
+                }
+                catch (ObjectDisposedException) { break; }
+            }
+        });
     }
 
     private static async Task CheckForUpdatesAsync(MainWindow mainWindow)

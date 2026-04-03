@@ -74,6 +74,7 @@ public class SettingsService
             $ws = New-Object -ComObject WScript.Shell;
             $sc = $ws.CreateShortcut('{shortcutPath.Replace("'", "''")}');
             $sc.TargetPath = '{targetPath.Replace("'", "''")}';
+            $sc.Arguments = '--startup';
             $sc.WorkingDirectory = '{Path.GetDirectoryName(targetPath)!.Replace("'", "''")}';
             $sc.Description = 'Beet''s Backup';
             $sc.Save()

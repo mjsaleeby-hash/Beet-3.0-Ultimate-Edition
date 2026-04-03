@@ -2,10 +2,17 @@ using System.Collections.ObjectModel;
 
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using BeetsBackup.Models;
+using Brush = System.Windows.Media.Brush;
+using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using Brushes = System.Windows.Media.Brushes;
+using Cursors = System.Windows.Input.Cursors;
+using Point = System.Windows.Point;
+using Size = System.Windows.Size;
+using UserControl = System.Windows.Controls.UserControl;
 
 namespace BeetsBackup.Views;
 
@@ -148,16 +155,18 @@ public partial class PieChartControl : UserControl
         {
             Width = radius * 2,
             Height = radius * 2,
-            Fill = TryFindResource("PanelBrush") as Brush ?? Brushes.DarkGray,
             Opacity = 0.5
         };
+        bgCircle.SetResourceReference(Shape.FillProperty, "PanelBrush");
         Canvas.SetLeft(bgCircle, cx - radius);
         Canvas.SetTop(bgCircle, cy - radius);
         PieCanvas.Children.Add(bgCircle);
 
+        var sliceBorderBrush = TryFindResource("SurfaceBrush") as Brush ?? Brushes.White;
+
         foreach (var slice in slices)
         {
-            var path = CreateSlicePath(slice, cx, cy, radius);
+            var path = CreateSlicePath(slice, cx, cy, radius, sliceBorderBrush);
             path.Tag = slice;
             path.MouseEnter += Slice_MouseEnter;
             path.MouseLeave += Slice_MouseLeave;
@@ -171,20 +180,20 @@ public partial class PieChartControl : UserControl
         {
             Width = 100,
             Height = 100,
-            Fill = TryFindResource("SurfaceBrush") as Brush ?? Brushes.Black
         };
+        hole.SetResourceReference(Shape.FillProperty, "DonutCenterBrush");
         Canvas.SetLeft(hole, cx - 50);
         Canvas.SetTop(hole, cy - 50);
         PieCanvas.Children.Add(hole);
     }
 
-    private static Path CreateSlicePath(PieSlice slice, double cx, double cy, double radius)
+    private static Path CreateSlicePath(PieSlice slice, double cx, double cy, double radius, Brush sliceBorderBrush)
     {
         var path = new Path
         {
             Fill = new SolidColorBrush(slice.FillColor),
-            Stroke = Brushes.Transparent,
-            StrokeThickness = 1,
+            Stroke = sliceBorderBrush,
+            StrokeThickness = 1.5,
             Cursor = Cursors.Hand,
             RenderTransformOrigin = new Point(0.5, 0.5),
             RenderTransform = new ScaleTransform(1, 1)

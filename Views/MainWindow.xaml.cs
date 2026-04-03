@@ -1,4 +1,5 @@
 using BeetsBackup.Models;
+using BeetsBackup.Services;
 using BeetsBackup.ViewModels;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -13,6 +14,7 @@ using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using DragDropEffects = System.Windows.DragDropEffects;
 using DataObject = System.Windows.DataObject;
 using MessageBox = System.Windows.MessageBox;
+using Button = System.Windows.Controls.Button;
 
 namespace BeetsBackup.Views;
 
@@ -29,11 +31,77 @@ public partial class MainWindow : Window
     // Column sorting state per ListView
     private readonly Dictionary<ListView, (GridViewColumnHeader header, ListSortDirection direction)> _sortState = new();
 
+    // System tray
+    private System.Windows.Forms.NotifyIcon? _trayIcon;
+    private bool _isReallyClosing;
+
     public MainWindow(MainViewModel viewModel)
     {
         InitializeComponent();
         DataContext = viewModel;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        InitializeTrayIcon();
+    }
+
+    private void InitializeTrayIcon()
+    {
+        // Load icon: try extracting from the exe (works with single-file publish)
+        System.Drawing.Icon? icon = null;
+        var exePath = Environment.ProcessPath;
+        if (exePath != null)
+        {
+            try { icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath); }
+            catch { /* fall through to default */ }
+        }
+
+        var contextMenu = new System.Windows.Forms.ContextMenuStrip();
+        contextMenu.Items.Add("Show Beet's Backup", null, (_, _) => RestoreFromTray());
+        contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        contextMenu.Items.Add("Quit", null, (_, _) => QuitApplication());
+
+        _trayIcon = new System.Windows.Forms.NotifyIcon
+        {
+            Icon = icon ?? System.Drawing.SystemIcons.Application,
+            Text = "Beet's Backup",
+            Visible = true,
+            ContextMenuStrip = contextMenu,
+        };
+        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private void QuitApplication()
+    {
+        _isReallyClosing = true;
+        _trayIcon?.Dispose();
+        _trayIcon = null;
+        System.Windows.Application.Current.Shutdown();
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        // Minimize to tray instead of taskbar
+        if (WindowState == WindowState.Minimized)
+            Hide();
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (!_isReallyClosing)
+        {
+            // Hide to tray instead of closing
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+        base.OnClosing(e);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -258,6 +326,17 @@ public partial class MainWindow : Window
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         e.Handled = true;
+    }
+
+    // -- Options dropdown --
+    private void OptionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.ContextMenu != null)
+        {
+            btn.ContextMenu.PlacementTarget = btn;
+            btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            btn.ContextMenu.IsOpen = true;
+        }
     }
 
     // -- Context menu: Open in Explorer --
