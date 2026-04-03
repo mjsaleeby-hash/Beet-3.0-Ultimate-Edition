@@ -34,6 +34,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 - **NTFS permission stripping** — Remove Permissions checkbox strips ACLs so files work cleanly on other machines
 - **SHA-256 checksum verification** — Verify Checksums checkbox confirms integrity after every copy
 - **Pause, resume, and stop** controls during active transfers
+- **Transfer throttling** — "Limit Speed" toolbar toggle caps bandwidth at 10 MB/s (bound to `ThrottleTransfer` in `MainViewModel`); scheduled jobs additionally support a per-job speed picker (1–100 MB/s) in the schedule dialog
 - **Insufficient disk space detection** with a warning before transfer begins
 - **Overall progress bar with ETA** displayed in the status bar
 
@@ -66,6 +67,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 ### UI / UX
 
 - **Dark and light theme** toggle
+- **Update checker** — `UpdateService` queries the GitHub Releases API on startup; if a newer version is found, an accent-colored banner appears in the status bar with **Download** and **Dismiss** buttons; "Check for Updates" is also available in the Options menu; skipped versions are persisted to settings so dismissed releases are not surfaced again
 - **Launch at Startup** — Options menu toggle that creates or removes a Windows startup folder shortcut; when enabled, the app launches minimized at login (unless missed backups require attention)
 - **Data Distribution Visual Mode** — toolbar button toggles between List view and a donut pie chart of the top 10 largest items in the current folder; color-coded with 10 distinct colors plus a muted "Other" slice; legend shows item name, icon, size, and percentage; hovering a slice highlights the matching legend entry and vice versa; chart auto-rebuilds atomically when folder size calculations complete; works in both single-pane and split-pane modes
 - **Custom logo** with gradient "Beet's Backup" branding
@@ -115,7 +117,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 6. **Transfer files** between panes using toolbar buttons, the right-click context menu, or drag-and-drop.
 7. **Choose a transfer mode** (Skip Existing, Keep Both, Replace, or Mirror) before starting a transfer. Mirror mode will delete destination files not in the source — confirm the warning before proceeding.
 8. **Enable checksum verification** or **permission stripping** via the toolbar checkboxes as needed.
-9. **Monitor progress** in the status bar, and use pause, resume, or stop controls during transfers.
+9. **Monitor progress** in the status bar, and use pause, resume, or stop controls during transfers. Enable the **"Limit Speed"** toolbar toggle to cap bandwidth at 10 MB/s when transfers should not saturate the drive.
 10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, permission options, checksum verification, and exclusion filters. Use "Estimate Size" to preview how much data will be transferred.
 11. **Review backup history** in the log dialog to see past and active operations. Use **"View Errors"** on any entry with failures to see which files failed and why. Use **"Open Log Folder"** for direct access to all log files. Export to CSV if needed.
 
@@ -135,7 +137,8 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 │   ├── SchedulerService     Periodic backup job runner with disk persistence and SchedulerError event
 │   ├── BackupLogService     JSON-based backup history with debounced saves
 │   ├── FileLogger           Operational log + crash dump writer (LogDirectory: %LocalAppData%\Beet's Backup\)
-│   ├── SettingsService      User preferences, dark/light mode flag, Launch at Startup shortcut management
+│   ├── SettingsService      User preferences, dark/light mode flag, Launch at Startup shortcut management, skip-version persistence
+│   ├── UpdateService        GitHub Releases API update checker with banner notification and skip-version support
 │   └── ThemeService         Light/dark mode
 ├── Helpers/             Value converters for WPF bindings
 ├── Themes/              Light.xaml & Dark.xaml resource dictionaries
