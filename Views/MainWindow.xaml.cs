@@ -1,6 +1,7 @@
 using BeetsBackup.Models;
 using BeetsBackup.Services;
 using BeetsBackup.ViewModels;
+using Microsoft.Extensions.DependencyInjection;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -328,11 +329,27 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    // -- Backup Wizard (placeholder) --
+    // -- Backup Wizard --
     private void BackupWizard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        MessageBox.Show("Backup Wizard is coming soon!", "Beet's Backup",
-            MessageBoxButton.OK, MessageBoxImage.Information);
+        var scheduler = App.Services.GetRequiredService<BeetsBackup.Services.SchedulerService>();
+        var vm = new BeetsBackup.ViewModels.BackupWizardViewModel(scheduler);
+        var dialog = new BackupWizardDialog(vm) { Owner = this };
+
+        if (dialog.ShowDialog() == true && dialog.Result != null)
+        {
+            if (dialog.RunNow)
+            {
+                // Trigger a one-time transfer using the wizard's job config
+                var job = dialog.Result;
+                FileLogger.Info($"Wizard one-time backup: {job.SourcePathsDisplay} → {job.DestinationPath}");
+                _ = Vm.RunWizardBackupAsync(job);
+            }
+            else
+            {
+                FileLogger.Info($"Wizard scheduled backup created: {dialog.Result.Name}");
+            }
+        }
     }
 
     // -- Options dropdown --

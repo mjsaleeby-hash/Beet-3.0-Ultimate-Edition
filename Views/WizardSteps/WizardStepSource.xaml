@@ -1,0 +1,140 @@
+<UserControl x:Class="BeetsBackup.Views.WizardSteps.WizardStepSource"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:steps="clr-namespace:BeetsBackup.ViewModels.WizardSteps">
+    <UserControl.Resources>
+        <Style x:Key="SourceCard" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="CardBorder" CornerRadius="8" Padding="14,12"
+                                Margin="0,0,0,8" BorderThickness="2"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                Background="{DynamicResource SurfaceBrush}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CardBorder" Property="BorderBrush" Value="#9B30FF"/>
+                                <Setter TargetName="CardBorder" Property="Background" Value="#0D9B30FF"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <BooleanToVisibilityConverter x:Key="BoolVis"/>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <!-- Entire drive (safest) -->
+        <RadioButton Style="{StaticResource SourceCard}" GroupName="SourceMode"
+                     IsChecked="{Binding SelectedMode, Converter={StaticResource EnumBoolConverter}, ConverterParameter={x:Static steps:SourceMode.EntireDrive}}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="&#x1F4BE;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Back up an entire drive" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                    <Border Background="#9B30FF" CornerRadius="4" Padding="6,2" Margin="8,0,0,0"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="Safest" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                    </Border>
+                </StackPanel>
+                <TextBlock Text="Captures everything on the drive — documents, photos, programs, settings. The safest choice if you're not sure where your files are."
+                           FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="24,0,0,0"/>
+            </StackPanel>
+        </RadioButton>
+
+        <!-- Quick pick -->
+        <RadioButton Style="{StaticResource SourceCard}" GroupName="SourceMode"
+                     IsChecked="{Binding SelectedMode, Converter={StaticResource EnumBoolConverter}, ConverterParameter={x:Static steps:SourceMode.QuickPick}}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="&#x1F4C1;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Common folders (Documents, Pictures, Desktop)" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Text="Back up the folders where most people keep their important files."
+                           FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="24,0,0,0"/>
+            </StackPanel>
+        </RadioButton>
+
+        <!-- Choose my own -->
+        <RadioButton Style="{StaticResource SourceCard}" GroupName="SourceMode"
+                     IsChecked="{Binding SelectedMode, Converter={StaticResource EnumBoolConverter}, ConverterParameter={x:Static steps:SourceMode.Custom}}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="&#x1F50D;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Choose my own folders" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Text="Pick exactly which folders to include — for people who know where their files are."
+                           FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="24,0,0,0"/>
+            </StackPanel>
+        </RadioButton>
+
+        <!-- Entire drive picker -->
+        <Border Margin="0,8,0,0"
+                Visibility="{Binding SelectedMode, Converter={StaticResource EnumVisConverter}, ConverterParameter={x:Static steps:SourceMode.EntireDrive}}">
+            <StackPanel>
+                <TextBlock Text="Select the drive to back up:" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                <ComboBox ItemsSource="{Binding AvailableDrives}" DisplayMemberPath="Label"
+                          SelectedValuePath="RootPath" SelectedValue="{Binding SelectedDrive}"
+                          Width="360" HorizontalAlignment="Left"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Quick pick checkboxes -->
+        <Border Margin="0,8,0,0"
+                Visibility="{Binding SelectedMode, Converter={StaticResource EnumVisConverter}, ConverterParameter={x:Static steps:SourceMode.QuickPick}}">
+            <StackPanel>
+                <CheckBox IsChecked="{Binding IncludeDocuments}" Margin="0,0,0,4"
+                          Foreground="{DynamicResource PrimaryTextBrush}">
+                    <TextBlock Text="&#x1F4C4; Documents" FontSize="13"/>
+                </CheckBox>
+                <CheckBox IsChecked="{Binding IncludePictures}" Margin="0,0,0,4"
+                          Foreground="{DynamicResource PrimaryTextBrush}">
+                    <TextBlock Text="&#x1F5BC; Pictures &amp; Videos" FontSize="13"/>
+                </CheckBox>
+                <CheckBox IsChecked="{Binding IncludeDesktop}" Margin="0,0,0,4"
+                          Foreground="{DynamicResource PrimaryTextBrush}">
+                    <TextBlock Text="&#x1F5A5; Desktop" FontSize="13"/>
+                </CheckBox>
+                <CheckBox IsChecked="{Binding IncludeDownloads}" Margin="0,0,0,4"
+                          Foreground="{DynamicResource PrimaryTextBrush}">
+                    <TextBlock Text="&#x2B07; Downloads" FontSize="13"/>
+                </CheckBox>
+            </StackPanel>
+        </Border>
+
+        <!-- Custom folder list -->
+        <Border Margin="0,8,0,0"
+                Visibility="{Binding SelectedMode, Converter={StaticResource EnumVisConverter}, ConverterParameter={x:Static steps:SourceMode.Custom}}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button Content="+ Add Folder" Padding="10,4" FontSize="12" Cursor="Hand"
+                            Command="{Binding AddFolderCommand}"/>
+                    <Button Content="Remove" Padding="10,4" FontSize="12" Cursor="Hand" Margin="8,0,0,0"
+                            Command="{Binding RemoveFolderCommand}"/>
+                </StackPanel>
+                <ListBox ItemsSource="{Binding CustomPaths}" SelectedItem="{Binding SelectedCustomPath}"
+                         Height="120" FontSize="12"
+                         Background="{DynamicResource SurfaceBrush}"
+                         Foreground="{DynamicResource PrimaryTextBrush}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Info callout -->
+        <Border Background="{DynamicResource SurfaceInsetBrush}" CornerRadius="6" Padding="14,10" Margin="0,14,0,0">
+            <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}">
+                <Run FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}">&#x1F4A1; Not sure where your files are?</Run>
+                <Run Text=" Backing up the entire drive is the safest option — it captures everything. The backup will simply skip any system files it can't access."/>
+            </TextBlock>
+        </Border>
+    </StackPanel>
+</UserControl>

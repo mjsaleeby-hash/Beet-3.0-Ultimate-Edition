@@ -1,0 +1,93 @@
+<UserControl x:Class="BeetsBackup.Views.WizardSteps.WizardStepTransferMode"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:BeetsBackup.Models">
+    <UserControl.Resources>
+        <Style x:Key="ModeCard" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="CardBorder" CornerRadius="8" Padding="14,12"
+                                Margin="0,0,0,8" BorderThickness="2"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                Background="{DynamicResource SurfaceBrush}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CardBorder" Property="BorderBrush" Value="#9B30FF"/>
+                                <Setter TargetName="CardBorder" Property="Background" Value="#0D9B30FF"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <RadioButton Style="{StaticResource ModeCard}" GroupName="TransferMode"
+                     IsChecked="{Binding SelectedMode, Converter={StaticResource EnumBoolConverter}, ConverterParameter={x:Static models:TransferMode.SkipExisting}}">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="Skip files already there" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}"/>
+                    <Border Background="#9B30FF" CornerRadius="4" Padding="6,2" Margin="8,0,0,0"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="Recommended" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                    </Border>
+                </StackPanel>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}">
+                    If a file already exists in the backup, leave it alone. Only copies brand-new or changed files. Fast, safe, and never overwrites anything.
+                </TextBlock>
+            </StackPanel>
+        </RadioButton>
+
+        <RadioButton Style="{StaticResource ModeCard}" GroupName="TransferMode"
+                     IsChecked="{Binding SelectedMode, Converter={StaticResource EnumBoolConverter}, ConverterParameter={x:Static models:TransferMode.KeepBoth}}">
+            <StackPanel>
+                <TextBlock Text="Keep both copies" FontSize="14" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}">
+                    If "photo.jpg" already exists, the new copy is saved as "photo (2).jpg". Both versions are kept. Avoid this for recurring backups — the destination grows larger each run.
+                </TextBlock>
+            </StackPanel>
+        </RadioButton>
+
+        <RadioButton Style="{StaticResource ModeCard}" GroupName="TransferMode"
+                     IsChecked="{Binding SelectedMode, Converter={StaticResource EnumBoolConverter}, ConverterParameter={x:Static models:TransferMode.Replace}}">
+            <StackPanel>
+                <TextBlock Text="Replace with the newer version" FontSize="14" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}">
+                    If the backup copy is older, overwrite it with the newer one. The destination always has the latest copy of every file.
+                </TextBlock>
+            </StackPanel>
+        </RadioButton>
+
+        <RadioButton Style="{StaticResource ModeCard}" GroupName="TransferMode"
+                     IsChecked="{Binding SelectedMode, Converter={StaticResource EnumBoolConverter}, ConverterParameter={x:Static models:TransferMode.Mirror}}">
+            <StackPanel>
+                <TextBlock Text="Mirror — make the destination an exact clone" FontSize="14" FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}">
+                    After copying, <Run FontWeight="SemiBold">delete</Run> anything in the destination that doesn't exist in the source. The destination becomes an exact mirror of the source.
+                </TextBlock>
+            </StackPanel>
+        </RadioButton>
+
+        <!-- Mirror warning -->
+        <Border Background="#1AFF4444" BorderBrush="#FF6B6B" BorderThickness="1"
+                CornerRadius="6" Padding="14,10" Margin="0,4,0,0"
+                Visibility="{Binding SelectedMode, Converter={StaticResource EnumVisConverter}, ConverterParameter={x:Static models:TransferMode.Mirror}}">
+            <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}">
+                <Run FontWeight="SemiBold">&#x26A0; Caution:</Run>
+                <Run Text=" Mirror mode will permanently delete files from the destination that aren't in the source — including files you placed there manually. Only use this if you want the destination to be an exact copy with nothing extra."/>
+            </TextBlock>
+        </Border>
+    </StackPanel>
+</UserControl>

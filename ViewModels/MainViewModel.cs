@@ -866,6 +866,39 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    public async Task RunWizardBackupAsync(ScheduledJob job)
+    {
+        BeginTransfer();
+        StatusMessage = $"Wizard backup: {job.Name}...";
+        FileLogger.Info($"Wizard backup started: {job.Name} — {job.SourcePaths.Count} source(s) → {job.DestinationPath} (mode={job.TransferMode})");
+        var progress = new Progress<string>(OnTransferProgress);
+        var progressPercent = new Progress<int>(OnTransferPercent);
+        long throttle = job.ThrottleMBps * 1024L * 1024L;
+        try
+        {
+            var result = await _transfer.CopyAsync(
+                job.SourcePaths, job.DestinationPath, job.StripPermissions,
+                job.TransferMode, progress, progressPercent,
+                _transferCts!.Token, _pauseGate, job.VerifyChecksums,
+                exclusions: job.ExclusionFilters.Count > 0 ? job.ExclusionFilters : null,
+                throttleBytesPerSec: throttle);
+            var summary = FormatTransferResult(result);
+            FileLogger.Info($"Wizard backup completed: {summary}");
+            EndTransfer(summary);
+        }
+        catch (OperationCanceledException)
+        {
+            FileLogger.Warn("Wizard backup cancelled by user");
+            EndTransfer("Transfer stopped.");
+        }
+        catch (InsufficientSpaceException ex)
+        {
+            FileLogger.Error($"Wizard backup failed — insufficient space: {ex.Message}");
+            EndTransfer("Transfer aborted — not enough space.");
+            System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
     [RelayCommand]
     private void DeleteItem(FileSystemItem item)
     {

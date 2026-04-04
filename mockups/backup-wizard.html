@@ -1,0 +1,1572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backup Wizard — Beet's Backup</title>
+<style>
+  /* ============================================================
+     CSS CUSTOM PROPERTIES — light theme is default
+     Toggle button switches to dark by adding class="dark" to body
+  ============================================================ */
+  :root {
+    --bg:           #f5f5f5;
+    --surface:      #ffffff;
+    --surface-2:    #f0f0f0;
+    --accent:       #4a9eff;
+    --accent-hover: #2e86ef;
+    --accent-soft:  #e8f3ff;
+    --text:         #1a1a1a;
+    --text-sub:     #555;
+    --text-faint:   #888;
+    --border:       #ddd;
+    --border-focus: #4a9eff;
+    --selection:    #e0e8f0;
+    --step-done:    #1a9b30;
+    --step-active:  #4a9eff;
+    --step-pending: #ccc;
+    --warn-bg:      #fffbea;
+    --warn-border:  #e8b400;
+    --warn-text:    #7a5900;
+    --danger-bg:    #fff0f0;
+    --danger-border:#d9534f;
+    --danger-text:  #8b1a1a;
+    --ok-bg:        #edfaf0;
+    --ok-border:    #28a745;
+    --ok-text:      #165c2b;
+    --shadow:       0 2px 12px rgba(0,0,0,0.10);
+    --radius:       10px;
+    --btn-radius:   6px;
+  }
+  body.dark {
+    --bg:           #1e1e2e;
+    --surface:      #2a2a3a;
+    --surface-2:    #23233a;
+    --accent:       #4a9eff;
+    --accent-hover: #2e86ef;
+    --accent-soft:  #1a2a40;
+    --text:         #e0e0e0;
+    --text-sub:     #aaa;
+    --text-faint:   #666;
+    --border:       #3a3a4a;
+    --border-focus: #4a9eff;
+    --selection:    #3a3a5a;
+    --step-done:    #2ecc71;
+    --step-active:  #4a9eff;
+    --step-pending: #444;
+    --warn-bg:      #2a2400;
+    --warn-border:  #c9a000;
+    --warn-text:    #f0d060;
+    --danger-bg:    #2a1010;
+    --danger-border:#c0392b;
+    --danger-text:  #f08080;
+    --ok-bg:        #0d2a15;
+    --ok-border:    #2ecc71;
+    --ok-text:      #7aefaa;
+    --shadow:       0 2px 12px rgba(0,0,0,0.40);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  /* ============================================================
+     THEME TOGGLE (top-right corner)
+  ============================================================ */
+  #theme-toggle {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: var(--btn-radius);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    transition: background 0.2s;
+    z-index: 9999;
+  }
+  #theme-toggle:hover { background: var(--selection); }
+
+  /* ============================================================
+     STEP NAVIGATION DEMOS (top of page — click to see each step)
+  ============================================================ */
+  #step-nav {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    z-index: 9999;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+  }
+  .step-nav-btn {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-sub);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .step-nav-btn:hover { background: var(--selection); color: var(--text); }
+  .step-nav-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  /* ============================================================
+     WIZARD SHELL — the dialog window
+  ============================================================ */
+  .wizard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    width: 640px;
+    min-height: 560px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-top: 48px;
+  }
+
+  /* ============================================================
+     WIZARD HEADER — title bar with stepper
+  ============================================================ */
+  .wizard-header {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 28px 0;
+  }
+  .wizard-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .wizard-icon {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #9B30FF22, #9B30FF44);
+    border: 1px solid #9B30FF66;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .wizard-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .wizard-subtitle {
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
+  /* ---- Stepper bar ---- */
+  .stepper {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .step-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    cursor: default;
+  }
+  /* Connector line between steps */
+  .step-item:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    top: 14px;
+    left: calc(50% + 16px);
+    right: calc(-50% + 16px);
+    height: 2px;
+    background: var(--step-pending);
+    transition: background 0.3s;
+    z-index: 0;
+  }
+  .step-item.done:not(:last-child)::after,
+  .step-item.active:not(:last-child)::after {
+    background: var(--step-done);
+  }
+
+  .step-bubble {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--step-pending);
+    color: #fff;
+    position: relative;
+    z-index: 1;
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .step-item.done .step-bubble   { background: var(--step-done); }
+  .step-item.active .step-bubble { background: var(--step-active); }
+
+  .step-label {
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 4px;
+    text-align: center;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+  .step-item.active .step-label  { color: var(--accent); font-weight: 600; }
+  .step-item.done .step-label    { color: var(--step-done); }
+
+  /* ============================================================
+     WIZARD BODY — scrollable content area
+  ============================================================ */
+  .wizard-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 28px 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /* Step heading */
+  .step-heading {
+    margin-bottom: 20px;
+  }
+  .step-heading h2 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .step-heading p {
+    font-size: 13px;
+    color: var(--text-sub);
+    line-height: 1.6;
+  }
+
+  /* ============================================================
+     CHOICE CARDS — large clickable option tiles
+  ============================================================ */
+  .choice-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .choice-grid.two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .choice-card {
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: var(--surface);
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .choice-card:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .choice-card.selected {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .choice-icon {
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .choice-text {}
+  .choice-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+  .choice-desc {
+    font-size: 12px;
+    color: var(--text-sub);
+    line-height: 1.5;
+  }
+  .choice-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .choice-badge.green {
+    background: #1a9b30;
+  }
+
+  /* ============================================================
+     SOURCE / DESTINATION SELECTION PANELS
+  ============================================================ */
+  .field-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 6px;
+  }
+  .field-group {
+    margin-bottom: 18px;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .path-input {
+    flex: 1;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: "Consolas", "Cascadia Code", monospace;
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .path-input:focus { border-color: var(--border-focus); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 16px;
+    border-radius: var(--btn-radius);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 500;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  .btn:hover { background: var(--selection); border-color: var(--accent); }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.danger {
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+    color: var(--danger-text);
+  }
+  .btn.sm { padding: 5px 12px; font-size: 12px; }
+
+  /* Source list */
+  .source-list {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    min-height: 64px;
+    max-height: 120px;
+    overflow-y: auto;
+    background: var(--surface-2);
+    margin-bottom: 8px;
+  }
+  .source-list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-family: "Consolas", monospace;
+  }
+  .source-list-item:last-child { border-bottom: none; }
+  .source-list-item .remove-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 2px;
+    font-family: inherit;
+  }
+  .source-list-item .remove-btn:hover { color: var(--danger-text); }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .size-estimate {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-left: 4px;
+  }
+
+  /* ============================================================
+     INFO / WARNING CALLOUTS
+  ============================================================ */
+  .callout {
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.6;
+    margin-bottom: 14px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .callout-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .callout.info  { background: var(--accent-soft); border: 1px solid var(--accent); color: var(--text-sub); }
+  .callout.warn  { background: var(--warn-bg);    border: 1px solid var(--warn-border); color: var(--warn-text); }
+  .callout.danger{ background: var(--danger-bg);  border: 1px solid var(--danger-border); color: var(--danger-text); }
+  .callout.ok    { background: var(--ok-bg);      border: 1px solid var(--ok-border); color: var(--ok-text); }
+
+  /* ============================================================
+     SCHEDULE SUBFORM (date/time/recurrence)
+  ============================================================ */
+  .schedule-grid {
+    display: grid;
+    grid-template-columns: 1fr 80px 80px 80px;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 8px;
+  }
+  .schedule-grid label {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-bottom: 4px;
+    display: block;
+  }
+  .form-input {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 10px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus { border-color: var(--border-focus); }
+  select.form-input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+
+  .recur-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .toggle-switch {
+    width: 38px;
+    height: 20px;
+    border-radius: 10px;
+    background: var(--border);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle-switch.on { background: var(--accent); }
+  .toggle-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s;
+  }
+  .toggle-switch.on::after { transform: translateX(18px); }
+
+  /* ============================================================
+     ADVANCED OPTIONS — checkbox rows
+  ============================================================ */
+  .option-row {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    transition: border-color 0.15s, background 0.15s;
+    cursor: pointer;
+  }
+  .option-row:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .option-row.enabled { border-color: var(--accent); background: var(--accent-soft); }
+  .option-row-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .option-checkbox {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .option-row.enabled .option-checkbox {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .option-checkbox-check { color: #fff; font-size: 11px; font-weight: 900; }
+  .option-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+  }
+  .option-desc {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 6px;
+    margin-left: 28px;
+    line-height: 1.5;
+  }
+
+  /* Speed throttle inline control */
+  .throttle-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    margin-left: 28px;
+  }
+
+  /* Exclusion chips */
+  .exclusion-input-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    margin-left: 28px;
+    margin-bottom: 8px;
+  }
+  .chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: 28px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--selection);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-family: "Consolas", monospace;
+    color: var(--text);
+  }
+  .chip-x {
+    font-size: 14px;
+    color: var(--text-faint);
+    cursor: pointer;
+    line-height: 1;
+  }
+  .chip-x:hover { color: var(--danger-text); }
+
+  /* ============================================================
+     SUMMARY SCREEN
+  ============================================================ */
+  .summary-block {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  .summary-block-header {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-faint);
+  }
+  .summary-row {
+    display: flex;
+    padding: 10px 14px;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-key {
+    font-size: 12px;
+    color: var(--text-faint);
+    min-width: 140px;
+    flex-shrink: 0;
+  }
+  .summary-val {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+    word-break: break-all;
+  }
+  .summary-val.mono {
+    font-family: "Consolas", monospace;
+    font-weight: 400;
+    font-size: 12px;
+  }
+  .summary-val .badge {
+    display: inline-block;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 4px;
+    padding: 1px 7px;
+  }
+  .summary-val .badge.green {
+    background: var(--ok-bg);
+    border-color: var(--ok-border);
+    color: var(--ok-text);
+  }
+  .summary-val .badge.warn {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+    color: var(--warn-text);
+  }
+
+  /* ============================================================
+     WIZARD FOOTER — navigation buttons
+  ============================================================ */
+  .wizard-footer {
+    border-top: 1px solid var(--border);
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+  }
+  .footer-left  { flex: 1; display: flex; gap: 10px; }
+  .footer-right { display: flex; gap: 10px; }
+
+  .btn.finish {
+    background: #1a9b30;
+    border-color: #1a9b30;
+    color: #fff;
+    font-weight: 600;
+    padding: 8px 22px;
+  }
+  .btn.finish:hover { background: #157826; }
+
+  /* ============================================================
+     STEP PANELS — hide all but the active one
+  ============================================================ */
+  .step-panel { display: none; }
+  .step-panel.active { display: block; }
+
+  /* ============================================================
+     MONTHLY PICKER extras
+  ============================================================ */
+  .monthly-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* ============================================================
+     JOB NAME FIELD
+  ============================================================ */
+  .name-hint {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 4px;
+  }
+
+  /* ============================================================
+     RESPONSIVE — shrink gracefully at narrow viewport
+  ============================================================ */
+  @media (max-width: 680px) {
+    .wizard { width: 100%; margin-top: 80px; }
+    .choice-grid.two-col { grid-template-columns: 1fr; }
+    .schedule-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Theme toggle -->
+<button id="theme-toggle" onclick="toggleTheme()">Dark Mode</button>
+
+<!-- Step navigation (demo only — in WPF this would be driven by CurrentStep binding) -->
+<div id="step-nav">
+  <span style="font-size:11px;color:var(--text-faint);line-height:2;margin-right:4px;">Jump to step:</span>
+  <button class="step-nav-btn active" onclick="showStep(0,this)">1 · Type</button>
+  <button class="step-nav-btn" onclick="showStep(1,this)">2 · Schedule</button>
+  <button class="step-nav-btn" onclick="showStep(2,this)">3 · Source</button>
+  <button class="step-nav-btn" onclick="showStep(3,this)">4 · Destination</button>
+  <button class="step-nav-btn" onclick="showStep(4,this)">5 · Mode</button>
+  <button class="step-nav-btn" onclick="showStep(5,this)">6 · Advanced</button>
+  <button class="step-nav-btn" onclick="showStep(6,this)">7 · Summary</button>
+</div>
+
+<!-- ============================================================
+     THE WIZARD DIALOG
+============================================================ -->
+<div class="wizard" id="wizard">
+
+  <!-- HEADER + STEPPER -->
+  <div class="wizard-header">
+    <div class="wizard-title-row">
+      <div class="wizard-icon">🌿</div>
+      <div>
+        <div class="wizard-title">Backup Wizard</div>
+        <div class="wizard-subtitle">We'll walk you through setting up a backup — step by step.</div>
+      </div>
+    </div>
+
+    <!-- Stepper — 7 steps -->
+    <!-- Steps: Type | Schedule | Source | Destination | Mode | Advanced | Summary -->
+    <div class="stepper" id="stepper">
+      <div class="step-item active" data-step="0">
+        <div class="step-bubble">1</div>
+        <div class="step-label">Backup<br>Type</div>
+      </div>
+      <div class="step-item" data-step="1">
+        <div class="step-bubble">2</div>
+        <div class="step-label">When</div>
+      </div>
+      <div class="step-item" data-step="2">
+        <div class="step-bubble">3</div>
+        <div class="step-label">What to<br>Back Up</div>
+      </div>
+      <div class="step-item" data-step="3">
+        <div class="step-bubble">4</div>
+        <div class="step-label">Where to<br>Save</div>
+      </div>
+      <div class="step-item" data-step="4">
+        <div class="step-bubble">5</div>
+        <div class="step-label">Existing<br>Files</div>
+      </div>
+      <div class="step-item" data-step="5">
+        <div class="step-bubble">6</div>
+        <div class="step-label">Advanced<br>(Optional)</div>
+      </div>
+      <div class="step-item" data-step="6">
+        <div class="step-bubble">7</div>
+        <div class="step-label">Review &amp;<br>Start</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BODY — one .step-panel per step -->
+  <div class="wizard-body">
+
+    <!-- ================================================
+         STEP 1 — Backup Type
+    ================================================ -->
+    <div class="step-panel active" id="step-0">
+      <div class="step-heading">
+        <h2>What kind of backup do you want to set up?</h2>
+        <p>Don't worry — you can change this later. Pick the option that sounds most like what you need.</p>
+      </div>
+
+      <div class="choice-grid">
+
+        <!-- One-time -->
+        <div class="choice-card" onclick="selectCard(this,'backupType','once')">
+          <div class="choice-icon">⚡</div>
+          <div class="choice-text">
+            <div class="choice-title">Back up right now, just once</div>
+            <div class="choice-desc">
+              Copy your files to a safe place immediately. Great for before you install new software,
+              upgrade Windows, or take your laptop somewhere.
+            </div>
+          </div>
+        </div>
+
+        <!-- Scheduled one-time -->
+        <div class="choice-card" onclick="selectCard(this,'backupType','scheduled')">
+          <div class="choice-icon">📅</div>
+          <div class="choice-text">
+            <div class="choice-title">Back up on a specific date and time</div>
+            <div class="choice-desc">
+              Schedule it once — for example, tonight at midnight, or next Sunday at 10 PM —
+              and the app will run it automatically while you sleep.
+            </div>
+          </div>
+        </div>
+
+        <!-- Recurring -->
+        <div class="choice-card selected" onclick="selectCard(this,'backupType','recurring')">
+          <div class="choice-icon">🔁</div>
+          <div class="choice-text">
+            <div class="choice-title">
+              Back up automatically, on a schedule
+              <span class="choice-badge green">Recommended</span>
+            </div>
+            <div class="choice-desc">
+              The app will back up your files every day, every week, or on whatever schedule
+              you choose. Set it and forget it — the safest option for keeping your files protected.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Helpful hint -->
+      <div class="callout info" style="margin-top:14px">
+        <span class="callout-icon">💡</span>
+        <span>
+          <strong>Not sure?</strong> Choose "automatically on a schedule" — daily backups mean
+          even if something goes wrong today, yesterday's copy is always safe.
+        </span>
+      </div>
+    </div>
+
+    <!-- ================================================
+         STEP 2 — When (Schedule / Recurrence)
+         Note: skipped automatically for "right now" type
+    ================================================ -->
+    <div class="step-panel" id="step-1">
+      <div class="step-heading">
+        <h2>When should the backup run?</h2>
+        <p>Tell us the first time you want it to run. For automatic backups, it will repeat on this schedule from that point on.</p>
+      </div>
+
+      <!-- Job name -->
+      <div class="field-group">
+        <div class="field-label">Give this backup a name</div>
+        <input class="form-input" type="text" value="My Daily Backup" placeholder="e.g. Home Folder Backup">
+        <div class="name-hint">This is just a label so you can find it later in the backup history.</div>
+      </div>
+
+      <!-- Date / time -->
+      <div class="field-group">
+        <div class="field-label">First run date &amp; time</div>
+        <div class="schedule-grid">
+          <div>
+            <label>Date</label>
+            <input class="form-input" type="date" value="2026-04-04">
+          </div>
+          <div>
+            <label>Hour</label>
+            <select class="form-input">
+              <option>10</option><option>11</option><option selected>12</option>
+              <option>1</option><option>2</option>
+            </select>
+          </div>
+          <div>
+            <label>Minute</label>
+            <select class="form-input">
+              <option selected>00</option><option>15</option><option>30</option><option>45</option>
+            </select>
+          </div>
+          <div>
+            <label>AM / PM</label>
+            <select class="form-input">
+              <option>AM</option><option selected>PM</option>
+            </select>
+          </div>
+        </div>
+        <div class="callout info" style="margin-top:8px">
+          <span class="callout-icon">🌙</span>
+          <span>Tip: midnight or early morning (2–4 AM) is a good choice — your computer is idle
+          and the backup won't slow you down.</span>
+        </div>
+      </div>
+
+      <!-- Recurrence — shown only when type = recurring -->
+      <div class="field-group">
+        <div class="field-label">How often should it repeat?</div>
+        <div class="choice-grid">
+
+          <div class="choice-card selected" onclick="selectCard(this,'recurFreq','daily')">
+            <div class="choice-icon">📆</div>
+            <div class="choice-text">
+              <div class="choice-title">Every day <span class="choice-badge green">Most protection</span></div>
+              <div class="choice-desc">Runs once a day, always at the same time. You'll never lose more than 24 hours of work.</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'recurFreq','weekly')">
+            <div class="choice-icon">🗓️</div>
+            <div class="choice-text">
+              <div class="choice-title">Every week</div>
+              <div class="choice-desc">Good balance for files that don't change often — documents, photos.</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'recurFreq','monthly')">
+            <div class="choice-icon">📅</div>
+            <div class="choice-text">
+              <div class="choice-title">Every month</div>
+              <div class="choice-desc">For archives and large collections that rarely change.</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'recurFreq','custom')">
+            <div class="choice-icon">⚙️</div>
+            <div class="choice-text">
+              <div class="choice-title">Custom interval</div>
+              <div class="choice-desc">Every 6 hours, every 12 hours, or any other interval you need.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================
+         STEP 3 — Source (What to back up)
+    ================================================ -->
+    <div class="step-panel" id="step-2">
+      <div class="step-heading">
+        <h2>What do you want to back up?</h2>
+        <p>You can pick specific folders, or back up an entire drive. You can add multiple sources — they'll all go to the same destination.</p>
+      </div>
+
+      <!-- Quick-pick tiles -->
+      <div class="field-group">
+        <div class="field-label">Quick picks</div>
+        <div class="choice-grid two-col">
+
+          <div class="choice-card" onclick="selectCard(this,'sourceQuick','documents')">
+            <div class="choice-icon">📄</div>
+            <div class="choice-text">
+              <div class="choice-title">Documents</div>
+              <div class="choice-desc">Your Documents, Desktop, and Downloads folders</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'sourceQuick','pictures')">
+            <div class="choice-icon">🖼️</div>
+            <div class="choice-text">
+              <div class="choice-title">Pictures &amp; Videos</div>
+              <div class="choice-desc">Your Pictures and Videos folders</div>
+            </div>
+          </div>
+
+          <div class="choice-card selected" onclick="selectCard(this,'sourceQuick','entire-drive')">
+            <div class="choice-icon">💿</div>
+            <div class="choice-text">
+              <div class="choice-title">
+                Entire drive
+                <span class="choice-badge">Safest</span>
+              </div>
+              <div class="choice-desc">Back up everything on a drive — nothing gets left behind</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'sourceQuick','custom')">
+            <div class="choice-icon">📂</div>
+            <div class="choice-text">
+              <div class="choice-title">Choose my own folders</div>
+              <div class="choice-desc">I'll pick exactly which folders to include</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Drive picker — shown when "Entire drive" selected -->
+      <div class="field-group">
+        <div class="field-label">Which drive?</div>
+        <div class="choice-grid two-col">
+          <div class="choice-card selected" onclick="selectCard(this,'drivePick','C')">
+            <div class="choice-icon">💾</div>
+            <div class="choice-text">
+              <div class="choice-title">C:\ — Windows (SSD)</div>
+              <div class="choice-desc">223 GB used of 476 GB</div>
+            </div>
+          </div>
+          <div class="choice-card" onclick="selectCard(this,'drivePick','D')">
+            <div class="choice-icon">💾</div>
+            <div class="choice-text">
+              <div class="choice-title">D:\ — Data (HDD)</div>
+              <div class="choice-desc">1.2 TB used of 2.0 TB</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Custom folder list — shown when "Choose my own" selected (hidden here for demo) -->
+      <div class="field-group" style="display:none" id="custom-source-section">
+        <div class="field-label">Selected folders</div>
+        <div class="source-list">
+          <div class="source-list-item">
+            📁 C:\Users\Owner\Documents
+            <button class="remove-btn">✕</button>
+          </div>
+          <div class="source-list-item">
+            📁 C:\Users\Owner\Pictures
+            <button class="remove-btn">✕</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn sm">+ Add Folder</button>
+          <button class="btn sm">+ Add Drive</button>
+          <span class="size-estimate">Estimated: 47.3 GB</span>
+        </div>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <span>
+          <strong>Not sure where your files are?</strong> Backing up the entire drive is the safest
+          option — it captures everything, including files in unusual locations.
+          The backup will simply skip system files it can't access.
+        </span>
+      </div>
+    </div>
+
+    <!-- ================================================
+         STEP 4 — Destination (Where to save)
+    ================================================ -->
+    <div class="step-panel" id="step-3">
+      <div class="step-heading">
+        <h2>Where should the backup be saved?</h2>
+        <p>This is where your files will be copied to. Choose a location that's <strong>different from your source</strong> — an external hard drive, a USB stick, or a separate folder on another drive.</p>
+      </div>
+
+      <!-- Destination quick tiles -->
+      <div class="field-group">
+        <div class="field-label">Type of destination</div>
+        <div class="choice-grid two-col">
+
+          <div class="choice-card selected" onclick="selectCard(this,'destType','external')">
+            <div class="choice-icon">🔌</div>
+            <div class="choice-text">
+              <div class="choice-title">External drive or USB</div>
+              <div class="choice-desc">A portable drive plugged into your computer</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'destType','folder')">
+            <div class="choice-icon">📁</div>
+            <div class="choice-text">
+              <div class="choice-title">A folder on this PC</div>
+              <div class="choice-desc">Another drive or partition inside this computer</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'destType','network')">
+            <div class="choice-icon">🌐</div>
+            <div class="choice-text">
+              <div class="choice-title">Network folder</div>
+              <div class="choice-desc">A shared folder on your home network (NAS, etc.)</div>
+            </div>
+          </div>
+
+          <div class="choice-card" onclick="selectCard(this,'destType','custom')">
+            <div class="choice-icon">✏️</div>
+            <div class="choice-text">
+              <div class="choice-title">Type a path manually</div>
+              <div class="choice-desc">Enter an exact folder path</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Drive picker for external -->
+      <div class="field-group">
+        <div class="field-label">Select the destination drive</div>
+        <div class="choice-grid">
+          <div class="choice-card selected" onclick="selectCard(this,'destDrive','E')">
+            <div class="choice-icon">🔌</div>
+            <div class="choice-text">
+              <div class="choice-title">E:\ — My Backup Drive (USB)</div>
+              <div class="choice-desc">
+                931 GB free of 1.0 TB
+                <span style="display:inline-block;margin-left:8px;background:var(--ok-bg);border:1px solid var(--ok-border);color:var(--ok-text);font-size:10px;font-weight:700;border-radius:3px;padding:1px 6px;">Enough space</span>
+              </div>
+            </div>
+          </div>
+          <div class="choice-card" onclick="selectCard(this,'destDrive','F')">
+            <div class="choice-icon">🔌</div>
+            <div class="choice-text">
+              <div class="choice-title">F:\ — USB Drive (USB)</div>
+              <div class="choice-desc">
+                14 GB free of 64 GB
+                <span style="display:inline-block;margin-left:8px;background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-text);font-size:10px;font-weight:700;border-radius:3px;padding:1px 6px;">Might not fit</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Optional subfolder -->
+      <div class="field-group">
+        <div class="field-label">Subfolder (optional)</div>
+        <div class="path-row">
+          <input class="path-input" type="text" placeholder="e.g. Backups\2026" value="">
+        </div>
+        <div class="name-hint">Leave blank to copy directly to the root of the drive. A subfolder helps keep things organized.</div>
+      </div>
+
+      <div class="callout warn">
+        <span class="callout-icon">⚠️</span>
+        <span>
+          <strong>Important:</strong> Never save a backup to the same drive you're backing up from.
+          If that drive fails, you lose both copies. Plug in an external drive or use a network location.
+        </span>
+      </div>
+    </div>
+
+    <!-- ================================================
+         STEP 5 — Transfer Mode (What to do with existing files)
+    ================================================ -->
+    <div class="step-panel" id="step-4">
+      <div class="step-heading">
+        <h2>What should happen if a file already exists in the backup?</h2>
+        <p>This controls what Beet's Backup does when it finds a file at the destination that has the same name as one it's about to copy.</p>
+      </div>
+
+      <div class="choice-grid">
+
+        <!-- Skip Existing -->
+        <div class="choice-card selected" onclick="selectCard(this,'transferMode','skip')">
+          <div class="choice-icon">⏭️</div>
+          <div class="choice-text">
+            <div class="choice-title">
+              Skip files that are already there
+              <span class="choice-badge green">Recommended</span>
+            </div>
+            <div class="choice-desc">
+              If a file named "photo.jpg" already exists in the backup, leave it alone and
+              move on. Only copies files that are brand new.
+              <br><em style="color:var(--text-faint);font-style:normal">Best for: most situations. Fast, safe, never overwrites anything.</em>
+            </div>
+          </div>
+        </div>
+
+        <!-- Keep Both -->
+        <div class="choice-card" onclick="selectCard(this,'transferMode','both')">
+          <div class="choice-icon">📋</div>
+          <div class="choice-text">
+            <div class="choice-title">Keep both copies</div>
+            <div class="choice-desc">
+              If "photo.jpg" already exists, the new copy is saved as "photo (2).jpg".
+              Both versions are kept.
+              <br><em style="color:var(--text-faint);font-style:normal">Best for: one-time backups where you want to keep all versions. Avoid for recurring — the destination grows larger each run.</em>
+            </div>
+          </div>
+        </div>
+
+        <!-- Replace -->
+        <div class="choice-card" onclick="selectCard(this,'transferMode','replace')">
+          <div class="choice-icon">🔄</div>
+          <div class="choice-text">
+            <div class="choice-title">Replace with the newer version</div>
+            <div class="choice-desc">
+              If the file in the backup is older than the source file, overwrite it with the
+              updated version.
+              <br><em style="color:var(--text-faint);font-style:normal">Best for: keeping the backup fully up-to-date. The destination always has the latest copy of every file.</em>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mirror -->
+        <div class="choice-card" onclick="selectCard(this,'transferMode','mirror')">
+          <div class="choice-icon">🪞</div>
+          <div class="choice-text">
+            <div class="choice-title">Mirror — make the destination identical</div>
+            <div class="choice-desc">
+              After copying, <strong>delete anything in the destination that doesn't exist in the source.</strong>
+              The destination becomes an exact clone of the source.
+              <br><em style="color:var(--text-faint);font-style:normal">Best for: keeping a perfect sync copy. Use with care — files you place in the backup folder manually will be deleted.</em>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Mirror warning — shown when Mirror selected -->
+      <div class="callout danger" id="mirror-warning" style="display:none;margin-top:10px">
+        <span class="callout-icon">🗑️</span>
+        <span>
+          <strong>Mirror will permanently delete files</strong> from the destination that are not
+          in the source — including files you placed there manually. This action cannot be undone.
+          Are you sure this is what you want?
+        </span>
+      </div>
+    </div>
+
+    <!-- ================================================
+         STEP 6 — Advanced Options (Optional)
+    ================================================ -->
+    <div class="step-panel" id="step-5">
+      <div class="step-heading">
+        <h2>Optional: fine-tune your backup</h2>
+        <p>These settings are all turned off by default. Most people don't need to change anything here. Skip this step if you're not sure.</p>
+      </div>
+
+      <!-- Verify checksums -->
+      <div class="option-row" onclick="toggleOption(this)">
+        <div class="option-row-header">
+          <div class="option-checkbox"><span class="option-checkbox-check">✓</span></div>
+          <div class="option-title">Verify file integrity after copying</div>
+        </div>
+        <div class="option-desc">
+          After every file is copied, Beet's Backup re-reads both the original and the copy
+          and checks they are byte-for-byte identical (using a SHA-256 checksum). If they don't match,
+          the backup is flagged as failed.
+          <br><br>
+          <strong>When to enable:</strong> If you're backing up to an older or unreliable drive, or if
+          these files are critical and you need absolute certainty they copied correctly.
+          <br>
+          <strong>Trade-off:</strong> Makes the backup roughly twice as slow, because every file is read twice.
+        </div>
+      </div>
+
+      <!-- Strip permissions -->
+      <div class="option-row" onclick="toggleOption(this)">
+        <div class="option-row-header">
+          <div class="option-checkbox"><span class="option-checkbox-check">✓</span></div>
+          <div class="option-title">Remove access restrictions on copied files</div>
+        </div>
+        <div class="option-desc">
+          Windows files can be "locked" to a specific user account — meaning only you (on this
+          specific PC) can open them. This option removes that restriction so the backed-up files
+          can be opened by anyone on any computer.
+          <br><br>
+          <strong>When to enable:</strong> If you plan to restore files on a different computer, or
+          share the backup with someone else. Otherwise, leave this off.
+        </div>
+      </div>
+
+      <!-- Throttle speed -->
+      <div class="option-row enabled" onclick="toggleOption(this)">
+        <div class="option-row-header">
+          <div class="option-checkbox" style="background:var(--accent);border-color:var(--accent)"><span class="option-checkbox-check">✓</span></div>
+          <div class="option-title">Limit transfer speed</div>
+        </div>
+        <div class="option-desc">
+          Slows down the backup so your computer stays responsive while it runs.
+          Useful if the backup happens while you're working or gaming and you don't want it
+          to eat up all your disk bandwidth.
+        </div>
+        <div class="throttle-control">
+          <span style="font-size:12px;color:var(--text-sub)">Max speed:</span>
+          <select class="form-input" style="width:130px">
+            <option>1 MB/s</option>
+            <option>5 MB/s</option>
+            <option selected>10 MB/s</option>
+            <option>25 MB/s</option>
+            <option>50 MB/s</option>
+            <option>100 MB/s</option>
+          </select>
+          <span style="font-size:11px;color:var(--text-faint)">(Full speed if unchecked)</span>
+        </div>
+      </div>
+
+      <!-- Exclusion filters -->
+      <div class="option-row" onclick="toggleOption(this)">
+        <div class="option-row-header">
+          <div class="option-checkbox"><span class="option-checkbox-check">✓</span></div>
+          <div class="option-title">Skip certain types of files</div>
+        </div>
+        <div class="option-desc">
+          Tell Beet's Backup to ignore files matching a pattern — so they won't be copied
+          to the destination. Useful for skipping temporary files that waste space.
+          <br><br>
+          Examples: <code style="font-family:Consolas;font-size:11px;background:var(--surface-2);padding:1px 5px;border-radius:3px">*.tmp</code>
+          <code style="font-family:Consolas;font-size:11px;background:var(--surface-2);padding:1px 5px;border-radius:3px">Thumbs.db</code>
+          <code style="font-family:Consolas;font-size:11px;background:var(--surface-2);padding:1px 5px;border-radius:3px">node_modules</code>
+          <code style="font-family:Consolas;font-size:11px;background:var(--surface-2);padding:1px 5px;border-radius:3px">*.log</code>
+        </div>
+        <div class="exclusion-input-row">
+          <input class="form-input" type="text" placeholder="e.g. *.tmp" style="flex:1">
+          <button class="btn sm">Add</button>
+        </div>
+        <div class="chip-list">
+          <div class="chip">*.tmp <span class="chip-x">✕</span></div>
+          <div class="chip">Thumbs.db <span class="chip-x">✕</span></div>
+          <div class="chip">*.log <span class="chip-x">✕</span></div>
+        </div>
+      </div>
+
+      <div class="callout info" style="margin-top:8px">
+        <span class="callout-icon">💡</span>
+        <span>These options are completely optional. If you're not sure, leave them all off and continue.</span>
+      </div>
+    </div>
+
+    <!-- ================================================
+         STEP 7 — Summary / Confirmation
+    ================================================ -->
+    <div class="step-panel" id="step-6">
+      <div class="step-heading">
+        <h2>Everything looks good — here's your summary</h2>
+        <p>Review what you've set up. If anything doesn't look right, use the Back button to change it.</p>
+      </div>
+
+      <!-- Backup basics -->
+      <div class="summary-block">
+        <div class="summary-block-header">Backup job</div>
+        <div class="summary-row">
+          <div class="summary-key">Job name</div>
+          <div class="summary-val">My Daily Backup</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">Type</div>
+          <div class="summary-val">
+            <span class="badge">Recurring — Daily</span>
+          </div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">First run</div>
+          <div class="summary-val">Tomorrow, April 4 2026 at 12:00 PM</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">Then repeats</div>
+          <div class="summary-val">Every day at the same time</div>
+        </div>
+      </div>
+
+      <!-- Source -->
+      <div class="summary-block">
+        <div class="summary-block-header">What is being backed up</div>
+        <div class="summary-row">
+          <div class="summary-key">Source</div>
+          <div class="summary-val mono">C:\  (entire drive)</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">Estimated size</div>
+          <div class="summary-val">223 GB across approx. 180,000 files</div>
+        </div>
+      </div>
+
+      <!-- Destination -->
+      <div class="summary-block">
+        <div class="summary-block-header">Where it will be saved</div>
+        <div class="summary-row">
+          <div class="summary-key">Destination</div>
+          <div class="summary-val mono">E:\  (My Backup Drive)</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">Space available</div>
+          <div class="summary-val">931 GB free <span class="badge green">Enough space</span></div>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div class="summary-block">
+        <div class="summary-block-header">Settings</div>
+        <div class="summary-row">
+          <div class="summary-key">If file already exists</div>
+          <div class="summary-val">Skip — leave existing backup copy alone</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">Speed limit</div>
+          <div class="summary-val">10 MB/s (to keep PC responsive)</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">File integrity check</div>
+          <div class="summary-val" style="color:var(--text-faint)">Off</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">Remove access restrictions</div>
+          <div class="summary-val" style="color:var(--text-faint)">Off</div>
+        </div>
+        <div class="summary-row">
+          <div class="summary-key">Exclusion filters</div>
+          <div class="summary-val" style="color:var(--text-faint)">None</div>
+        </div>
+      </div>
+
+      <!-- Reminder about the app needing to be running -->
+      <div class="callout info">
+        <span class="callout-icon">ℹ️</span>
+        <span>
+          <strong>Reminder:</strong> Beet's Backup needs to be open for scheduled backups to run.
+          If it's not running at midnight, the backup will run the next time you open the app.
+          To make this automatic, enable <strong>Launch at Startup</strong> in the options menu.
+        </span>
+      </div>
+
+      <!-- For one-time immediate: shown instead of above -->
+      <!--
+      <div class="callout ok" style="margin-top:0">
+        <span class="callout-icon">✅</span>
+        <span>Click <strong>Start Backup Now</strong> below to begin immediately.</span>
+      </div>
+      -->
+    </div>
+
+  </div><!-- /wizard-body -->
+
+  <!-- FOOTER — navigation buttons -->
+  <div class="wizard-footer">
+    <div class="footer-left">
+      <button class="btn" id="btn-cancel" onclick="alert('Cancel clicked — dialog would close')">Cancel</button>
+    </div>
+    <div class="footer-right">
+      <button class="btn" id="btn-back" onclick="navigateStep(-1)">← Back</button>
+      <button class="btn primary" id="btn-next" onclick="navigateStep(1)">Next →</button>
+      <!-- Finish button — shown only on step 7 -->
+      <button class="btn finish" id="btn-finish" style="display:none" onclick="alert('Backup scheduled! Dialog closes.')">
+        Schedule Backup
+      </button>
+    </div>
+  </div>
+
+</div><!-- /wizard -->
+
+<script>
+  /* ============================================================
+     THEME TOGGLE
+  ============================================================ */
+  function toggleTheme() {
+    const dark = document.body.classList.toggle('dark');
+    document.getElementById('theme-toggle').textContent = dark ? 'Light Mode' : 'Dark Mode';
+  }
+
+  /* ============================================================
+     STEP MANAGEMENT
+  ============================================================ */
+  let currentStep = 0;
+  const totalSteps = 7;
+
+  function showStep(index, navBtn) {
+    // Deactivate all panels
+    document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.step-item').forEach((s, i) => {
+      s.classList.remove('active');
+      if (i < index) s.classList.add('done');
+      else s.classList.remove('done');
+    });
+    // Activate current
+    document.getElementById('step-' + index).classList.add('active');
+    document.querySelectorAll('.step-item')[index].classList.add('active');
+    currentStep = index;
+
+    // Update nav buttons
+    document.querySelectorAll('.step-nav-btn').forEach(b => b.classList.remove('active'));
+    if (navBtn) navBtn.classList.add('active');
+
+    // Update footer
+    const btnBack   = document.getElementById('btn-back');
+    const btnNext   = document.getElementById('btn-next');
+    const btnFinish = document.getElementById('btn-finish');
+    btnBack.style.display   = index === 0 ? 'none' : '';
+    btnNext.style.display   = index === totalSteps - 1 ? 'none' : '';
+    btnFinish.style.display = index === totalSteps - 1 ? '' : 'none';
+
+    // Change finish button label for one-time immediate
+    if (index === totalSteps - 1) {
+      btnFinish.textContent = 'Schedule Backup'; // would be "Start Backup Now" for one-time
+    }
+  }
+
+  function navigateStep(delta) {
+    const newStep = currentStep + delta;
+    if (newStep < 0 || newStep >= totalSteps) return;
+    const navBtns = document.querySelectorAll('.step-nav-btn');
+    showStep(newStep, navBtns[newStep]);
+    navBtns[newStep].classList.add('active');
+  }
+
+  /* ============================================================
+     CHOICE CARD SELECTION
+  ============================================================ */
+  function selectCard(card, group, value) {
+    // Remove 'selected' from siblings in the same parent container
+    const parent = card.closest('.choice-grid');
+    parent.querySelectorAll('.choice-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+
+    // Special side-effects
+    if (group === 'transferMode' && value === 'mirror') {
+      document.getElementById('mirror-warning').style.display = 'flex';
+    } else if (group === 'transferMode') {
+      document.getElementById('mirror-warning').style.display = 'none';
+    }
+
+    if (group === 'sourceQuick' && value === 'custom') {
+      document.getElementById('custom-source-section').style.display = 'block';
+    } else if (group === 'sourceQuick') {
+      document.getElementById('custom-source-section').style.display = 'none';
+    }
+  }
+
+  /* ============================================================
+     OPTION ROW TOGGLE (Advanced step)
+  ============================================================ */
+  function toggleOption(row) {
+    row.classList.toggle('enabled');
+  }
+
+  /* ============================================================
+     INIT
+  ============================================================ */
+  showStep(0, document.querySelectorAll('.step-nav-btn')[0]);
+</script>
+</body>
+</html>

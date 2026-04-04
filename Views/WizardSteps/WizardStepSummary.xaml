@@ -1,0 +1,55 @@
+<UserControl x:Class="BeetsBackup.Views.WizardSteps.WizardStepSummary"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="SummaryLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TertiaryTextBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
+        </Style>
+        <Style x:Key="SummaryValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <!-- Summary card -->
+        <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="18,16"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+            <StackPanel>
+                <TextBlock Text="BACKUP TYPE" Style="{StaticResource SummaryLabel}"/>
+                <TextBlock Text="{Binding BackupTypeDisplay}" Style="{StaticResource SummaryValue}"/>
+
+                <TextBlock Text="SCHEDULE" Style="{StaticResource SummaryLabel}"/>
+                <TextBlock Text="{Binding ScheduleDisplay}" Style="{StaticResource SummaryValue}"/>
+
+                <TextBlock Text="WHAT IS BEING BACKED UP" Style="{StaticResource SummaryLabel}"/>
+                <TextBlock Text="{Binding SourceDisplay}" Style="{StaticResource SummaryValue}"/>
+
+                <TextBlock Text="WHERE IT WILL BE SAVED" Style="{StaticResource SummaryLabel}"/>
+                <TextBlock Text="{Binding DestinationDisplay}" Style="{StaticResource SummaryValue}"/>
+
+                <TextBlock Text="TRANSFER MODE" Style="{StaticResource SummaryLabel}"/>
+                <TextBlock Text="{Binding TransferModeDisplay}" Style="{StaticResource SummaryValue}"/>
+
+                <TextBlock Text="ADDITIONAL OPTIONS" Style="{StaticResource SummaryLabel}"/>
+                <TextBlock Text="{Binding OptionsDisplay}" Style="{StaticResource SummaryValue}"/>
+
+                <TextBlock Text="ESTIMATED SIZE" Style="{StaticResource SummaryLabel}"/>
+                <TextBlock Text="{Binding SizeEstimate}" Style="{StaticResource SummaryValue}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Reminder for scheduled backups -->
+        <Border Background="{DynamicResource SurfaceInsetBrush}" CornerRadius="6" Padding="14,10" Margin="0,14,0,0">
+            <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}">
+                <Run FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}">&#x1F4A1; Reminder:</Run>
+                <Run Text=" Beet's Backup needs to be running for scheduled backups to work. Enable 'Launch at Startup' in the Options menu so it starts automatically with Windows and runs quietly in the system tray."/>
+            </TextBlock>
+        </Border>
+    </StackPanel>
+</UserControl>

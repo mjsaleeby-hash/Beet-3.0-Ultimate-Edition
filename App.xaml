@@ -2,12 +2,16 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:BeetsBackup"
+             xmlns:h="clr-namespace:BeetsBackup.Helpers"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Light.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+            <h:EnumBoolConverter x:Key="EnumBoolConverter"/>
+            <h:EnumVisConverter x:Key="EnumVisConverter"/>
+            <h:InverseBoolToVisibilityConverter x:Key="InverseBoolVis"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
