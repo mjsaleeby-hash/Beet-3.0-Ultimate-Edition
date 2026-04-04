@@ -1,4 +1,30 @@
-# Beets Backup -- Changes for 2026-04-03
+# Beets Backup -- Changes for 2026-04-03 (Session 2)
+
+## New Features
+
+### VSS Shadow Copy Fallback
+
+- Locked/in-use files retried 3x with 500 ms delays before triggering VSS
+- Volume Shadow Copy snapshot created via P/Invoke to `vssapi.dll` (no external packages)
+- Snapshots cached per volume for the transfer session; cleaned up automatically after transfer
+- Transfer summary shows "X via shadow copy" count
+- `VssService.cs` — new service; `TransferResult.ShadowCopyCount` — new property
+
+### Simple / Advanced Toolbar Mode
+
+- Persistent toggle switch on the toolbar; mode saved in `SettingsService.ToolbarMode`
+- Simple mode: Visual, Theme, Split Pane, Refresh, Backup Wizard
+- Advanced mode: full existing toolbar (schedule, jobs, log, options, pause/stop, toggles)
+
+### Backup Wizard Button (Placeholder)
+
+- Visible in Simple mode only
+- Electric purple "blacklight" badge styling (same language as SOURCE/DESTINATION labels)
+- Placeholder — full wizard implementation is future work
+
+---
+
+# Beets Backup -- Changes for 2026-04-03 (Session 1)
 
 ## New Features
 
