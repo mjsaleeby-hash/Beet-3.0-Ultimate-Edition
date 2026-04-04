@@ -30,6 +30,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _verifyChecksums;
     [ObservableProperty] private bool _throttleTransfer;
     [ObservableProperty] private bool _isSplitPane;
+    [ObservableProperty] private bool _isSimpleMode;
 
     // --- Options ---
     [ObservableProperty] private bool _launchAtStartup;
@@ -136,6 +137,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _update = update;
         IsDarkMode = theme.IsDark;
         LaunchAtStartup = settings.LaunchAtStartup;
+        IsSimpleMode = settings.Data.IsSimpleMode;
         _scheduler.SchedulerError += OnSchedulerError;
         LoadDrives();
     }
@@ -143,6 +145,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
     partial void OnLaunchAtStartupChanged(bool value)
     {
         _settings.LaunchAtStartup = value;
+    }
+
+    partial void OnIsSimpleModeChanged(bool value)
+    {
+        _settings.Data.IsSimpleMode = value;
+        _settings.Save();
     }
 
     // --- Update commands ---
@@ -945,6 +953,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         var parts = new List<string>();
         if (result.FilesCopied > 0) parts.Add($"{result.FilesCopied} copied");
+        if (result.FilesCopiedViaVss > 0) parts.Add($"{result.FilesCopiedViaVss} via shadow copy");
         if (result.FilesSkipped > 0) parts.Add($"{result.FilesSkipped} skipped");
         if (result.FilesFailed > 0) parts.Add($"{result.FilesFailed} failed");
         if (result.DirectoriesFailed > 0) parts.Add($"{result.DirectoriesFailed} folders failed");

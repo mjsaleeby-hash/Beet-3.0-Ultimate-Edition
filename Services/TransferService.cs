@@ -62,6 +62,8 @@ public class TransferService
 
         await Task.Run(() =>
         {
+            // Create a per-session VSS scope — snapshots are cached per volume and cleaned up at the end
+            using var vssSession = new VssSnapshotService();
             CheckFreeSpace(sourceList, destinationDir);
             var excludeSet = exclusions != null && exclusions.Count > 0 ? exclusions : null;
             result.TotalFiles = sourceList.Sum(s => CountFiles(s, excludeSet));
@@ -71,7 +73,7 @@ public class TransferService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet, throttleBytesPerSec);
+                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet, throttleBytesPerSec, vssSession);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -108,6 +110,7 @@ public class TransferService
 
         await Task.Run(() =>
         {
+            using var vssSession = new VssSnapshotService();
             CheckFreeSpace(sourceList, destinationDir);
             result.TotalFiles = sourceList.Sum(s => CountFiles(s));
 
@@ -117,7 +120,7 @@ public class TransferService
                 try
                 {
                     var failedBefore = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
-                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, throttleBytesPerSec: throttleBytesPerSec);
+                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, throttleBytesPerSec: throttleBytesPerSec, vss: vssSession);
                     var failedDuring = (result.FilesFailed + result.DiskFullErrors + result.FilesLocked) - failedBefore;
                     if (failedDuring == 0)
                         _fs.DeleteItem(source);
@@ -139,7 +142,7 @@ public class TransferService
         TransferMode mode, IProgress<string>? progress, IProgress<int>? progressPercent,
         TransferResult result, CancellationToken ct, ManualResetEventSlim? pauseToken,
         bool verifyChecksums, IReadOnlyList<string>? exclusions = null,
-        long throttleBytesPerSec = 0)
+        long throttleBytesPerSec = 0, VssSnapshotService? vss = null)
     {
         pauseToken?.Wait(ct);
         ct.ThrowIfCancellationRequested();
@@ -180,7 +183,7 @@ public class TransferService
             {
                 try
                 {
-                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec);
+                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -194,7 +197,7 @@ public class TransferService
                 {
                     result.FilesLocked++;
                     result.AddFileError(file, "File is in use");
-                    FileLogger.Warn($"File locked: {file}");
+                    FileLogger.Warn($"File locked (retries + VSS exhausted): {file}");
                     progress?.Report($"LOCKED: {Path.GetFileName(file)} — file is in use");
                 }
                 catch (Exception ex)
@@ -210,7 +213,7 @@ public class TransferService
             {
                 try
                 {
-                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec);
+                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -251,7 +254,7 @@ public class TransferService
                         if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
                         {
                             File.Delete(destFile);
-                            CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
+                            CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
                             progress?.Report($"Updated (changed): {name}");
                         }
                         else
@@ -263,20 +266,20 @@ public class TransferService
 
                     case TransferMode.KeepBoth:
                         destFile = GetUniqueFilePath(destFile);
-                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
                         progress?.Report($"Copied (renamed): {Path.GetFileName(destFile)}");
                         break;
 
                     case TransferMode.Replace:
                         File.Delete(destFile);
-                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
                         progress?.Report($"Replaced: {name}");
                         break;
                 }
             }
             else
             {
-                CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
+                CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
                 progress?.Report($"Copied: {name}");
             }
 
@@ -288,10 +291,76 @@ public class TransferService
         }
     }
 
+    private const int MaxRetries = 3;
+    private const int RetryDelayMs = 500;
+
     private void CopyAndVerify(string source, string dest, bool stripPermissions,
         bool verifyChecksums, TransferResult result, IProgress<string>? progress,
         long throttleBytesPerSec = 0, ManualResetEventSlim? pauseToken = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default, VssSnapshotService? vss = null)
+    {
+        string activeSrc = source;
+        bool usedVss = false;
+
+        for (int attempt = 1; attempt <= MaxRetries; attempt++)
+        {
+            try
+            {
+                ExecuteCopy(activeSrc, dest, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
+
+                if (usedVss)
+                    result.FilesCopiedViaVss++;
+
+                return; // success
+            }
+            catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020 && !usedVss)
+            {
+                // Sharing violation — file is locked
+                if (attempt < MaxRetries)
+                {
+                    FileLogger.Info($"File locked, retry {attempt}/{MaxRetries}: {source}");
+                    progress?.Report($"Retrying ({attempt}/{MaxRetries}): {Path.GetFileName(source)}");
+                    Thread.Sleep(RetryDelayMs);
+                    continue;
+                }
+
+                // Retries exhausted — attempt VSS fallback
+                if (vss != null)
+                {
+                    try
+                    {
+                        FileLogger.Info($"Retries exhausted, attempting VSS fallback: {source}");
+                        progress?.Report($"Shadow copy: {Path.GetFileName(source)}");
+                        var snapshotRoot = vss.GetOrCreateSnapshotRoot(source);
+                        activeSrc = vss.GetShadowPath(source, snapshotRoot);
+                        usedVss = true;
+                        // One more attempt from the shadow copy
+                        continue;
+                    }
+                    catch (Exception vssEx)
+                    {
+                        FileLogger.Warn($"VSS fallback failed for {source}: {vssEx.Message}");
+                        // Re-throw the original sharing violation so CopyItem's catch handles it
+                        throw ioEx;
+                    }
+                }
+
+                // No VSS available — let the sharing violation propagate
+                throw;
+            }
+        }
+
+        // If we used VSS, we get one final attempt (the loop ended after setting usedVss)
+        if (usedVss)
+        {
+            ExecuteCopy(activeSrc, dest, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
+            result.FilesCopiedViaVss++;
+        }
+    }
+
+    private void ExecuteCopy(string source, string dest, bool stripPermissions,
+        bool verifyChecksums, TransferResult result, IProgress<string>? progress,
+        long throttleBytesPerSec, ManualResetEventSlim? pauseToken, CancellationToken ct)
     {
         var fileSize = new FileInfo(source).Length;
 

@@ -8,6 +8,7 @@ public class SettingsData
 {
     public bool IsDarkMode { get; set; } = true;
     public bool LaunchAtStartup { get; set; }
+    public bool IsSimpleMode { get; set; }
     public string? SkippedVersion { get; set; }
 }
 

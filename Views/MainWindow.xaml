@@ -342,8 +342,9 @@
 
                 <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"/>
 
-                <!-- Transfer controls -->
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Transfer controls (advanced only) -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
+                            Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                     <Button Margin="0,0,2,0"
                             Command="{Binding PauseResumeTransferCommand}"
                             IsEnabled="{Binding IsTransferring}">
@@ -364,9 +365,10 @@
                             IsEnabled="{Binding IsTransferring}"/>
                 </StackPanel>
 
-                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"/>
+                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"
+                           Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
 
-                <!-- Navigation tools -->
+                <!-- Navigation tools (both modes) -->
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="&#x25A4;" ToolTip="Toggle split pane view"
                             Style="{StaticResource IconButton}"
@@ -376,10 +378,12 @@
                             Command="{Binding RefreshDrivesCommand}"/>
                 </StackPanel>
 
-                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"/>
+                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"
+                           Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
 
-                <!-- Feature buttons -->
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Feature buttons (advanced only) -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
+                            Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                     <Button Content="&#xFF0B; Schedule" Margin="0,0,4,0"
                             Style="{StaticResource AccentButton}"
                             Command="{Binding OpenScheduleDialogCommand}"/>
@@ -405,7 +409,40 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Right side: toggles + theme button (Dock=Right, so they anchor right) -->
+                <!-- Backup Wizard button (simple mode only) -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0"
+                            Visibility="{Binding IsSimpleMode, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Rectangle Style="{StaticResource CmdDivider}"/>
+                    <Border Background="#1A9B30FF" BorderBrush="#9B30FF" BorderThickness="1"
+                            CornerRadius="4" Padding="8,3" Margin="4,0,0,0" Cursor="Hand"
+                            MouseLeftButtonUp="BackupWizard_Click">
+                        <TextBlock Text="BACKUP WIZARD" FontSize="12" FontWeight="Bold"
+                                   Foreground="#9B30FF"/>
+                    </Border>
+                </StackPanel>
+
+                <!-- Right side: Simple/Advanced toggle -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0">
+                    <ToggleButton IsChecked="{Binding IsSimpleMode}" Style="{StaticResource ToggleSwitch}"
+                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock FontSize="13" VerticalAlignment="Center"
+                               Foreground="{DynamicResource SecondaryTextBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="Simple"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSimpleMode}" Value="False">
+                                        <Setter Property="Text" Value="Advanced"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+
+                <Rectangle DockPanel.Dock="Right" Style="{StaticResource CmdDivider}"/>
+
+                <!-- Theme button (both modes) -->
                 <Button DockPanel.Dock="Right"
                         Style="{StaticResource ToolbarButton}"
                         Command="{Binding ToggleThemeCommand}"
@@ -417,6 +454,7 @@
                     </StackPanel>
                 </Button>
 
+                <!-- Visual/List button (both modes) -->
                 <Button DockPanel.Dock="Right"
                         Style="{StaticResource ToolbarButton}"
                         Command="{Binding ToggleTopVisualModeCommand}"
@@ -454,10 +492,12 @@
                     </StackPanel>
                 </Button>
 
-                <Rectangle DockPanel.Dock="Right" Style="{StaticResource CmdDivider}"/>
+                <Rectangle DockPanel.Dock="Right" Style="{StaticResource CmdDivider}"
+                           Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
 
-                <!-- Toggle switches (fill remaining center space, anchor right) -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,4,0">
+                <!-- Toggle switches (advanced only) -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,4,0"
+                            Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                     <!-- Remove Permissions toggle -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
                         <ToggleButton IsChecked="{Binding RemovePermissions}" Style="{StaticResource ToggleSwitch}"

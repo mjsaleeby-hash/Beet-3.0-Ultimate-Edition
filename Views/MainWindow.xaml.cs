@@ -328,6 +328,13 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    // -- Backup Wizard (placeholder) --
+    private void BackupWizard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        MessageBox.Show("Backup Wizard is coming soon!", "Beet's Backup",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
     // -- Options dropdown --
     private void OptionsButton_Click(object sender, RoutedEventArgs e)
     {

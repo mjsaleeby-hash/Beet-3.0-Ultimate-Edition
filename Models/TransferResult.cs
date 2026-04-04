@@ -10,6 +10,7 @@ public class TransferResult
     public int ChecksumMismatches { get; set; }
     public int DiskFullErrors { get; set; }
     public int FilesLocked { get; set; }
+    public int FilesCopiedViaVss { get; set; }
     public int DirectoriesFailed { get; set; }
     public int FilesDeleted { get; set; }
     public int DirectoriesDeleted { get; set; }
