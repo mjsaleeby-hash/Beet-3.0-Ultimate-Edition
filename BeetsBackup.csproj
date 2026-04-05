@@ -40,6 +40,7 @@
   <ItemGroup>
     <Resource Include="Assets\logo.png"/>
     <Resource Include="Assets\Beets Backup IMG.ico"/>
+    <Resource Include="Assets\beetle_wizard_circle.png"/>
   </ItemGroup>
 
   <ItemGroup>

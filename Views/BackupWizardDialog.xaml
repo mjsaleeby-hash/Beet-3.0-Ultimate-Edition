@@ -5,7 +5,7 @@
         xmlns:steps="clr-namespace:BeetsBackup.ViewModels.WizardSteps"
         xmlns:wizardViews="clr-namespace:BeetsBackup.Views.WizardSteps"
         Title="Backup Wizard"
-        Width="680" Height="620" MinWidth="600" MinHeight="550"
+        Width="960" Height="620" MinWidth="880" MinHeight="550"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResizeWithGrip"
         Background="{DynamicResource BackgroundBrush}"
@@ -84,7 +84,44 @@
         </Style>
     </Window.Resources>
 
-    <DockPanel>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="270"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ══════════════ LEFT: WIZARD MASCOT ══════════════ -->
+        <Border Grid.Column="0" Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- Glow behind image -->
+                <Grid Width="210" Height="210" Margin="0,0,0,0">
+                    <Ellipse Width="200" Height="200" Opacity="0.3" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Ellipse.Effect>
+                            <BlurEffect Radius="20"/>
+                        </Ellipse.Effect>
+                        <Ellipse.Fill>
+                            <SolidColorBrush Color="#9B30FF"/>
+                        </Ellipse.Fill>
+                    </Ellipse>
+                    <!-- Circular wizard image on top of glow -->
+                    <Ellipse Width="200" Height="200" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Ellipse.Fill>
+                            <ImageBrush ImageSource="/Assets/beetle_wizard_circle.png" Stretch="UniformToFill"/>
+                        </Ellipse.Fill>
+                    </Ellipse>
+                </Grid>
+                <!-- Text below the picture -->
+                <TextBlock Text="So you want a backup?"
+                           FontSize="17" FontWeight="Bold"
+                           FontFamily="Segoe UI Variable, Segoe UI"
+                           Foreground="#9B30FF"
+                           HorizontalAlignment="Center"
+                           Margin="0,14,0,0"/>
+            </StackPanel>
+        </Border>
+
+    <DockPanel Grid.Column="1">
         <!-- ══════════════ HEADER ══════════════ -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
@@ -213,4 +250,5 @@
             </StackPanel>
         </ScrollViewer>
     </DockPanel>
+    </Grid>
 </Window>
