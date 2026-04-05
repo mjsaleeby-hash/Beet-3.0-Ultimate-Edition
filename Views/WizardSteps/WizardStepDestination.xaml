@@ -51,6 +51,16 @@
                     Command="{Binding BrowseFolderCommand}"/>
         </StackPanel>
 
+        <!-- Dynamic same-drive warning -->
+        <Border Background="#33FF6B6B" BorderBrush="#FF4444" BorderThickness="1"
+                CornerRadius="6" Padding="14,10" Margin="0,0,0,12"
+                Visibility="{Binding ShowSameDriveWarning, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <TextBlock TextWrapping="Wrap" FontSize="13" FontWeight="SemiBold" Foreground="#FF4444">
+                &#x26D4; The destination you selected is on the same drive as your source files.
+                This does not protect your data — please choose a different drive.
+            </TextBlock>
+        </Border>
+
         <!-- Current selection display -->
         <Border Background="{DynamicResource SurfaceInsetBrush}" CornerRadius="6" Padding="14,10">
             <StackPanel>

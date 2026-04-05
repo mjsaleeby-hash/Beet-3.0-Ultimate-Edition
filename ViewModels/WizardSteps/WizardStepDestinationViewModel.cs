@@ -11,6 +11,9 @@ public partial class WizardStepDestinationViewModel : ObservableObject
     [ObservableProperty] private string? _selectedDrive;
     [ObservableProperty] private string _subfolder = string.Empty;
     [ObservableProperty] private bool _useCustomPath;
+    [ObservableProperty] private bool _showSameDriveWarning;
+
+    private List<string> _sourcePaths = new();
 
     public List<DriveDisplayItem> AvailableDrives { get; } = new();
 
@@ -26,6 +29,8 @@ public partial class WizardStepDestinationViewModel : ObservableObject
             AvailableDrives.Add(new DriveDisplayItem(d));
     }
 
+    public void SetSourcePaths(List<string> sourcePaths) => _sourcePaths = sourcePaths;
+
     partial void OnSelectedDriveChanged(string? value)
     {
         UpdateResolvedPath();
@@ -34,6 +39,11 @@ public partial class WizardStepDestinationViewModel : ObservableObject
     partial void OnSubfolderChanged(string value)
     {
         UpdateResolvedPath();
+    }
+
+    partial void OnDestinationPathChanged(string value)
+    {
+        ShowSameDriveWarning = IsSameDriveAsSource(_sourcePaths);
     }
 
     private void UpdateResolvedPath()

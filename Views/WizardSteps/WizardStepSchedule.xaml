@@ -16,7 +16,7 @@
         <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
             <DatePicker SelectedDate="{Binding ScheduledDate}" Width="140" Margin="0,0,12,0"
                         VerticalAlignment="Center"/>
-            <TextBox Text="{Binding ScheduledHour}" Width="40" Padding="6,6" TextAlignment="Center"
+            <TextBox Text="{Binding ScheduledHour, StringFormat=D2}" Width="40" Padding="6,6" TextAlignment="Center"
                      VerticalAlignment="Center"/>
             <TextBlock Text=":" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0"/>
             <TextBox Text="{Binding ScheduledMinute, StringFormat=D2}" Width="40" Padding="6,6"
@@ -25,11 +25,13 @@
                       Width="60" Margin="8,0,0,0" VerticalAlignment="Center"/>
         </StackPanel>
 
-        <!-- Recurrence (shown when relevant — parent wizard sets visibility contextually) -->
+        <!-- Recurrence (only shown for recurring backups) -->
         <TextBlock Text="How often?" FontSize="13" FontWeight="SemiBold"
-                   Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                   Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,6"
+                   Visibility="{Binding ShowRecurrence, Converter={StaticResource BooleanToVisibilityConverter}}"/>
         <ComboBox ItemsSource="{Binding RecurrenceOptions}" SelectedItem="{Binding SelectedRecurrence}"
-                  Width="200" Margin="0,0,0,16"/>
+                  Width="200" Margin="0,0,0,16"
+                  Visibility="{Binding ShowRecurrence, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
         <!-- Tip -->
         <Border Background="{DynamicResource SurfaceInsetBrush}" CornerRadius="6" Padding="14,10">

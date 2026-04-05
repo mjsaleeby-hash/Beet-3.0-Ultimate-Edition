@@ -80,7 +80,14 @@ public partial class BackupWizardViewModel : ObservableObject
 
         // When leaving step 1, rebuild steps (schedule step might be added/removed)
         if (CurrentStep == StepType)
+        {
             RebuildStepList();
+            StepSchedule.ShowRecurrence = StepType.SelectedType == BackupType.Recurring;
+        }
+
+        // When leaving source step, pass source paths to destination for same-drive detection
+        if (CurrentStep == StepSource)
+            StepDestination.SetSourcePaths(StepSource.ResolvedSourcePaths);
 
         var idx = _activeSteps.IndexOf(CurrentStep);
         if (idx < 0 || idx >= _activeSteps.Count - 1) return;
@@ -114,6 +121,10 @@ public partial class BackupWizardViewModel : ObservableObject
     [RelayCommand]
     private void Finish()
     {
+        // Re-validate before building the job
+        if (!StepSource.IsValid || !StepDestination.IsValid)
+            return;
+
         BuiltJob = BuildJob();
         RunNow = StepType.SelectedType == BackupType.OneTimeNow;
 

@@ -9,6 +9,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Light.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
             <h:EnumBoolConverter x:Key="EnumBoolConverter"/>
             <h:EnumVisConverter x:Key="EnumVisConverter"/>
             <h:InverseBoolToVisibilityConverter x:Key="InverseBoolVis"/>
