@@ -70,25 +70,40 @@ public class SettingsService
 
     private static void CreateShortcut(string shortcutPath, string targetPath)
     {
-        // Use PowerShell to create a .lnk shortcut (avoids COM interop dependency)
-        var ps = $"""
-            $ws = New-Object -ComObject WScript.Shell;
-            $sc = $ws.CreateShortcut('{shortcutPath.Replace("'", "''")}');
-            $sc.TargetPath = '{targetPath.Replace("'", "''")}';
-            $sc.Arguments = '--startup';
-            $sc.WorkingDirectory = '{Path.GetDirectoryName(targetPath)!.Replace("'", "''")}';
-            $sc.Description = 'Beet''s Backup';
-            $sc.Save()
-            """;
-        var psi = new ProcessStartInfo
+        // Use COM interop to create .lnk — avoids PowerShell injection risks
+        var shellType = Type.GetTypeFromProgID("WScript.Shell");
+        if (shellType == null)
         {
-            FileName = "powershell.exe",
-            Arguments = $"-NoProfile -NonInteractive -Command \"{ps.Replace("\"", "\\\"")}\"",
-            CreateNoWindow = true,
-            UseShellExecute = false,
-        };
-        using var proc = Process.Start(psi);
-        proc?.WaitForExit(5000);
+            FileLogger.Warn("WScript.Shell COM object not available — cannot create startup shortcut");
+            return;
+        }
+
+        object? shell = null;
+        object? shortcut = null;
+        try
+        {
+            shell = Activator.CreateInstance(shellType);
+            shortcut = shellType.InvokeMember("CreateShortcut",
+                System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
+            if (shortcut == null) return;
+
+            var scType = shortcut.GetType();
+            scType.InvokeMember("TargetPath",
+                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { targetPath });
+            scType.InvokeMember("Arguments",
+                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "--startup" });
+            scType.InvokeMember("WorkingDirectory",
+                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(targetPath)! });
+            scType.InvokeMember("Description",
+                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "Beet's Backup" });
+            scType.InvokeMember("Save",
+                System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
+        }
+        finally
+        {
+            if (shortcut != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(shortcut);
+            if (shell != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
+        }
     }
 
     public void Load()

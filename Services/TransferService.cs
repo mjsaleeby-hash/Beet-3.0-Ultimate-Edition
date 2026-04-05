@@ -1,6 +1,9 @@
 using BeetsBackup.Models;
 using System.IO;
 using System.Security.Cryptography;
+using Microsoft.VisualBasic.FileIO;
+using RecycleOption = Microsoft.VisualBasic.FileIO.RecycleOption;
+using UIOption = Microsoft.VisualBasic.FileIO.UIOption;
 
 namespace BeetsBackup.Services;
 
@@ -91,7 +94,16 @@ public class TransferService
                     var sourceName = Path.GetFileName(source);
                     var destSubDir = string.IsNullOrEmpty(sourceName) ? destinationDir : Path.Combine(destinationDir, sourceName);
                     if (Directory.Exists(source) && Directory.Exists(destSubDir))
+                    {
+                        // Safeguard: refuse mirror cleanup if source appears empty (drive may be disconnected)
+                        if (!Directory.EnumerateFileSystemEntries(source, "*", EnumOptions).Any())
+                        {
+                            progress?.Report($"Mirror cleanup SKIPPED: '{Path.GetFileName(source)}' is empty — refusing to delete destination");
+                            FileLogger.Warn($"Mirror cleanup skipped for empty source: {source}");
+                            continue;
+                        }
                         MirrorCleanup(source, destSubDir, progress, result, cancellationToken);
+                    }
                 }
             }
         }, cancellationToken);
@@ -494,7 +506,7 @@ public class TransferService
             {
                 try
                 {
-                    File.Delete(destFile);
+                    FileSystem.DeleteFile(destFile, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
                     result.FilesDeleted++;
                     progress?.Report($"Mirror deleted: {name}");
                 }
@@ -520,7 +532,7 @@ public class TransferService
             {
                 try
                 {
-                    Directory.Delete(destSub, true);
+                    FileSystem.DeleteDirectory(destSub, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
                     result.DirectoriesDeleted++;
                     progress?.Report($"Mirror deleted folder: {name}\\");
                 }
