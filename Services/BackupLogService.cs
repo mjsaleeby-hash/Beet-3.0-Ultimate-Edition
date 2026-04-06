@@ -7,7 +7,12 @@ using Application = System.Windows.Application;
 
 namespace BeetsBackup.Services;
 
-public class BackupLogService
+/// <summary>
+/// Manages the backup history log — an observable collection of <see cref="BackupLogEntry"/> objects
+/// that are persisted to JSON and displayed in the Log dialog.
+/// All mutations are marshalled to the UI thread for safe WPF binding.
+/// </summary>
+public sealed class BackupLogService
 {
     private static readonly string LogPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -17,8 +22,13 @@ public class BackupLogService
     private DateTime _lastSave = DateTime.MinValue;
     private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(1);
 
+    /// <summary>Observable collection of log entries, bound to the Log dialog's list view.</summary>
     public ObservableCollection<BackupLogEntry> Entries { get; } = new();
 
+    /// <summary>
+    /// Loads the backup log from disk. Marks stale "Running" entries as failed
+    /// and fixes completed entries that have leftover percentage messages.
+    /// </summary>
     public void Load()
     {
         try
@@ -52,6 +62,9 @@ public class BackupLogService
         catch { }
     }
 
+    /// <summary>
+    /// Adds a new entry to the front of the log, capping at 500 entries.
+    /// </summary>
     public void Add(BackupLogEntry entry)
     {
         RunOnUiThread(() =>
@@ -64,6 +77,7 @@ public class BackupLogService
         });
     }
 
+    /// <summary>Updates the status and message for the entry with the specified ID.</summary>
     public void UpdateStatus(Guid id, BackupStatus status, string message = "")
     {
         RunOnUiThread(() =>
@@ -77,6 +91,7 @@ public class BackupLogService
         });
     }
 
+    /// <summary>Updates the progress percentage for a running backup entry.</summary>
     public void UpdateProgress(Guid id, int percent)
     {
         RunOnUiThread(() =>
@@ -88,6 +103,7 @@ public class BackupLogService
         });
     }
 
+    /// <summary>Updates the final transfer statistics for a completed backup entry.</summary>
     public void UpdateStats(Guid id, BackupStatus status, int filesCopied, int filesSkipped, long bytesTransferred, int totalFiles = 0, int filesFailed = 0, List<FileError>? fileErrors = null)
     {
         RunOnUiThread(() =>
@@ -109,12 +125,14 @@ public class BackupLogService
         });
     }
 
+    /// <summary>Removes all entries from the log and persists the empty state.</summary>
     public void Clear()
     {
         Entries.Clear();
         Save();
     }
 
+    /// <summary>Dispatches an action to the UI thread, executing synchronously if already on it.</summary>
     private static void RunOnUiThread(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
@@ -125,6 +143,10 @@ public class BackupLogService
             dispatcher.BeginInvoke(action);
     }
 
+    /// <summary>
+    /// Debounced save: avoids excessive I/O when multiple updates arrive in quick succession.
+    /// If called within the debounce window, schedules a single deferred save.
+    /// </summary>
     private void Save()
     {
         var now = DateTime.UtcNow;
@@ -146,6 +168,7 @@ public class BackupLogService
         SaveNow();
     }
 
+    /// <summary>Performs the actual atomic write (temp file + replace) to disk.</summary>
     private void SaveNow()
     {
         _lastSave = DateTime.UtcNow;

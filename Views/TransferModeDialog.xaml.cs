@@ -4,6 +4,7 @@ using MessageBox = System.Windows.MessageBox;
 
 namespace BeetsBackup.Views;
 
+/// <summary>Prompts the user to choose a transfer conflict resolution mode before a copy/move.</summary>
 public partial class TransferModeDialog : Window
 {
     public TransferMode? SelectedMode { get; private set; }

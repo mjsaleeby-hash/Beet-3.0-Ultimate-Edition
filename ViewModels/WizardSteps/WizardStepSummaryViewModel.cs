@@ -3,6 +3,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace BeetsBackup.ViewModels.WizardSteps;
 
+/// <summary>
+/// Wizard step: displays a read-only summary of all chosen settings and an estimated backup size.
+/// </summary>
 public partial class WizardStepSummaryViewModel : ObservableObject
 {
     [ObservableProperty] private string _backupTypeDisplay = string.Empty;
@@ -14,6 +17,7 @@ public partial class WizardStepSummaryViewModel : ObservableObject
     [ObservableProperty] private string _sizeEstimate = "Calculating...";
     [ObservableProperty] private bool _isEstimating;
 
+    /// <summary>Asynchronously estimates the total backup size and updates <see cref="SizeEstimate"/>.</summary>
     public async Task EstimateSizeAsync(List<string> sourcePaths)
     {
         IsEstimating = true;

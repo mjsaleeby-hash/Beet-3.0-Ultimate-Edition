@@ -6,7 +6,11 @@ using System.Runtime.Versioning;
 
 namespace BeetsBackup.Services;
 
-public class FileSystemService
+/// <summary>
+/// Provides file system operations: drive enumeration, directory listing,
+/// copy/move/delete/rename, and permission management.
+/// </summary>
+public sealed class FileSystemService
 {
     private static readonly EnumerationOptions EnumOptions = new()
     {
@@ -15,6 +19,7 @@ public class FileSystemService
         RecurseSubdirectories = false
     };
 
+    /// <summary>Returns all ready drives on the system as <see cref="DriveItem"/> instances.</summary>
     public IEnumerable<DriveItem> GetDrives()
     {
         return DriveInfo.GetDrives()
@@ -22,6 +27,12 @@ public class FileSystemService
             .Select(d => new DriveItem(d));
     }
 
+    /// <summary>
+    /// Lists immediate children (directories then files) of the given path.
+    /// Skips NTFS junction points and symbolic links to prevent loops.
+    /// </summary>
+    /// <param name="path">Directory path to enumerate.</param>
+    /// <returns>File and folder items in the directory.</returns>
     public IEnumerable<FileSystemItem> GetChildren(string path)
     {
         var items = new List<FileSystemItem>();
@@ -47,6 +58,9 @@ public class FileSystemService
         return items;
     }
 
+    /// <summary>
+    /// Copies a file or directory to the destination, optionally stripping NTFS permissions.
+    /// </summary>
     public void CopyItem(string sourcePath, string destinationDir, bool stripPermissions)
     {
         var attr = File.GetAttributes(sourcePath);
@@ -59,6 +73,10 @@ public class FileSystemService
             CopyFile(sourcePath, Path.Combine(destinationDir, Path.GetFileName(sourcePath)), stripPermissions);
     }
 
+    /// <summary>
+    /// Copies a single file, preserving timestamps and optionally resetting permissions.
+    /// Hidden files remain hidden at the destination.
+    /// </summary>
     public void CopyFile(string source, string dest, bool stripPermissions)
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
@@ -131,6 +149,9 @@ public class FileSystemService
             File.SetAttributes(dest, File.GetAttributes(dest) | FileAttributes.Hidden);
     }
 
+    /// <summary>
+    /// Removes explicit NTFS permissions from a file so it inherits from its parent folder.
+    /// </summary>
     private static void ResetFilePermissions(string path)
     {
         try
@@ -143,6 +164,7 @@ public class FileSystemService
         catch (UnauthorizedAccessException) { }
     }
 
+    /// <summary>Sends the file or directory at the given path to the Recycle Bin.</summary>
     public void DeleteItem(string path)
     {
         var attr = File.GetAttributes(path);
@@ -152,6 +174,7 @@ public class FileSystemService
             FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
     }
 
+    /// <summary>Renames a file or directory within its parent folder.</summary>
     public void RenameItem(string path, string newName)
     {
         var parentDir = Path.GetDirectoryName(path)!;
@@ -163,6 +186,7 @@ public class FileSystemService
             File.Move(path, newPath);
     }
 
+    /// <summary>Checks whether a file or directory exists at the given path.</summary>
     public bool ItemExists(string path) =>
         File.Exists(path) || Directory.Exists(path);
 }

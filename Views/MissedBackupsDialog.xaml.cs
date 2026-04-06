@@ -4,6 +4,7 @@ using System.Windows;
 
 namespace BeetsBackup.Views;
 
+/// <summary>Shown at startup when scheduled backups were missed. Offers "Run All" or "Skip All".</summary>
 public partial class MissedBackupsDialog : Window
 {
     private readonly SchedulerService _scheduler;

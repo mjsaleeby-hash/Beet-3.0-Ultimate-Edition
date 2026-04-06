@@ -7,10 +7,17 @@ using Microsoft.Win32;
 
 namespace BeetsBackup.ViewModels;
 
+/// <summary>
+/// ViewModel for the manual schedule dialog. Collects source/destination paths,
+/// timing, transfer mode, and advanced options, then builds a <see cref="ScheduledJob"/>.
+/// </summary>
 public partial class ScheduleDialogViewModel : ObservableObject
 {
     [ObservableProperty] private string _jobName = "My Backup";
+
+    /// <summary>User-selected source folder paths for the backup job.</summary>
     public ObservableCollection<string> SourcePaths { get; } = new();
+
     [ObservableProperty] private string? _selectedSourcePath;
     [ObservableProperty] private string _destinationPath = string.Empty;
     [ObservableProperty] private DateTime _scheduledDate = DateTime.Now.AddHours(1);
@@ -22,7 +29,10 @@ public partial class ScheduleDialogViewModel : ObservableObject
     [ObservableProperty] private bool _stripPermissions = false;
     [ObservableProperty] private bool _verifyChecksums = false;
     [ObservableProperty] private TransferMode _selectedTransferMode = TransferMode.SkipExisting;
+
+    /// <summary>Glob-style exclusion patterns (e.g. *.tmp, Thumbs.db).</summary>
     public ObservableCollection<string> ExclusionFilters { get; } = new();
+
     [ObservableProperty] private string _newExclusion = string.Empty;
     [ObservableProperty] private string? _selectedExclusion;
     [ObservableProperty] private bool _enableThrottle;
@@ -45,7 +55,10 @@ public partial class ScheduleDialogViewModel : ObservableObject
         TransferMode.SkipExisting, TransferMode.KeepBoth, TransferMode.Replace, TransferMode.Mirror
     };
 
+    /// <summary>Shows a warning when KeepBoth + recurring could cause exponential file growth.</summary>
     public bool ShowKeepBothWarning => SelectedTransferMode == TransferMode.KeepBoth && IsRecurring;
+
+    /// <summary>Shows a warning that Mirror mode deletes destination files not in the source.</summary>
     public bool ShowMirrorWarning => SelectedTransferMode == TransferMode.Mirror;
 
     partial void OnSelectedTransferModeChanged(TransferMode value)
@@ -59,6 +72,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
     public List<int> Minutes { get; } = new() { 0, 15, 30, 45 };
     public List<string> AmPmOptions { get; } = new() { "AM", "PM" };
 
+    /// <summary>Opens a folder picker and adds selected folders to <see cref="SourcePaths"/>.</summary>
     [RelayCommand]
     private void AddSource()
     {
@@ -77,6 +91,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
         }
     }
 
+    /// <summary>Removes the currently selected source path from the list.</summary>
     [RelayCommand]
     private void RemoveSource()
     {
@@ -84,6 +99,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
             SourcePaths.Remove(SelectedSourcePath);
     }
 
+    /// <summary>Adds the current <see cref="NewExclusion"/> text as an exclusion filter.</summary>
     [RelayCommand]
     private void AddExclusion()
     {
@@ -95,6 +111,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
         }
     }
 
+    /// <summary>Removes the currently selected exclusion filter from the list.</summary>
     [RelayCommand]
     private void RemoveExclusion()
     {
@@ -102,6 +119,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
             ExclusionFilters.Remove(SelectedExclusion);
     }
 
+    /// <summary>Calculates and displays the estimated total size and file count for the selected sources.</summary>
     [RelayCommand]
     private async Task EstimateSize()
     {
@@ -124,6 +142,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
         IsEstimating = false;
     }
 
+    /// <summary>Counts total files across all source paths, respecting exclusion filters.</summary>
     private static int CountFiles(List<string> sources, List<string>? exclusions)
     {
         int count = 0;
@@ -151,6 +170,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
         return count;
     }
 
+    /// <summary>Returns <c>true</c> if the file name matches any exclusion pattern (extension or exact name).</summary>
     private static bool IsExcluded(string name, List<string> exclusions)
     {
         foreach (var pattern in exclusions)
@@ -166,6 +186,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
         return false;
     }
 
+    /// <summary>Formats a byte count into a human-readable string (e.g. "1.5 GB").</summary>
     private static string FormatBytes(long bytes)
     {
         if (bytes == 0) return "0 B";
@@ -176,6 +197,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
         return $"{value:0.##} {suffixes[i]}";
     }
 
+    /// <summary>Opens a folder picker for the backup destination.</summary>
     [RelayCommand]
     private void BrowseDestination()
     {
@@ -187,6 +209,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
             DestinationPath = dialog.FolderName;
     }
 
+    /// <summary>Assembles a <see cref="ScheduledJob"/> from the current dialog state.</summary>
     public ScheduledJob BuildJob()
     {
         var hour24 = ToTwentyFourHour(ScheduledHour, SelectedAmPm);
@@ -214,15 +237,18 @@ public partial class ScheduleDialogViewModel : ObservableObject
         };
     }
 
+    /// <summary>Converts 24-hour format to 12-hour (e.g. 0 and 12 both become 12).</summary>
     private static int ToTwelveHour(int hour24) =>
         hour24 % 12 == 0 ? 12 : hour24 % 12;
 
+    /// <summary>Converts 12-hour + AM/PM to 24-hour format.</summary>
     private static int ToTwentyFourHour(int hour12, string amPm)
     {
         if (amPm == "AM") return hour12 == 12 ? 0 : hour12;
         else return hour12 == 12 ? 12 : hour12 + 12;
     }
 
+    /// <summary>Maps the selected interval label to a <see cref="TimeSpan"/>.</summary>
     private TimeSpan GetInterval() => SelectedInterval switch
     {
         "Daily"          => TimeSpan.FromDays(1),
@@ -235,6 +261,7 @@ public partial class ScheduleDialogViewModel : ObservableObject
     private static int ParseThrottleMBps(string option) =>
         int.TryParse(option.Split(' ')[0], out var mb) ? mb : 10;
 
+    /// <summary>Returns <c>true</c> when all required fields have been filled in.</summary>
     public bool IsValid =>
         SourcePaths.Count > 0 &&
         !string.IsNullOrWhiteSpace(DestinationPath) &&

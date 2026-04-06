@@ -4,6 +4,7 @@ using System.Windows;
 
 namespace BeetsBackup.Views;
 
+/// <summary>Dialog that lists all scheduled backup jobs and allows deleting them.</summary>
 public partial class JobsDialog : Window
 {
     private readonly SchedulerService _scheduler;

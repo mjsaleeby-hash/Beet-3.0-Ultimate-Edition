@@ -2,6 +2,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace BeetsBackup.ViewModels.WizardSteps;
 
+/// <summary>
+/// Wizard step: configures when the backup runs — date, time, and optional recurrence interval.
+/// </summary>
 public partial class WizardStepScheduleViewModel : ObservableObject
 {
     [ObservableProperty] private string _jobName = "My Backup";
@@ -34,6 +37,7 @@ public partial class WizardStepScheduleViewModel : ObservableObject
         else if (value > 59) ScheduledMinute = 59;
     }
 
+    /// <summary>Computes the next run time from the date, hour, minute, and AM/PM fields.</summary>
     public DateTime ComputedNextRun
     {
         get
@@ -49,6 +53,7 @@ public partial class WizardStepScheduleViewModel : ObservableObject
         }
     }
 
+    /// <summary>Maps the selected recurrence label to a <see cref="TimeSpan"/>.</summary>
     public TimeSpan ComputedInterval => SelectedRecurrence switch
     {
         "Every 6 Hours" => TimeSpan.FromHours(6),

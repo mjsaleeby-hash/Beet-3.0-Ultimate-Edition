@@ -5,8 +5,17 @@ using System.Runtime.InteropServices;
 
 namespace BeetsBackup.Services;
 
+/// <summary>
+/// Simple file-based logger that writes structured log entries to the app's local data directory.
+/// Supports automatic log rotation at 10 MB and a separate crash dump file for unhandled exceptions.
+/// </summary>
+/// <remarks>
+/// All methods are static and thread-safe (guarded by a shared lock).
+/// Logging failures are silently swallowed to avoid cascading errors.
+/// </remarks>
 public static class FileLogger
 {
+    /// <summary>Directory where all log files are stored (%LocalAppData%\Beet's Backup).</summary>
     public static readonly string LogDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Beet's Backup");
@@ -17,6 +26,11 @@ public static class FileLogger
     private static readonly object _lock = new();
     private const long MaxSizeBytes = 10 * 1024 * 1024; // 10 MB
 
+    /// <summary>
+    /// Writes a timestamped log entry at the specified level.
+    /// </summary>
+    /// <param name="level">Severity level (e.g. "INFO", "WARN", "ERROR").</param>
+    /// <param name="message">The message to log.</param>
     public static void Log(string level, string message)
     {
         try
@@ -31,10 +45,20 @@ public static class FileLogger
         catch { }
     }
 
+    /// <summary>Logs an informational message.</summary>
     public static void Info(string message) => Log("INFO", message);
+
+    /// <summary>Logs a warning message.</summary>
     public static void Warn(string message) => Log("WARN", message);
+
+    /// <summary>Logs an error message.</summary>
     public static void Error(string message) => Log("ERROR", message);
 
+    /// <summary>
+    /// Logs an exception with its type, message, and full stack trace.
+    /// </summary>
+    /// <param name="context">Description of what was happening when the exception occurred.</param>
+    /// <param name="ex">The exception to log.</param>
     public static void LogException(string context, Exception ex)
     {
         Log("ERROR", $"{context}: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");

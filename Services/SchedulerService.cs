@@ -5,7 +5,11 @@ using System.Threading;
 
 namespace BeetsBackup.Services;
 
-public class SchedulerService : IDisposable
+/// <summary>
+/// Background scheduler that checks for due backup jobs every minute and executes them.
+/// Also provides job CRUD operations, pause/resume control, and retry logic.
+/// </summary>
+public sealed class SchedulerService : IDisposable
 {
     private readonly TransferService _transfer;
     private readonly BackupLogService _log;
@@ -16,20 +20,29 @@ public class SchedulerService : IDisposable
     private readonly Dictionary<Guid, ManualResetEventSlim> _pauseGates = new();
     private Task? _runTask;
 
+    /// <summary>Last error message produced by the scheduler loop, if any.</summary>
     public string? LastSchedulerError { get; private set; }
 
     private static readonly string JobsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Beet's Backup", "scheduled_jobs.json");
 
+    /// <summary>Thread-safe snapshot of all scheduled jobs.</summary>
     public IReadOnlyList<ScheduledJob> Jobs
     {
         get { lock (_jobsLock) { return _jobs.ToList().AsReadOnly(); } }
     }
 
+    /// <summary>Raised when the job list is modified (add, remove, or status change).</summary>
     public event Action? JobsChanged;
+
+    /// <summary>Raised when the scheduler encounters an error executing a job.</summary>
     public event Action<string>? SchedulerError;
 
+    /// <summary>
+    /// Creates the scheduler, loading persisted jobs from disk.
+    /// Call <see cref="Start"/> to begin the polling loop.
+    /// </summary>
     public SchedulerService(TransferService transfer, BackupLogService log)
     {
         _transfer = transfer;
@@ -38,12 +51,14 @@ public class SchedulerService : IDisposable
         _ticker = new PeriodicTimer(TimeSpan.FromMinutes(1));
     }
 
+    /// <summary>Starts the background scheduler loop (idempotent).</summary>
     public void Start()
     {
         if (_runTask == null)
             _runTask = RunAsync(_cts.Token);
     }
 
+    /// <summary>Returns enabled jobs whose next-run time is in the past (missed while app was closed).</summary>
     public List<ScheduledJob> GetMissedJobs()
     {
         lock (_jobsLock)
@@ -52,6 +67,7 @@ public class SchedulerService : IDisposable
         }
     }
 
+    /// <summary>Fires off missed backup jobs on background threads and advances their next-run times.</summary>
     public void RunMissedJobs(List<ScheduledJob> jobs)
     {
         foreach (var job in jobs)
@@ -75,6 +91,7 @@ public class SchedulerService : IDisposable
         JobsChanged?.Invoke();
     }
 
+    /// <summary>Advances the next-run time for a missed job without executing it.</summary>
     public void SkipMissedJob(Guid id)
     {
         lock (_jobsLock)
@@ -89,6 +106,7 @@ public class SchedulerService : IDisposable
         JobsChanged?.Invoke();
     }
 
+    /// <summary>Adds a new job to the scheduler and logs a "Scheduled" entry.</summary>
     public void AddJob(ScheduledJob job)
     {
         lock (_jobsLock)
@@ -109,6 +127,7 @@ public class SchedulerService : IDisposable
         JobsChanged?.Invoke();
     }
 
+    /// <summary>Removes a job by ID from the scheduler and persists the change.</summary>
     public void RemoveJob(Guid id)
     {
         lock (_jobsLock)
@@ -256,6 +275,7 @@ public class SchedulerService : IDisposable
         };
     }
 
+    /// <summary>Pauses a currently running job by resetting its pause gate.</summary>
     public void PauseJob(Guid logEntryId)
     {
         lock (_jobsLock)
@@ -265,6 +285,7 @@ public class SchedulerService : IDisposable
         }
     }
 
+    /// <summary>Resumes a paused job by signaling its pause gate.</summary>
     public void ResumeJob(Guid logEntryId)
     {
         lock (_jobsLock)
@@ -274,6 +295,7 @@ public class SchedulerService : IDisposable
         }
     }
 
+    /// <summary>Returns whether the specified running job is currently paused.</summary>
     public bool IsJobPaused(Guid logEntryId)
     {
         lock (_jobsLock)
@@ -282,6 +304,7 @@ public class SchedulerService : IDisposable
         }
     }
 
+    /// <summary>Returns whether the specified job has an active pause gate (i.e. is currently executing).</summary>
     public bool IsJobRunning(Guid logEntryId)
     {
         lock (_jobsLock)
@@ -290,6 +313,10 @@ public class SchedulerService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Retries a failed backup entry by re-running the transfer with the same parameters.
+    /// </summary>
+    /// <param name="failedEntry">The failed log entry to retry.</param>
     public async Task RetryAsync(BackupLogEntry failedEntry)
     {
         if (failedEntry.SourcePaths.Count == 0) return;

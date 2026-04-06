@@ -10,13 +10,23 @@ using StartupEventArgs = System.Windows.StartupEventArgs;
 
 namespace BeetsBackup;
 
+/// <summary>
+/// Application entry point. Configures DI, enforces single-instance via a named mutex,
+/// applies saved theme/settings, and starts the backup scheduler.
+/// </summary>
 public partial class App : Application
 {
+    /// <summary>Gets the application-wide DI service provider.</summary>
     public static IServiceProvider Services { get; private set; } = null!;
+
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _showSignal;
     private CancellationTokenSource? _showSignalCts;
 
+    /// <summary>
+    /// Initializes the application: enforces single-instance, registers services,
+    /// loads settings, handles missed backups, and starts the scheduler.
+    /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -96,6 +106,10 @@ public partial class App : Application
         _ = CheckForUpdatesAsync(mainWindow);
     }
 
+    /// <summary>
+    /// Disposes services with a 5-second timeout, releases the single-instance mutex,
+    /// and cleans up the inter-process show signal.
+    /// </summary>
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
         FileLogger.Info("═══ Application shutting down ═══");
@@ -117,24 +131,31 @@ public partial class App : Application
         base.OnExit(e);
     }
 
+    /// <summary>Logs UI-thread exceptions and marks them handled to prevent a crash.</summary>
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         FileLogger.WriteCrashDump("DispatcherUnhandledException", e.Exception);
         e.Handled = true; // Prevent crash on recoverable UI errors
     }
 
+    /// <summary>Logs fatal unhandled exceptions from non-UI threads.</summary>
     private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         if (e.ExceptionObject is Exception ex)
             FileLogger.WriteCrashDump("AppDomain.UnhandledException", ex);
     }
 
+    /// <summary>Logs and observes unobserved Task exceptions to prevent process termination.</summary>
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
         FileLogger.WriteCrashDump("TaskScheduler.UnobservedTaskException", e.Exception);
         e.SetObserved();
     }
 
+    /// <summary>
+    /// Polls a named <see cref="EventWaitHandle"/> so a second app instance
+    /// can signal us to bring our window to the foreground.
+    /// </summary>
     private void StartShowSignalListener()
     {
         var cts = _showSignalCts!;
@@ -164,6 +185,7 @@ public partial class App : Application
         });
     }
 
+    /// <summary>Waits briefly for the UI to load, then triggers a background update check.</summary>
     private static async Task CheckForUpdatesAsync(MainWindow mainWindow)
     {
         try
@@ -180,6 +202,7 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Registers all services, view models, and views in the DI container.</summary>
     private static void ConfigureServices(ServiceCollection services)
     {
         // Services

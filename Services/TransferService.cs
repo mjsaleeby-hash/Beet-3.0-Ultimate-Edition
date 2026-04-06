@@ -7,11 +7,20 @@ using UIOption = Microsoft.VisualBasic.FileIO.UIOption;
 
 namespace BeetsBackup.Services;
 
-public class InsufficientSpaceException : Exception
+/// <summary>
+/// Thrown when a transfer cannot proceed because the destination drive lacks sufficient free space.
+/// </summary>
+public sealed class InsufficientSpaceException : Exception
 {
+    /// <summary>Bytes required to complete the transfer.</summary>
     public long RequiredBytes { get; }
+
+    /// <summary>Bytes currently available on the destination drive.</summary>
     public long AvailableBytes { get; }
 
+    /// <summary>
+    /// Creates a new insufficient space exception with human-readable byte sizes in the message.
+    /// </summary>
     public InsufficientSpaceException(long required, long available)
         : base($"Not enough disk space. Required: {FormatBytes(required)}, Available: {FormatBytes(available)}")
     {
@@ -22,7 +31,7 @@ public class InsufficientSpaceException : Exception
     private static string FormatBytes(long bytes)
     {
         if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
+        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
         double value = bytes;
         int i = 0;
         while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
@@ -30,7 +39,12 @@ public class InsufficientSpaceException : Exception
     }
 }
 
-public class TransferService
+/// <summary>
+/// Orchestrates file copy, move, and mirror operations with support for
+/// checksum verification, bandwidth throttling, pause/resume, exclusion filters,
+/// and VSS shadow copy fallback for locked files.
+/// </summary>
+public sealed class TransferService
 {
     private readonly FileSystemService _fs;
 

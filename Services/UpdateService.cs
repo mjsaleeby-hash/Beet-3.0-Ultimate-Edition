@@ -5,7 +5,11 @@ using System.Text.Json;
 
 namespace BeetsBackup.Services;
 
-public class UpdateService
+/// <summary>
+/// Checks GitHub Releases for newer versions and exposes the result
+/// so the UI can prompt the user to update or skip.
+/// </summary>
+public sealed class UpdateService
 {
     private const string GitHubOwner = "mjsaleeby-hash";
     private const string GitHubRepo = "Beet-3.0-Ultimate-Edition";
@@ -15,10 +19,16 @@ public class UpdateService
 
     private readonly SettingsService _settings;
 
+    /// <summary>Gets the latest remote version string after a successful check, or <c>null</c>.</summary>
     public string? LatestVersion { get; private set; }
+
+    /// <summary>Gets the GitHub release page URL, or <c>null</c> if no update was found.</summary>
     public string? ReleaseUrl { get; private set; }
+
+    /// <summary>Gets the release notes body, or <c>null</c>.</summary>
     public string? ReleaseNotes { get; private set; }
 
+    /// <summary>Gets the running application version (major.minor.patch).</summary>
     public string CurrentVersion { get; } =
         Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0";
 
@@ -79,6 +89,7 @@ public class UpdateService
         }
     }
 
+    /// <summary>Persists the latest version as "skipped" so the user isn't prompted again for it.</summary>
     public void SkipVersion()
     {
         if (LatestVersion != null)

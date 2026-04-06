@@ -19,6 +19,10 @@ using Button = System.Windows.Controls.Button;
 
 namespace BeetsBackup.Views;
 
+/// <summary>
+/// Main application window — dual-pane file manager with drag-and-drop, context menus,
+/// column sorting, system tray integration, and backup wizard launching.
+/// </summary>
 public partial class MainWindow : Window
 {
     private MainViewModel Vm => (MainViewModel)DataContext;

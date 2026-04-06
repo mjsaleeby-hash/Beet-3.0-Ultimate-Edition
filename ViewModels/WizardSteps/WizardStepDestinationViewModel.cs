@@ -5,6 +5,10 @@ using System.IO;
 
 namespace BeetsBackup.ViewModels.WizardSteps;
 
+/// <summary>
+/// Wizard step: lets the user choose a destination drive/folder for the backup.
+/// Detects and warns when source and destination share the same drive.
+/// </summary>
 public partial class WizardStepDestinationViewModel : ObservableObject
 {
     [ObservableProperty] private string _destinationPath = string.Empty;
@@ -69,6 +73,7 @@ public partial class WizardStepDestinationViewModel : ObservableObject
 
     public bool IsValid => !string.IsNullOrWhiteSpace(DestinationPath);
 
+    /// <summary>Returns <c>true</c> if the destination path shares a drive root with any source path.</summary>
     public bool IsSameDriveAsSource(List<string> sourcePaths)
     {
         if (string.IsNullOrEmpty(DestinationPath)) return false;

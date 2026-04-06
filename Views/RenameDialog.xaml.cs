@@ -2,6 +2,7 @@ using System.Windows;
 
 namespace BeetsBackup.Views;
 
+/// <summary>Simple text-input dialog for renaming a file or folder.</summary>
 public partial class RenameDialog : Window
 {
     public string NewName => NameBox.Text.Trim();

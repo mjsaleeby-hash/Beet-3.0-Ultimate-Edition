@@ -16,6 +16,10 @@ using UserControl = System.Windows.Controls.UserControl;
 
 namespace BeetsBackup.Views;
 
+/// <summary>
+/// Custom donut-chart control that renders pie slices from a bound <see cref="PieSlice"/> collection.
+/// Supports hover highlighting, click-to-navigate, and a synchronized legend.
+/// </summary>
 public partial class PieChartControl : UserControl
 {
     private readonly List<Path> _slicePaths = new();

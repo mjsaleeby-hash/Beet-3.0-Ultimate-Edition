@@ -7,6 +7,10 @@ using System.Collections.ObjectModel;
 
 namespace BeetsBackup.ViewModels;
 
+/// <summary>
+/// Orchestrates the multi-step backup wizard. Manages step navigation, validation,
+/// summary population, and final <see cref="ScheduledJob"/> creation.
+/// </summary>
 public partial class BackupWizardViewModel : ObservableObject
 {
     private readonly SchedulerService _scheduler;
@@ -33,12 +37,16 @@ public partial class BackupWizardViewModel : ObservableObject
     // Stepper dots
     public ObservableCollection<StepIndicator> Steps { get; } = new();
 
-    // Events for dialog
+    /// <summary>Raised when the wizard should close without completing.</summary>
     public event Action? RequestClose;
+
+    /// <summary>Raised when the wizard completes successfully and the dialog should close.</summary>
     public event Action? RequestFinish;
 
-    // Result
+    /// <summary>Gets the final scheduled job built by the wizard, or <c>null</c> if cancelled.</summary>
     public ScheduledJob? BuiltJob { get; private set; }
+
+    /// <summary>Gets whether the user chose "One-time now" and the job should run immediately.</summary>
     public bool RunNow { get; private set; }
 
     public BackupWizardViewModel(SchedulerService scheduler)
@@ -49,6 +57,10 @@ public partial class BackupWizardViewModel : ObservableObject
         UpdateStepState();
     }
 
+    /// <summary>
+    /// Rebuilds the active step list based on the selected backup type.
+    /// The schedule step is omitted for "One-time now" backups.
+    /// </summary>
     private void RebuildStepList()
     {
         _activeSteps = new List<ObservableObject> { StepType };
@@ -69,6 +81,7 @@ public partial class BackupWizardViewModel : ObservableObject
             Steps.Add(new StepIndicator { Number = i + 1, Label = GetStepLabel(_activeSteps[i]) });
     }
 
+    /// <summary>Validates the current step and advances to the next one.</summary>
     [RelayCommand]
     private void Next()
     {
@@ -101,6 +114,7 @@ public partial class BackupWizardViewModel : ObservableObject
             PopulateSummary();
     }
 
+    /// <summary>Navigates back to the previous wizard step.</summary>
     [RelayCommand]
     private void Back()
     {
@@ -112,12 +126,14 @@ public partial class BackupWizardViewModel : ObservableObject
         UpdateStepState();
     }
 
+    /// <summary>Cancels the wizard and closes the dialog.</summary>
     [RelayCommand]
     private void Cancel()
     {
         RequestClose?.Invoke();
     }
 
+    /// <summary>Validates, builds the job, adds it to the scheduler (if not immediate), and closes.</summary>
     [RelayCommand]
     private void Finish()
     {
@@ -134,6 +150,7 @@ public partial class BackupWizardViewModel : ObservableObject
         RequestFinish?.Invoke();
     }
 
+    /// <summary>Updates navigation flags, step title/description, and stepper dot indicators.</summary>
     private void UpdateStepState()
     {
         IsFirstStep = CurrentStepIndex == 0;
@@ -153,6 +170,7 @@ public partial class BackupWizardViewModel : ObservableObject
         }
     }
 
+    /// <summary>Populates the summary step with a human-readable recap of all wizard choices.</summary>
     private void PopulateSummary()
     {
         var s = StepSummary;
@@ -190,6 +208,7 @@ public partial class BackupWizardViewModel : ObservableObject
         _ = s.EstimateSizeAsync(StepSource.ResolvedSourcePaths);
     }
 
+    /// <summary>Assembles a <see cref="ScheduledJob"/> from all wizard step data.</summary>
     private ScheduledJob BuildJob()
     {
         var nextRun = StepType.SelectedType == BackupType.OneTimeNow
@@ -216,6 +235,7 @@ public partial class BackupWizardViewModel : ObservableObject
         };
     }
 
+    /// <summary>Returns the short label shown in the stepper dots for the given step.</summary>
     private static string GetStepLabel(ObservableObject step) => step switch
     {
         WizardStepBackupTypeViewModel => "Type",
@@ -228,6 +248,7 @@ public partial class BackupWizardViewModel : ObservableObject
         _ => ""
     };
 
+    /// <summary>Returns the headline title and subtitle description for each wizard step.</summary>
     private static (string title, string description) GetStepCopy(ObservableObject step) => step switch
     {
         WizardStepBackupTypeViewModel => (
@@ -255,8 +276,10 @@ public partial class BackupWizardViewModel : ObservableObject
     };
 }
 
+/// <summary>Represents the visual state of a wizard stepper dot.</summary>
 public enum StepState { Pending, Active, Done }
 
+/// <summary>Bindable model for a single stepper dot in the wizard progress indicator.</summary>
 public partial class StepIndicator : ObservableObject
 {
     [ObservableProperty] private int _number;

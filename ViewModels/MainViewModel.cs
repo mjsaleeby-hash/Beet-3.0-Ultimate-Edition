@@ -12,6 +12,11 @@ using Color = System.Windows.Media.Color;
 
 namespace BeetsBackup.ViewModels;
 
+/// <summary>
+/// Primary ViewModel for the dual-pane file manager. Manages drive/folder navigation,
+/// file transfers (copy/move), deep search, pie-chart visualization, scheduled backups,
+/// theme toggling, and update checking.
+/// </summary>
 public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ThemeService _theme;
@@ -111,7 +116,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _transferProgressPercent;
     [ObservableProperty] private string _transferEta = string.Empty;
 
-    private const long ManualThrottleBytesPerSec = 10L * 1024 * 1024; // 10 MB/s
+    /// <summary>Default manual throttle: 10 MB/s.</summary>
+    private const long ManualThrottleBytesPerSec = 10L * 1024 * 1024;
 
     private CancellationTokenSource? _transferCts;
     private ManualResetEventSlim _pauseGate = new(true);
@@ -196,6 +202,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = "Ready";
     }
 
+    /// <summary>Creates a filtered <see cref="ICollectionView"/> that live-filters by <see cref="SearchFilter"/>.</summary>
     private ICollectionView CreateFilteredView(ObservableCollection<FileSystemItem> source)
     {
         var view = CollectionViewSource.GetDefaultView(source);
@@ -208,6 +215,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return view;
     }
 
+    /// <summary>Refreshes the drive list and rebuilds folder trees for both panes.</summary>
     private void LoadDrives()
     {
         Drives.Clear();
@@ -225,6 +233,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Toggles the pause/resume state of an in-progress transfer.</summary>
     [RelayCommand]
     private void PauseResumeTransfer()
     {
@@ -245,6 +254,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Cancels the current transfer by signalling the cancellation token.</summary>
     [RelayCommand]
     private void StopTransfer()
     {
@@ -255,6 +265,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = "Stopping...";
     }
 
+    /// <summary>Resets transfer state (CTS, pause gate, progress) and marks IsTransferring = true.</summary>
     private void BeginTransfer()
     {
         _transferCts?.Cancel();
@@ -273,6 +284,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _pausedDuration = TimeSpan.Zero;
     }
 
+    /// <summary>Clears transfer state and displays the final status message.</summary>
     private void EndTransfer(string message)
     {
         IsTransferring = false;
@@ -282,6 +294,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = message;
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         _scheduler.SchedulerError -= OnSchedulerError;
@@ -303,8 +316,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             StatusMessage = message;
     }
 
+    /// <summary>Progress callback — updates the status bar text.</summary>
     private void OnTransferProgress(string msg) => StatusMessage = msg;
 
+    /// <summary>Percent callback — updates the progress bar and computes ETA.</summary>
     private void OnTransferPercent(int percent)
     {
         TransferProgressPercent = percent;
@@ -331,6 +346,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ToggleSplitPane() => IsSplitPane = !IsSplitPane;
 
+    /// <summary>Navigates the top pane to the given path, loading children and computing sizes.</summary>
     [RelayCommand]
     private async Task NavigateTop(string path)
     {
@@ -378,6 +394,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         GoUpCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>Navigates the bottom pane to the given path, loading children and computing sizes.</summary>
     [RelayCommand]
     private async Task NavigateBottom(string path)
     {
@@ -418,6 +435,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         GoUpBottomCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>Calculates folder sizes in parallel for all directory items in the collection.</summary>
     private static async Task CalculateFolderSizesAsync(ObservableCollection<FileSystemItem> items, CancellationToken cancellationToken)
     {
         var directories = items.Where(i => i.IsDirectory).ToList();
@@ -432,6 +450,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         });
     }
 
+    /// <summary>
+    /// Calculates folder sizes in parallel and periodically rebuilds pie chart slices
+    /// while computation is in progress.
+    /// </summary>
     private async Task CalculateFolderSizesWithProgressAsync(
         ObservableCollection<FileSystemItem> items,
         bool isTop,
@@ -538,6 +560,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     // --- Deep search ---
+    /// <summary>
+    /// Recursively searches the current top pane directory for files/folders matching
+    /// the query. Supports extension search (e.g. ".pdf") and name substring search.
+    /// Results stream into the top pane in batches of 50.
+    /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ExecuteDeepSearchAsync()
     {
@@ -593,6 +620,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             : $"No results for \"{query}\"";
     }
 
+    /// <summary>Recursively walks <paramref name="directory"/> and dispatches matching items to the UI.</summary>
     private void SearchDirectoryRecursive(string directory, string query, bool isExtensionSearch, CancellationToken token, System.Windows.Threading.Dispatcher dispatcher)
     {
         if (token.IsCancellationRequested) return;
@@ -683,6 +711,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         catch (IOException) { }
     }
 
+    /// <summary>Cancels any active deep search and restores the normal folder view.</summary>
     [RelayCommand]
     private async Task ClearSearch()
     {
@@ -727,6 +756,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         await NavigateBottom(folder.FullPath);
     }
 
+    /// <summary>Shows the transfer mode dialog and returns the selected mode, or <c>null</c> if cancelled.</summary>
     private static TransferMode? AskTransferMode()
     {
         var dialog = new TransferModeDialog
@@ -736,6 +766,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return dialog.ShowDialog() == true ? dialog.SelectedMode : null;
     }
 
+    /// <summary>Copies selected items from the top pane to the bottom pane's current directory.</summary>
     [RelayCommand]
     private async Task CopyToBottomAsync(IList<FileSystemItem> items)
     {
@@ -768,6 +799,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Copies selected items from the bottom pane to the top pane's current directory.</summary>
     [RelayCommand]
     private async Task CopyToTopAsync(IList<FileSystemItem> items)
     {
@@ -800,6 +832,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Moves selected items from the top pane to the bottom pane's current directory.</summary>
     [RelayCommand]
     private async Task MoveToBottomAsync(IList<FileSystemItem> items)
     {
@@ -833,6 +866,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Moves selected items from the bottom pane to the top pane's current directory.</summary>
     [RelayCommand]
     private async Task MoveToTopAsync(IList<FileSystemItem> items)
     {
@@ -866,6 +900,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Executes a backup job created by the wizard, with progress tracking and throttle support.</summary>
     public async Task RunWizardBackupAsync(ScheduledJob job)
     {
         BeginTransfer();
@@ -899,6 +934,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Permanently deletes the specified item from disk and removes it from both panes.</summary>
     [RelayCommand]
     private void DeleteItem(FileSystemItem item)
     {
@@ -908,6 +944,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         BottomPaneItems.Remove(item);
     }
 
+    /// <summary>Renames a file or folder on disk and refreshes both panes.</summary>
     [RelayCommand]
     private async Task RenameItem((FileSystemItem item, string newName) args)
     {
@@ -920,6 +957,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             await NavigateBottom(BottomCurrentPath);
     }
 
+    /// <summary>Reloads drives and re-navigates both panes, clearing any stale paths.</summary>
     [RelayCommand]
     private async Task RefreshDrives()
     {
@@ -982,6 +1020,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         dialog.ShowDialog();
     }
 
+    /// <summary>Builds a human-readable summary string from a <see cref="TransferResult"/>.</summary>
     internal static string FormatTransferResult(TransferResult result)
     {
         var parts = new List<string>();
@@ -1030,6 +1069,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             BuildPieSlices(BottomPaneItems, false);
     }
 
+    /// <summary>
+    /// Builds pie chart slices from the top-10 largest items plus an "Other" slice
+    /// and assigns them atomically to avoid UI collection-change storms.
+    /// </summary>
     internal void BuildPieSlices(ObservableCollection<FileSystemItem> items, bool isTop)
     {
         var sorted = items

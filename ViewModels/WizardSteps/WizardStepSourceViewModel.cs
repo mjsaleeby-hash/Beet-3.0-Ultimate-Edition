@@ -6,8 +6,13 @@ using System.IO;
 
 namespace BeetsBackup.ViewModels.WizardSteps;
 
+/// <summary>How the user selects what to back up: common folders, a whole drive, or custom paths.</summary>
 public enum SourceMode { QuickPick, EntireDrive, Custom }
 
+/// <summary>
+/// Wizard step: lets the user pick backup sources via quick-pick (Documents/Pictures/etc.),
+/// an entire drive, or custom folder selection.
+/// </summary>
 public partial class WizardStepSourceViewModel : ObservableObject
 {
     [ObservableProperty] private SourceMode _selectedMode = SourceMode.EntireDrive;
@@ -51,6 +56,7 @@ public partial class WizardStepSourceViewModel : ObservableObject
             CustomPaths.Remove(SelectedCustomPath);
     }
 
+    /// <summary>Resolves the selected mode into concrete file-system paths for the backup engine.</summary>
     public List<string> ResolvedSourcePaths
     {
         get
@@ -83,6 +89,7 @@ public partial class WizardStepSourceViewModel : ObservableObject
     public bool IsValid => ResolvedSourcePaths.Count > 0;
 }
 
+/// <summary>Display-friendly wrapper around <see cref="DriveInfo"/> for drive picker lists.</summary>
 public class DriveDisplayItem
 {
     public string RootPath { get; }

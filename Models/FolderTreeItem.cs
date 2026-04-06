@@ -5,7 +5,11 @@ using System.Runtime.CompilerServices;
 
 namespace BeetsBackup.Models;
 
-public class FolderTreeItem : INotifyPropertyChanged
+/// <summary>
+/// Represents a folder node in the navigation tree view.
+/// Children are loaded lazily on first expansion to keep initial load fast.
+/// </summary>
+public sealed class FolderTreeItem : INotifyPropertyChanged
 {
     private static readonly EnumerationOptions EnumOptions = new()
     {
@@ -14,14 +18,27 @@ public class FolderTreeItem : INotifyPropertyChanged
         RecurseSubdirectories = false
     };
 
+    /// <summary>Display name of the folder or drive.</summary>
     public string Name { get; }
+
+    /// <summary>Fully qualified path to this folder.</summary>
     public string FullPath { get; }
+
+    /// <summary>Whether this node represents a drive root.</summary>
     public bool IsDrive { get; }
+
+    /// <summary>Drive capacity information, populated only for drive root nodes.</summary>
     public DriveItem? DriveInfo { get; }
 
+    /// <summary>Child folder nodes (populated lazily on first expansion).</summary>
     public ObservableCollection<FolderTreeItem> Children { get; } = new();
 
     private bool _isExpanded;
+
+    /// <summary>
+    /// Whether the tree node is expanded. Setting to <c>true</c> triggers lazy child loading
+    /// if children have not been loaded yet.
+    /// </summary>
     public bool IsExpanded
     {
         get => _isExpanded;
@@ -38,6 +55,8 @@ public class FolderTreeItem : INotifyPropertyChanged
     }
 
     private bool _isSelected;
+
+    /// <summary>Whether this node is currently selected in the tree view.</summary>
     public bool IsSelected
     {
         get => _isSelected;
@@ -53,13 +72,19 @@ public class FolderTreeItem : INotifyPropertyChanged
 
     private bool _hasPlaceholder;
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
-    protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-    // Drive root constructor
+    /// <summary>
+    /// Creates a tree node for a drive root.
+    /// </summary>
+    /// <param name="drive">The drive to represent.</param>
     public FolderTreeItem(DriveItem drive)
     {
+        ArgumentNullException.ThrowIfNull(drive);
         Name = drive.Name;
         FullPath = drive.RootPath;
         IsDrive = true;
@@ -67,7 +92,10 @@ public class FolderTreeItem : INotifyPropertyChanged
         AddPlaceholder();
     }
 
-    // Subfolder constructor
+    /// <summary>
+    /// Creates a tree node for a subdirectory.
+    /// </summary>
+    /// <param name="path">Full path to the directory.</param>
     public FolderTreeItem(string path)
     {
         FullPath = path;
@@ -78,14 +106,18 @@ public class FolderTreeItem : INotifyPropertyChanged
         AddPlaceholder();
     }
 
+    /// <summary>
+    /// Adds a dummy child so the TreeView shows an expander arrow before the node is expanded.
+    /// </summary>
     private void AddPlaceholder()
     {
-        // Add a dummy child so the expander arrow shows
         Children.Add(new FolderTreeItem("__placeholder__", dummy: true));
         _hasPlaceholder = true;
     }
 
-    // Dummy placeholder constructor
+    /// <summary>
+    /// Private constructor for the dummy placeholder node.
+    /// </summary>
     private FolderTreeItem(string name, bool dummy)
     {
         Name = name;
@@ -94,6 +126,10 @@ public class FolderTreeItem : INotifyPropertyChanged
         _hasPlaceholder = false;
     }
 
+    /// <summary>
+    /// Asynchronously loads subdirectories as child nodes, replacing the placeholder.
+    /// Skips junction points and symbolic links to avoid infinite recursion.
+    /// </summary>
     private async Task LoadChildrenAsync()
     {
         _hasPlaceholder = false;
@@ -119,7 +155,7 @@ public class FolderTreeItem : INotifyPropertyChanged
                 catch (UnauthorizedAccessException) { }
                 catch (IOException) { }
                 return result;
-            });
+            }).ConfigureAwait(false);
 
             foreach (var dir in dirs)
                 Children.Add(new FolderTreeItem(dir));

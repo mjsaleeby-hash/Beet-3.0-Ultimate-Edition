@@ -9,6 +9,10 @@ using MessageBox = System.Windows.MessageBox;
 
 namespace BeetsBackup.Views;
 
+/// <summary>
+/// Dialog that displays backup history with retry, pause/resume, error detail,
+/// CSV export, and a link to the log folder.
+/// </summary>
 public partial class LogDialog : Window
 {
     private readonly BackupLogService _log;

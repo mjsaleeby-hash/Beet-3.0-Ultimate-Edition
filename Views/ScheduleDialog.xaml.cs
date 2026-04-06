@@ -7,6 +7,7 @@ using MessageBoxImage = System.Windows.MessageBoxImage;
 
 namespace BeetsBackup.Views;
 
+/// <summary>Manual schedule dialog that collects job details and returns a <see cref="ScheduledJob"/>.</summary>
 public partial class ScheduleDialog : Window
 {
     public ScheduledJob? Result { get; private set; }

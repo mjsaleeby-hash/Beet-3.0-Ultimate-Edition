@@ -4,6 +4,10 @@ using System.Collections.ObjectModel;
 
 namespace BeetsBackup.ViewModels.WizardSteps;
 
+/// <summary>
+/// Wizard step: optional advanced settings — checksum verification, permission stripping,
+/// transfer throttling, and file exclusion patterns.
+/// </summary>
 public partial class WizardStepAdvancedViewModel : ObservableObject
 {
     [ObservableProperty] private bool _verifyChecksums;
