@@ -5,7 +5,7 @@ namespace BeetsBackup.Models;
 /// <summary>
 /// Represents the lifecycle state of a backup operation.
 /// </summary>
-public enum BackupStatus { Scheduled, Running, Complete, Failed }
+public enum BackupStatus { Scheduled, Running, Complete, Failed, Skipped }
 
 /// <summary>
 /// Tracks a single backup operation's metadata, progress, and outcome.

@@ -117,8 +117,59 @@ public partial class LogDialog : Window
         foreach (var err in entry.FileErrors)
             sb.AppendLine($"  {err.Path}\n    {err.Reason}\n");
 
-        MessageBox.Show(sb.ToString(), $"File Errors — {entry.JobName}",
-            MessageBoxButton.OK, MessageBoxImage.Warning);
+        // Use a scrollable window instead of MessageBox so long error lists are navigable
+        var errorWindow = new Window
+        {
+            Title = $"File Errors — {entry.JobName}",
+            Width = 700,
+            Height = 450,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(0xF3, 0xF3, 0xF3))
+        };
+
+        var grid = new System.Windows.Controls.Grid { Margin = new Thickness(16) };
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+
+        var textBox = new System.Windows.Controls.TextBox
+        {
+            Text = sb.ToString(),
+            IsReadOnly = true,
+            VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = new System.Windows.Media.FontFamily("Consolas, Segoe UI"),
+            FontSize = 12.5,
+            Background = System.Windows.Media.Brushes.White,
+            BorderBrush = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(0xD0, 0xD0, 0xD0)),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8)
+        };
+        System.Windows.Controls.Grid.SetRow(textBox, 0);
+        grid.Children.Add(textBox);
+
+        var closeBtn = new System.Windows.Controls.Button
+        {
+            Content = "Close",
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+            Padding = new Thickness(16, 8, 16, 8),
+            Margin = new Thickness(0, 12, 0, 0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(0x00, 0x78, 0xD4)),
+            Foreground = System.Windows.Media.Brushes.White,
+            BorderThickness = new Thickness(0),
+            FontWeight = FontWeights.SemiBold
+        };
+        closeBtn.Click += (_, _) => errorWindow.Close();
+        System.Windows.Controls.Grid.SetRow(closeBtn, 1);
+        grid.Children.Add(closeBtn);
+
+        errorWindow.Content = grid;
+        errorWindow.ShowDialog();
     }
 
     private void OpenLogFolder_Click(object sender, RoutedEventArgs e)

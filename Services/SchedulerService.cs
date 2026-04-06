@@ -94,15 +94,30 @@ public sealed class SchedulerService : IDisposable
     /// <summary>Advances the next-run time for a missed job without executing it.</summary>
     public void SkipMissedJob(Guid id)
     {
+        ScheduledJob? job;
         lock (_jobsLock)
         {
-            var job = _jobs.FirstOrDefault(j => j.Id == id);
+            job = _jobs.FirstOrDefault(j => j.Id == id);
             if (job != null)
             {
                 job.UpdateNextRun();
                 SaveJobs();
             }
         }
+
+        if (job != null)
+        {
+            FileLogger.Info($"Skipped missed job: '{job.Name}' — next run advanced to {job.NextRun:g}");
+            _log.Add(new BackupLogEntry
+            {
+                JobName = job.Name,
+                SourcePath = string.Join("; ", job.SourcePaths),
+                DestinationPath = job.DestinationPath,
+                Status = BackupStatus.Skipped,
+                Message = $"Missed backup skipped by user. Next run: {job.NextRun:g}"
+            });
+        }
+
         JobsChanged?.Invoke();
     }
 
