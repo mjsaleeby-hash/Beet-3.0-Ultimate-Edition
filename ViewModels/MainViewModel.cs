@@ -778,13 +778,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// into a single timestamped <c>.zip</c> at a user-chosen destination folder.
     /// Shows completion via toast + status bar.
     /// </summary>
-    /// <param name="selection">Items bound from the caller's ListView selection; may be <c>null</c> or empty.</param>
+    /// <param name="selection">Items bound from the caller's ListView selection; may be <c>null</c> or empty.
+    /// Typed as the non-generic <see cref="System.Collections.IList"/> so WPF's <c>SelectedItemCollection</c>
+    /// binds cleanly — RelayCommand&lt;IList&lt;FileSystemItem&gt;&gt; throws at bind time on that type.</param>
     [RelayCommand]
-    private async Task ArchiveNowAsync(IList<FileSystemItem>? selection)
+    private async Task ArchiveNowAsync(System.Collections.IList? selection)
     {
         // Prefer the caller's selection; fall back to the current top-pane folder.
-        var items = (selection != null && selection.Count > 0)
-            ? selection.Select(i => i.FullPath).ToList()
+        var selectedPaths = selection?.OfType<FileSystemItem>().Select(i => i.FullPath).ToList();
+        var items = (selectedPaths != null && selectedPaths.Count > 0)
+            ? selectedPaths
             : !string.IsNullOrEmpty(TopCurrentPath)
                 ? new List<string> { TopCurrentPath }
                 : new List<string>();
