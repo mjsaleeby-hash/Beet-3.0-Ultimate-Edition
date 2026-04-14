@@ -1,4 +1,9 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
+
+// Expose internal helpers to the test project so we can unit-test argument-builders and
+// CLI-parsing logic without making them public on the shipping app surface.
+[assembly: InternalsVisibleTo("BeetsBackup.Tests")]
 
 [assembly:ThemeInfo(
     ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located

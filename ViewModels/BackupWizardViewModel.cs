@@ -141,6 +141,25 @@ public partial class BackupWizardViewModel : ObservableObject
         if (!StepSource.IsValid || !StepDestination.IsValid)
             return;
 
+        // Pre-flight disk-space gate: if the summary step flagged insufficient room,
+        // require an explicit "yes, proceed anyway" from the user before we schedule
+        // a job that is almost certainly going to fail partway through.
+        if (StepSummary.IsInsufficientSpace)
+        {
+            var preview = StepSummary.LastPreview;
+            var body =
+                $"The estimated backup size ({preview?.RequiredDisplay}) is larger than the free space " +
+                $"available on {preview?.DriveRoot} ({preview?.AvailableDisplay}).\n\n" +
+                "If you proceed, the transfer will likely run out of space partway through. " +
+                "Continue anyway?";
+            var result = System.Windows.MessageBox.Show(body,
+                "Not Enough Disk Space",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning,
+                System.Windows.MessageBoxResult.No);
+            if (result != System.Windows.MessageBoxResult.Yes) return;
+        }
+
         BuiltJob = BuildJob();
         RunNow = StepType.SelectedType == BackupType.OneTimeNow;
 
@@ -202,10 +221,16 @@ public partial class BackupWizardViewModel : ObservableObject
         if (StepAdvanced.VerifyChecksums) opts.Add("Verify checksums");
         if (StepAdvanced.StripPermissions) opts.Add("Remove permissions");
         if (StepAdvanced.EnableThrottle) opts.Add($"Speed limit: {StepAdvanced.SelectedThrottleSpeed}");
+        if (StepAdvanced.EnableVersioning) opts.Add($"Keep {StepAdvanced.MaxVersions} versions");
+        if (StepAdvanced.EnableCompression) opts.Add("Compress to .zip");
         if (StepAdvanced.ExclusionFilters.Count > 0) opts.Add($"{StepAdvanced.ExclusionFilters.Count} exclusion(s)");
         s.OptionsDisplay = opts.Count > 0 ? string.Join(", ", opts) : "None (defaults)";
 
-        _ = s.EstimateSizeAsync(StepSource.ResolvedSourcePaths);
+        _ = s.EstimateSizeAsync(
+            StepSource.ResolvedSourcePaths,
+            StepDestination.DestinationPath,
+            StepAdvanced.ExclusionFilters.ToList(),
+            StepAdvanced.EnableCompression);
     }
 
     /// <summary>Assembles a <see cref="ScheduledJob"/> from all wizard step data.</summary>
@@ -227,6 +252,12 @@ public partial class BackupWizardViewModel : ObservableObject
             VerifyChecksums = StepAdvanced.VerifyChecksums,
             ThrottleMBps = StepAdvanced.ThrottleMBps,
             ExclusionFilters = StepAdvanced.ExclusionFilters.ToList(),
+            // Compression wins if somehow both are set — a zip archive is a single artifact that
+            // cannot be versioned in-place. The UI enforces this via mutual-exclusion partial methods,
+            // but normalize here too in case the VM is constructed programmatically.
+            EnableVersioning = StepAdvanced.EnableVersioning && !StepAdvanced.EnableCompression,
+            MaxVersions = Math.Max(1, StepAdvanced.MaxVersions),
+            EnableCompression = StepAdvanced.EnableCompression,
             IsRecurring = StepType.SelectedType == BackupType.Recurring,
             NextRun = nextRun,
             RecurInterval = StepType.SelectedType == BackupType.Recurring

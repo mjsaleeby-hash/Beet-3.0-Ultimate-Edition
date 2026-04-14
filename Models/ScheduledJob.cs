@@ -56,6 +56,21 @@ public sealed class ScheduledJob
     /// <summary>Speed limit in MB/s. 0 means unlimited.</summary>
     public int ThrottleMBps { get; set; }
 
+    /// <summary>
+    /// When <c>true</c>, existing destination files are archived to a hidden <c>.versions/</c>
+    /// folder at the destination root before being overwritten.
+    /// </summary>
+    public bool EnableVersioning { get; set; }
+
+    /// <summary>Maximum number of archived versions to retain per file. Older versions are pruned.</summary>
+    public int MaxVersions { get; set; } = 5;
+
+    /// <summary>
+    /// When <c>true</c>, the job produces a single compressed <c>.zip</c> archive at the destination
+    /// instead of mirroring the source tree. Not compatible with versioning or Mirror mode.
+    /// </summary>
+    public bool EnableCompression { get; set; }
+
     /// <summary>Whether this job repeats on a schedule.</summary>
     public bool IsRecurring { get; set; }
 

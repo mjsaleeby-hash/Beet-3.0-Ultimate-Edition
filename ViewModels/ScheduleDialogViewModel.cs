@@ -40,6 +40,29 @@ public partial class ScheduleDialogViewModel : ObservableObject
     [ObservableProperty] private string _sizeEstimate = string.Empty;
     [ObservableProperty] private bool _isEstimating;
 
+    // --- Pre-flight disk-space preview (populated by EstimateSize) ---
+    [ObservableProperty] private string _diskSpaceMessage = string.Empty;
+    [ObservableProperty] private bool _hasDiskSpaceMessage;
+    [ObservableProperty] private bool _isInsufficientSpace;
+    [ObservableProperty] private bool _isTightSpace;
+
+    /// <summary>Last pre-flight preview (for the Save command to re-check before adding the job).</summary>
+    public DiskSpacePreview? LastDiskSpacePreview { get; private set; }
+
+    [ObservableProperty] private bool _enableVersioning;
+    [ObservableProperty] private int _maxVersions = 5;
+    [ObservableProperty] private bool _enableCompression;
+
+    /// <summary>Versioning and compression are mutually exclusive — compressed jobs produce a single archive with no in-place overwrites.</summary>
+    partial void OnEnableCompressionChanged(bool value)
+    {
+        if (value) EnableVersioning = false;
+    }
+    partial void OnEnableVersioningChanged(bool value)
+    {
+        if (value) EnableCompression = false;
+    }
+
     public List<string> ThrottleSpeedOptions { get; } = new()
     {
         "1 MB/s", "5 MB/s", "10 MB/s", "25 MB/s", "50 MB/s", "100 MB/s"
@@ -131,14 +154,37 @@ public partial class ScheduleDialogViewModel : ObservableObject
 
         IsEstimating = true;
         SizeEstimate = "Calculating...";
+        DiskSpaceMessage = string.Empty;
+        HasDiskSpaceMessage = false;
+        IsInsufficientSpace = false;
+        IsTightSpace = false;
 
         var sources = SourcePaths.ToList();
         var exclusions = ExclusionFilters.Count > 0 ? ExclusionFilters.ToList() : null;
+        var destination = DestinationPath;
+        var willCompress = EnableCompression;
 
-        var totalBytes = await Task.Run(() =>
-            TransferService.EstimateTotalSize(sources, exclusions));
+        // Count + preview in one background pass so we don't double-enumerate the source tree.
+        var (preview, fileCount) = await Task.Run(() =>
+        {
+            var p = DiskSpaceService.Preview(sources, destination, exclusions, willCompress);
+            return (p, CountFiles(sources, exclusions));
+        });
 
-        SizeEstimate = $"{FormatBytes(totalBytes)} across {CountFiles(sources, exclusions):N0} files";
+        LastDiskSpacePreview = preview;
+        SizeEstimate = $"{preview.RequiredDisplay} across {fileCount:N0} files";
+
+        // Only surface the disk-space message when the destination is known — while the user is
+        // still editing the dialog the destination may be blank, and showing "check skipped" on
+        // every keystroke would be noisy.
+        if (!string.IsNullOrWhiteSpace(destination))
+        {
+            DiskSpaceMessage = preview.Summary;
+            HasDiskSpaceMessage = !string.IsNullOrEmpty(DiskSpaceMessage);
+            IsInsufficientSpace = preview.Status == DiskSpaceStatus.Insufficient;
+            IsTightSpace = preview.Status == DiskSpaceStatus.Tight;
+        }
+
         IsEstimating = false;
     }
 
@@ -230,6 +276,11 @@ public partial class ScheduleDialogViewModel : ObservableObject
             TransferMode = SelectedTransferMode,
             ExclusionFilters = ExclusionFilters.ToList(),
             ThrottleMBps = EnableThrottle ? ParseThrottleMBps(SelectedThrottleSpeed) : 0,
+            // Compression and versioning are mutually exclusive (compressed runs produce a single
+            // archive with no in-place overwrites). UI guards already prevent this, but belt-and-braces.
+            EnableVersioning = EnableVersioning && !EnableCompression,
+            MaxVersions = Math.Max(1, MaxVersions),
+            EnableCompression = EnableCompression,
             IsRecurring = IsRecurring,
             NextRun = nextRun,
             RecurInterval = IsRecurring ? GetInterval() : null,

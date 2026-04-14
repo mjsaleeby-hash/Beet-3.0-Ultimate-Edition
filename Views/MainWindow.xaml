@@ -390,6 +390,11 @@
                     <Button Content="Jobs" Margin="0,0,4,0"
                             Style="{StaticResource ToolbarButton}"
                             Command="{Binding OpenJobsDialogCommand}"/>
+                    <Button Content="Archive Now" Margin="0,0,4,0"
+                            Style="{StaticResource ToolbarButton}"
+                            ToolTip="Compress the selected items (or current folder) into a .zip archive"
+                            Command="{Binding ArchiveNowCommand}"
+                            CommandParameter="{Binding SelectedItems, ElementName=TopPaneList}"/>
                     <Button Content="Log" Margin="0,0,4,0"
                             Style="{StaticResource ToolbarButton}"
                             Command="{Binding OpenLogDialogCommand}"/>
@@ -689,6 +694,11 @@
                                     <Separator/>
                                     <MenuItem Header="Rename" Click="Rename_Click"/>
                                     <MenuItem Header="Delete" Click="Delete_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="Previous Versions..." Click="PreviousVersions_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="Extract Here" Click="ExtractHere_Click"/>
+                                    <MenuItem Header="Extract To..." Click="ExtractTo_Click"/>
                                 </ContextMenu>
                             </ListView.ContextMenu>
                         </ListView>
@@ -870,6 +880,11 @@
                                             <Separator/>
                                             <MenuItem Header="Rename" Click="Rename_Click"/>
                                             <MenuItem Header="Delete" Click="Delete_Click"/>
+                                            <Separator/>
+                                            <MenuItem Header="Previous Versions..." Click="PreviousVersions_Click"/>
+                                            <Separator/>
+                                            <MenuItem Header="Extract Here" Click="ExtractHere_Click"/>
+                                            <MenuItem Header="Extract To..." Click="ExtractTo_Click"/>
                                         </ContextMenu>
                                     </ListView.ContextMenu>
                                 </ListView>
@@ -1114,6 +1129,11 @@
                                             <Separator/>
                                             <MenuItem Header="Rename" Click="Rename_Click"/>
                                             <MenuItem Header="Delete" Click="Delete_Click"/>
+                                            <Separator/>
+                                            <MenuItem Header="Previous Versions..." Click="PreviousVersions_Click"/>
+                                            <Separator/>
+                                            <MenuItem Header="Extract Here" Click="ExtractHere_Click"/>
+                                            <MenuItem Header="Extract To..." Click="ExtractTo_Click"/>
                                         </ContextMenu>
                                     </ListView.ContextMenu>
                                 </ListView>

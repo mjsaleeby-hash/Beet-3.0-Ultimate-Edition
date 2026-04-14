@@ -1,3 +1,4 @@
+using BeetsBackup.Helpers;
 using BeetsBackup.Services;
 using BeetsBackup.ViewModels;
 using BeetsBackup.Views;
@@ -30,6 +31,17 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Headless path: Windows Task Scheduler launches `BeetsBackup.exe --run-job <guid>`
+        // at the scheduled time. Skip the single-instance dance, skip the UI entirely,
+        // run the job synchronously, then exit. This is what lets scheduled backups fire
+        // when the main app isn't already running (Feature F).
+        var runJobId = CliArgs.TryParseRunJob(e.Args);
+        if (runJobId.HasValue)
+        {
+            RunHeadlessJob(runJobId.Value);
+            return;
+        }
 
         // Single-instance guard — if already running, signal the first instance to show its window
         _singleInstanceMutex = new Mutex(true, "BeetsBackup_SingleInstance_Mutex", out bool createdNew);
@@ -100,10 +112,55 @@ public partial class App : Application
         }
 
         scheduler.Start();
+
+        // Re-register saved jobs with Windows Task Scheduler (Feature F) so they fire even
+        // when the app is closed. Runs on a background thread because each schtasks.exe
+        // invocation waits on a child process and we don't want to stall the UI.
+        _ = Task.Run(() =>
+        {
+            try { scheduler.ReconcileWindowsTasks(); }
+            catch (Exception ex) { FileLogger.LogException("Windows Task Scheduler reconciliation failed", ex); }
+        });
+
         FileLogger.Info("Application started successfully");
 
         // Check for updates in the background (non-blocking)
         _ = CheckForUpdatesAsync(mainWindow);
+    }
+
+    /// <summary>
+    /// Runs a single scheduled job in a minimal headless context: DI services are constructed
+    /// but no window is shown and no scheduler loop is started. Exits as soon as the job completes.
+    /// </summary>
+    private void RunHeadlessJob(Guid jobId)
+    {
+        try
+        {
+            FileLogger.Info($"=== Headless run: job {jobId} ===");
+
+            var services = new ServiceCollection();
+            ConfigureServices(services);
+            Services = services.BuildServiceProvider();
+
+            Services.GetRequiredService<SettingsService>().Load();
+            Services.GetRequiredService<BackupLogService>().Load();
+
+            var scheduler = Services.GetRequiredService<SchedulerService>();
+            var ran = scheduler.RunJobByIdAsync(jobId).GetAwaiter().GetResult();
+
+            FileLogger.Info($"=== Headless run complete: {(ran ? "ran" : "job not found")} ===");
+            Environment.ExitCode = ran ? 0 : 2;
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("Headless job run failed", ex);
+            Environment.ExitCode = 1;
+        }
+        finally
+        {
+            try { (Services as IDisposable)?.Dispose(); } catch { /* best effort */ }
+            Current.Shutdown(Environment.ExitCode);
+        }
     }
 
     /// <summary>

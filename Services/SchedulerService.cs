@@ -139,6 +139,14 @@ public sealed class SchedulerService : IDisposable
             Message = $"Scheduled for {job.NextRun:g}{(job.IsRecurring ? $", recurring {job.RecurInterval}" : "")}"
         });
 
+        // Best-effort: also register with Windows Task Scheduler so the job fires even when
+        // the app isn't running. Failures are non-fatal — the in-process timer is still active.
+        if (job.IsEnabled)
+        {
+            var ok = WindowsTaskSchedulerService.Register(job);
+            if (ok) FileLogger.Info($"Registered Windows scheduled task for '{job.Name}'.");
+        }
+
         JobsChanged?.Invoke();
     }
 
@@ -150,7 +158,49 @@ public sealed class SchedulerService : IDisposable
             _jobs.RemoveAll(j => j.Id == id);
             SaveJobs();
         }
+        WindowsTaskSchedulerService.Unregister(id);
         JobsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Headless run entry-point used by the <c>--run-job {id}</c> CLI path. Locates the
+    /// persisted job, runs it synchronously, updates LastRun/NextRun, and returns.
+    /// </summary>
+    /// <returns><c>true</c> if a job was found and executed (regardless of outcome); <c>false</c>
+    /// if no matching job exists (caller should exit with a non-zero code).</returns>
+    public async Task<bool> RunJobByIdAsync(Guid jobId)
+    {
+        ScheduledJob? job;
+        lock (_jobsLock) { job = _jobs.FirstOrDefault(j => j.Id == jobId); }
+        if (job == null)
+        {
+            FileLogger.Warn($"RunJobByIdAsync: no job found with id {jobId}");
+            return false;
+        }
+
+        var snapshot = SnapshotJob(job);
+        await ExecuteJobAsync(snapshot, job);
+
+        // Advance timing so Task Scheduler and the in-process timer agree about the next run.
+        lock (_jobsLock)
+        {
+            job.UpdateNextRun();
+            if (!job.IsRecurring)
+                job.IsEnabled = false;
+            SaveJobs();
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Re-registers every enabled job with Windows Task Scheduler. Called on app startup so
+    /// users aren't caught out if a task was manually deleted or lost across a Windows reset.
+    /// </summary>
+    public void ReconcileWindowsTasks()
+    {
+        List<ScheduledJob> snapshot;
+        lock (_jobsLock) { snapshot = _jobs.ToList(); }
+        WindowsTaskSchedulerService.ReconcileAll(snapshot);
     }
 
     private async Task RunAsync(CancellationToken ct)
@@ -228,34 +278,61 @@ public sealed class SchedulerService : IDisposable
             var percentProgress = new Progress<int>(pct =>
                 _log.UpdateProgress(logEntry.Id, pct));
 
-            var result = await _transfer.CopyAsync(
-                snapshot.SourcePaths,
-                snapshot.DestinationPath,
-                snapshot.StripPermissions,
-                snapshot.TransferMode,
-                progressPercent: percentProgress,
-                pauseToken: pauseGate,
-                verifyChecksums: snapshot.VerifyChecksums,
-                exclusions: exclusions,
-                throttleBytesPerSec: snapshot.ThrottleMBps > 0 ? (long)snapshot.ThrottleMBps * 1024 * 1024 : 0);
+            var versioning = snapshot.EnableVersioning
+                ? new VersioningOptions { Enabled = true, MaxVersions = snapshot.MaxVersions }
+                : null;
+
+            TransferResult result;
+            if (snapshot.EnableCompression)
+            {
+                result = await _transfer.CompressAsync(
+                    snapshot.SourcePaths,
+                    snapshot.DestinationPath,
+                    archiveName: BuildArchiveName(snapshot.Name),
+                    exclusions: exclusions,
+                    pauseToken: pauseGate,
+                    progressPercent: percentProgress);
+            }
+            else
+            {
+                result = await _transfer.CopyAsync(
+                    snapshot.SourcePaths,
+                    snapshot.DestinationPath,
+                    snapshot.StripPermissions,
+                    snapshot.TransferMode,
+                    progressPercent: percentProgress,
+                    pauseToken: pauseGate,
+                    verifyChecksums: snapshot.VerifyChecksums,
+                    exclusions: exclusions,
+                    throttleBytesPerSec: snapshot.ThrottleMBps > 0 ? (long)snapshot.ThrottleMBps * 1024 * 1024 : 0,
+                    versioning: versioning);
+            }
 
             var totalFailed = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
                 result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles,
                 totalFailed, result.FileErrors);
             FileLogger.Info($"Scheduled job completed: '{snapshot.Name}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped{(totalFailed > 0 ? $", {totalFailed} failed" : "")}");
+
+            var toastKind = totalFailed > 0 ? ToastKind.Warning : ToastKind.Success;
+            var toastBody = totalFailed > 0
+                ? $"{result.FilesCopied} copied, {totalFailed} failed."
+                : $"{result.FilesCopied} copied, {result.FilesSkipped} skipped.";
+            ToastNotifier.Notify($"Backup complete: {snapshot.Name}", toastBody, toastKind);
         }
         catch (InsufficientSpaceException)
         {
             FileLogger.Error($"Scheduled job failed: '{snapshot.Name}' — insufficient disk space");
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, "Not enough disk space on the destination drive.");
             SchedulerError?.Invoke($"Job '{snapshot.Name}' failed — insufficient disk space");
+            ToastNotifier.Notify($"Backup failed: {snapshot.Name}", "Not enough disk space on the destination drive.", ToastKind.Error);
         }
         catch (Exception ex)
         {
             FileLogger.LogException($"Scheduled job failed: '{snapshot.Name}'", ex);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, ex.Message);
             SchedulerError?.Invoke($"Job '{snapshot.Name}' failed — {ex.Message}");
+            ToastNotifier.Notify($"Backup failed: {snapshot.Name}", ex.Message, ToastKind.Error);
         }
         finally
         {
@@ -282,6 +359,9 @@ public sealed class SchedulerService : IDisposable
             TransferMode = job.TransferMode,
             ExclusionFilters = new List<string>(job.ExclusionFilters),
             ThrottleMBps = job.ThrottleMBps,
+            EnableVersioning = job.EnableVersioning,
+            MaxVersions = job.MaxVersions,
+            EnableCompression = job.EnableCompression,
             IsRecurring = job.IsRecurring,
             RecurInterval = job.RecurInterval,
             NextRun = job.NextRun,
@@ -413,6 +493,17 @@ public sealed class SchedulerService : IDisposable
                 File.Move(tmpPath, JobsPath);
         }
         catch { }
+    }
+
+    /// <summary>Builds a timestamped archive filename for a compressed scheduled job run.</summary>
+    private static string BuildArchiveName(string jobName)
+    {
+        var safe = string.Concat(jobName.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        // Windows rejects filenames ending in '.' or whitespace — strip those before appending the
+        // timestamp so a job like "Nightly ." doesn't produce a path Explorer can't open.
+        safe = safe.TrimEnd(' ', '.', '\t');
+        if (string.IsNullOrWhiteSpace(safe)) safe = "backup";
+        return $"{safe}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.zip";
     }
 
     private static string FormatBytes(long bytes)

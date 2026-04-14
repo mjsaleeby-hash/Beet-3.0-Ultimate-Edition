@@ -40,6 +40,9 @@ public partial class MainWindow : Window
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private bool _isReallyClosing;
 
+    // Transfer progress popup (non-modal, docks to the right of the main window)
+    private TransferProgressDialog? _progressDialog;
+
     public MainWindow(MainViewModel viewModel)
     {
         InitializeComponent();
@@ -72,6 +75,10 @@ public partial class MainWindow : Window
             ContextMenuStrip = contextMenu,
         };
         _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+
+        // Register tray icon with the global toast notifier so viewmodels/services
+        // can fire completion toasts without needing a reference to the window.
+        Services.ToastNotifier.TrayIcon = _trayIcon;
     }
 
     private void RestoreFromTray()
@@ -118,6 +125,41 @@ public partial class MainWindow : Window
             SplitTopPathColumn.Width = width;
             SplitBottomPathColumn.Width = width;
         }
+        else if (e.PropertyName == nameof(MainViewModel.IsTransferring) && Vm.IsTransferring)
+        {
+            ShowTransferProgressDialog();
+        }
+    }
+
+    /// <summary>
+    /// Opens the docked circular-progress popup for the active transfer.
+    /// The popup is non-modal and can be closed without cancelling the transfer.
+    /// </summary>
+    private void ShowTransferProgressDialog()
+    {
+        // Reuse the existing dialog only if it's still healthy. A prior transfer's dialog may be
+        // mid-close (IsShuttingDown) at the moment a brand-new transfer starts — Show() on a
+        // closing window throws, so discard and build fresh in that case.
+        if (_progressDialog != null && _progressDialog.IsLoaded && !_progressDialog.IsShuttingDown)
+        {
+            try
+            {
+                // User may have hidden it with the X — just bring it back up.
+                _progressDialog.Show();
+                _progressDialog.Activate();
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                // Lost the race — the dialog began closing between the check and Show(). Fall through
+                // to building a new one.
+                _progressDialog = null;
+            }
+        }
+
+        _progressDialog = new TransferProgressDialog(Vm, this);
+        _progressDialog.Closed += (_, _) => _progressDialog = null;
+        _progressDialog.Show();
     }
 
     // -- Tree selection --
@@ -423,6 +465,64 @@ public partial class MainWindow : Window
 
         foreach (var item in items)
             Vm.DeleteItemCommand.Execute(item);
+    }
+
+    // -- Context menu: extract archive --
+    private async void ExtractHere_Click(object sender, RoutedEventArgs e)
+    {
+        var item = GetSelectedArchive();
+        if (item != null) await Vm.ExtractHereCommand.ExecuteAsync(item);
+    }
+
+    private async void ExtractTo_Click(object sender, RoutedEventArgs e)
+    {
+        var item = GetSelectedArchive();
+        if (item != null) await Vm.ExtractToCommand.ExecuteAsync(item);
+    }
+
+    /// <summary>
+    /// Resolves the context-menu selection against whichever pane fired it and sanity-checks that
+    /// it's a plausible archive before handing off to the VM. Early guard so the user sees the
+    /// right error from the ribbon side (e.g. "select a .zip first") instead of a generic failure.
+    /// </summary>
+    private FileSystemItem? GetSelectedArchive()
+    {
+        var item = TopPaneList.SelectedItem as FileSystemItem
+                ?? SplitTopList.SelectedItem as FileSystemItem
+                ?? SplitBottomList.SelectedItem as FileSystemItem;
+        return item;
+    }
+
+    // -- Context menu: previous versions --
+    private void PreviousVersions_Click(object sender, RoutedEventArgs e)
+    {
+        // Pull selection from whichever pane triggered the menu — matches how Open/Copy/etc. work.
+        var item = TopPaneList.SelectedItem as FileSystemItem
+                ?? SplitTopList.SelectedItem as FileSystemItem
+                ?? SplitBottomList.SelectedItem as FileSystemItem;
+        if (item == null) return;
+
+        if (item.IsDirectory)
+        {
+            MessageBox.Show(this, "Previous versions are only tracked for files, not folders.",
+                "Previous Versions", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // Early short-circuit: if the file isn't under a .versions-enabled tree there will be
+        // nothing to show. Skip the dialog in that case and tell the user why.
+        if (BeetsBackup.Services.VersioningService.FindVersionsRoot(item.FullPath) == null)
+        {
+            MessageBox.Show(this,
+                "No version history exists for this file.\n\n" +
+                "Previous Versions is only populated when a file has been overwritten by a backup " +
+                "job that had versioning enabled.",
+                "Previous Versions", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dialog = new PreviousVersionsDialog(item.FullPath) { Owner = this };
+        dialog.ShowDialog();
     }
 
     private void Rename_Click(object sender, RoutedEventArgs e)

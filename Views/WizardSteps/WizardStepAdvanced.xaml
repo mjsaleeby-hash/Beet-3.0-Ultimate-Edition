@@ -54,6 +54,43 @@
             </StackPanel>
         </Border>
 
+        <!-- Versioning -->
+        <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="14,12"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,0,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <CheckBox IsChecked="{Binding EnableVersioning}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="Keep previous versions of overwritten files" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="26,4,0,0">
+                    Before a file is overwritten at the destination, the current copy is archived to a hidden .versions folder at the destination root. Useful if you want a safety net to recover from accidental changes.
+                </TextBlock>
+                <StackPanel Orientation="Horizontal" Margin="26,8,0,0"
+                            Visibility="{Binding EnableVersioning, Converter={StaticResource BoolVis}}">
+                    <TextBlock Text="Keep this many versions per file:" VerticalAlignment="Center" Margin="0,0,8,0"
+                               Foreground="{DynamicResource PrimaryTextBrush}"/>
+                    <TextBox Text="{Binding MaxVersions, UpdateSourceTrigger=PropertyChanged}"
+                             Width="52" VerticalAlignment="Center" Padding="6,4"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Compression -->
+        <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="14,12"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,0,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <CheckBox IsChecked="{Binding EnableCompression}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="Compress this backup into a single .zip archive" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="26,4,0,0">
+                    Each run produces a timestamped .zip file at the destination. Saves space but the backup can't be browsed directly in Windows Explorer without unzipping. Mutually exclusive with versioning.
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
         <!-- Exclusions -->
         <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="14,12"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,0,8">

@@ -36,6 +36,20 @@ public partial class ScheduleDialog : Window
             if (confirm != MessageBoxResult.Yes) return;
         }
 
+        // Pre-flight disk-space gate: if the last estimate flagged insufficient room,
+        // require an explicit "proceed anyway" before persisting the schedule.
+        if (_vm.IsInsufficientSpace)
+        {
+            var preview = _vm.LastDiskSpacePreview;
+            var body =
+                $"The estimated backup size ({preview?.RequiredDisplay}) is larger than the free space " +
+                $"available on {preview?.DriveRoot} ({preview?.AvailableDisplay}).\n\n" +
+                "If you schedule this job, it will likely run out of space partway through. Continue anyway?";
+            var spaceConfirm = MessageBox.Show(body,
+                "Not Enough Disk Space", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (spaceConfirm != MessageBoxResult.Yes) return;
+        }
+
         Result = _vm.BuildJob();
         DialogResult = true;
     }

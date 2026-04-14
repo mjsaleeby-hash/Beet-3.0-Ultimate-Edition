@@ -15,6 +15,19 @@ public partial class WizardStepAdvancedViewModel : ObservableObject
     [ObservableProperty] private bool _enableThrottle;
     [ObservableProperty] private string _selectedThrottleSpeed = "10 MB/s";
     [ObservableProperty] private string _newExclusion = string.Empty;
+    [ObservableProperty] private bool _enableVersioning;
+    [ObservableProperty] private int _maxVersions = 5;
+    [ObservableProperty] private bool _enableCompression;
+
+    /// <summary>Versioning and compression are mutually exclusive — compressed jobs produce a single archive with no in-place overwrites to version.</summary>
+    partial void OnEnableCompressionChanged(bool value)
+    {
+        if (value) EnableVersioning = false;
+    }
+    partial void OnEnableVersioningChanged(bool value)
+    {
+        if (value) EnableCompression = false;
+    }
 
     public ObservableCollection<string> ExclusionFilters { get; } = new();
     [ObservableProperty] private string? _selectedExclusion;

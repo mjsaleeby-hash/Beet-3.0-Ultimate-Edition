@@ -1,5 +1,6 @@
 using BeetsBackup.Models;
 using System.IO;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using Microsoft.VisualBasic.FileIO;
 using RecycleOption = Microsoft.VisualBasic.FileIO.RecycleOption;
@@ -72,10 +73,16 @@ public sealed class TransferService
         IProgress<string>? progress = null, IProgress<int>? progressPercent = null,
         CancellationToken cancellationToken = default, ManualResetEventSlim? pauseToken = null,
         bool verifyChecksums = false, IReadOnlyList<string>? exclusions = null,
-        long throttleBytesPerSec = 0)
+        long throttleBytesPerSec = 0, VersioningOptions? versioning = null)
     {
         var result = new TransferResult();
         var sourceList = sourcePaths.ToList();
+
+        // CopyAsync owns the destination root — always overwrite whatever the caller supplied so
+        // the archiver can never resolve a stale or wrong path. Previously this was conditional
+        // on IsNullOrEmpty, which worked today only because every caller happens to leave it blank.
+        if (versioning != null && versioning.Enabled)
+            versioning.DestinationRoot = destinationDir;
 
         await Task.Run(() =>
         {
@@ -90,7 +97,7 @@ public sealed class TransferService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet, throttleBytesPerSec, vssSession);
+                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet, throttleBytesPerSec, vssSession, versioning);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -123,6 +130,308 @@ public sealed class TransferService
         }, cancellationToken);
 
         return result;
+    }
+
+    /// <summary>
+    /// Compresses all source paths into a single <c>.zip</c> archive placed in <paramref name="destinationDir"/>.
+    /// Honors exclusion filters; supports pause/cancel between file entries.
+    /// </summary>
+    /// <param name="sourcePaths">Files or directories to add to the archive.</param>
+    /// <param name="destinationDir">Folder in which to create the archive file.</param>
+    /// <param name="archiveName">File name for the archive, e.g. <c>"MyBackup_2026-04-13_14-30-22.zip"</c>.</param>
+    /// <param name="exclusions">Optional name/extension patterns to skip (e.g. <c>"*.tmp"</c>, <c>"Thumbs.db"</c>).</param>
+    /// <param name="cancellationToken">Cancellation token for stopping the archive operation.</param>
+    /// <param name="pauseToken">Pause gate checked between entries.</param>
+    /// <param name="progress">Optional progress callback for per-file status strings.</param>
+    /// <param name="progressPercent">Optional percent callback (0-100) for the overall archive progress.</param>
+    /// <returns>A <see cref="TransferResult"/> with file counts and bytes compressed.</returns>
+    public async Task<TransferResult> CompressAsync(IEnumerable<string> sourcePaths, string destinationDir,
+        string archiveName,
+        IReadOnlyList<string>? exclusions = null,
+        CancellationToken cancellationToken = default,
+        ManualResetEventSlim? pauseToken = null,
+        IProgress<string>? progress = null,
+        IProgress<int>? progressPercent = null)
+    {
+        var result = new TransferResult();
+        var sourceList = sourcePaths.ToList();
+
+        await Task.Run(() =>
+        {
+            Directory.CreateDirectory(destinationDir);
+
+            // Disambiguate if a prior archive with this exact name already exists — never silently
+            // clobber user data. Counter suffix: "name.zip" → "name (2).zip" → "name (3).zip" …
+            var archivePath = GetUniqueFilePath(Path.Combine(destinationDir, archiveName));
+
+            // Rough free-space check based on uncompressed size (conservative — real archive will be smaller)
+            CheckFreeSpace(sourceList, destinationDir);
+
+            var excludeSet = exclusions != null && exclusions.Count > 0 ? exclusions : null;
+            result.TotalFiles = sourceList.Sum(s => CountFiles(s, excludeSet));
+
+            // Warn loudly if the archive will be empty — silently producing a 22-byte zip would
+            // leave the user believing their backup succeeded when in reality nothing was captured
+            // (bad paths, everything excluded, or permissions denied across the board).
+            if (result.TotalFiles == 0)
+            {
+                FileLogger.Warn($"Compress: zero eligible files across {sourceList.Count} source(s) — archive will be empty.");
+                progress?.Report("Warning: no eligible files to compress — the archive will be empty.");
+            }
+
+            // Pre-compute top-level entry prefixes, disambiguating duplicates. When two sources share a
+            // base name (e.g. D:\A\Data and E:\B\Data) the zip would otherwise produce colliding entries.
+            var usedPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var prefixes = new string[sourceList.Count];
+            for (int i = 0; i < sourceList.Count; i++)
+                prefixes[i] = ReserveUniquePrefix(Path.GetFileName(sourceList[i].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)), usedPrefixes);
+
+            using var archiveStream = File.Create(archivePath);
+            using var zip = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: false);
+
+            for (int i = 0; i < sourceList.Count; i++)
+            {
+                var source = sourceList[i];
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    // Pass the pre-reserved unique prefix; AddToArchive no longer derives it from the leaf name.
+                    AddToArchive(zip, source, prefixes[i], excludeSet, result, progress, progressPercent, pauseToken, cancellationToken, isTopLevel: true);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    result.FilesFailed++;
+                    result.AddFileError(source, ex.Message);
+                    FileLogger.LogException($"Compress failed: {source}", ex);
+                    progress?.Report($"ERROR: {Path.GetFileName(source)} — {ex.Message}");
+                }
+            }
+        }, cancellationToken);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Recursively adds a file or directory to the open <see cref="ZipArchive"/>.
+    /// </summary>
+    /// <param name="isTopLevel">
+    /// When <c>true</c>, <paramref name="entryPrefix"/> is treated as the already-disambiguated entry name
+    /// for this source (no leaf name is appended). Subsequent recursive calls pass <c>false</c> so the
+    /// normal "prefix/leaf" composition applies for nested entries.
+    /// </param>
+    private static void AddToArchive(ZipArchive zip, string sourcePath, string entryPrefix,
+        IReadOnlyList<string>? exclusions, TransferResult result,
+        IProgress<string>? progress, IProgress<int>? progressPercent,
+        ManualResetEventSlim? pauseToken, CancellationToken ct,
+        bool isTopLevel = false)
+    {
+        pauseToken?.Wait(ct);
+        ct.ThrowIfCancellationRequested();
+
+        var name = Path.GetFileName(sourcePath);
+        if (!isTopLevel && exclusions != null && IsExcluded(name, exclusions))
+        {
+            result.FilesSkipped++;
+            // Still advance the percent bar so users with heavy exclusion lists (e.g. huge
+            // node_modules trees filtered out) don't see progress appear to stall.
+            if (result.TotalFiles > 0)
+            {
+                var done = result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.FilesLocked;
+                progressPercent?.Report(Math.Min((int)Math.Round(done * 100.0 / result.TotalFiles), 100));
+            }
+            return;
+        }
+
+        var attr = File.GetAttributes(sourcePath);
+        if (attr.HasFlag(FileAttributes.Directory))
+        {
+            // For the top-level call the prefix is already the reserved unique name; otherwise compose.
+            var dirEntry = isTopLevel
+                ? entryPrefix
+                : (string.IsNullOrEmpty(entryPrefix)
+                    ? (string.IsNullOrEmpty(name) ? string.Empty : name)
+                    : (string.IsNullOrEmpty(name) ? entryPrefix : $"{entryPrefix}/{name}"));
+
+            foreach (var file in Directory.EnumerateFiles(sourcePath, "*", ShallowEnumOptions))
+            {
+                try { AddToArchive(zip, file, dirEntry, exclusions, result, progress, progressPercent, pauseToken, ct); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    result.FilesFailed++;
+                    result.AddFileError(file, ex.Message);
+                    FileLogger.LogException($"Compress file failed: {file}", ex);
+                }
+            }
+            foreach (var dir in Directory.EnumerateDirectories(sourcePath, "*", ShallowEnumOptions))
+            {
+                try { AddToArchive(zip, dir, dirEntry, exclusions, result, progress, progressPercent, pauseToken, ct); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    result.DirectoriesFailed++;
+                    result.AddFileError(dir, ex.Message);
+                    FileLogger.LogException($"Compress directory failed: {dir}", ex);
+                }
+            }
+        }
+        else
+        {
+            // Top-level file source: the reserved prefix IS the entry name (already unique).
+            // Otherwise compose "prefix/leaf".
+            var entryName = isTopLevel
+                ? entryPrefix
+                : (string.IsNullOrEmpty(entryPrefix) ? name : $"{entryPrefix}/{name}");
+            try
+            {
+                var entry = zip.CreateEntryFromFile(sourcePath, entryName, CompressionLevel.Optimal);
+                result.FilesCopied++;
+                result.BytesTransferred += new FileInfo(sourcePath).Length;
+                progress?.Report($"Compressed: {name}");
+            }
+            catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+            {
+                result.FilesLocked++;
+                result.AddFileError(sourcePath, "File is in use");
+                FileLogger.Warn($"File locked during compression: {sourcePath}");
+            }
+
+            if (result.TotalFiles > 0)
+            {
+                var done = result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.FilesLocked;
+                progressPercent?.Report(Math.Min((int)Math.Round(done * 100.0 / result.TotalFiles), 100));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts a single <c>.zip</c> archive to a destination folder. Creates the destination if
+    /// it doesn't exist. Protects against "zip slip" attacks by rejecting any entry whose resolved
+    /// full path falls outside <paramref name="destinationDir"/>.
+    /// </summary>
+    /// <param name="archivePath">Full path to the <c>.zip</c> file to extract.</param>
+    /// <param name="destinationDir">Target folder. Will be created if missing.</param>
+    /// <param name="overwriteExisting">
+    /// When <c>true</c>, existing files at the destination are overwritten; when <c>false</c> they
+    /// are skipped and counted under <see cref="TransferResult.FilesSkipped"/>.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token for stopping extraction mid-archive.</param>
+    /// <param name="pauseToken">Pause gate checked between entries.</param>
+    /// <param name="progress">Optional progress callback for per-file status strings.</param>
+    /// <param name="progressPercent">Optional percent callback (0-100) for the overall extract progress.</param>
+    /// <returns>A <see cref="TransferResult"/> with counts of extracted / skipped / failed entries.</returns>
+    public async Task<TransferResult> ExtractAsync(string archivePath, string destinationDir,
+        bool overwriteExisting = false,
+        CancellationToken cancellationToken = default,
+        ManualResetEventSlim? pauseToken = null,
+        IProgress<string>? progress = null,
+        IProgress<int>? progressPercent = null)
+    {
+        var result = new TransferResult();
+
+        await Task.Run(() =>
+        {
+            Directory.CreateDirectory(destinationDir);
+            // Canonicalize once so every zip-slip check compares apples to apples.
+            var destRootFull = Path.GetFullPath(destinationDir)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+
+            using var archiveStream = File.OpenRead(archivePath);
+            using var zip = new ZipArchive(archiveStream, ZipArchiveMode.Read);
+
+            // Count only file entries (ones with a non-empty name) so the percent denominator
+            // ignores pure-directory markers.
+            var fileEntries = zip.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            result.TotalFiles = fileEntries.Count;
+
+            foreach (var entry in fileEntries)
+            {
+                pauseToken?.Wait(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Resolve the entry's target path defensively:
+                //  • reject absolute-rooted entries
+                //  • reject any path that escapes destinationDir via "..\" segments
+                //  • normalize via GetFullPath before the containment check
+                var normalized = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+                if (Path.IsPathRooted(normalized))
+                {
+                    result.FilesFailed++;
+                    result.AddFileError(entry.FullName, "Rejected: absolute path in archive entry.");
+                    FileLogger.Warn($"Extract: refused rooted entry: {entry.FullName}");
+                    ReportPercent(result, progressPercent);
+                    continue;
+                }
+
+                string targetPath;
+                try
+                {
+                    targetPath = Path.GetFullPath(Path.Combine(destinationDir, normalized));
+                }
+                catch (Exception ex)
+                {
+                    result.FilesFailed++;
+                    result.AddFileError(entry.FullName, $"Unresolvable path: {ex.Message}");
+                    ReportPercent(result, progressPercent);
+                    continue;
+                }
+
+                if (!targetPath.StartsWith(destRootFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Zip-slip: entry tried to escape the destination tree (e.g. "..\..\windows\evil").
+                    result.FilesFailed++;
+                    result.AddFileError(entry.FullName, "Rejected: entry escapes destination folder.");
+                    FileLogger.Warn($"Extract: zip-slip blocked — {entry.FullName} → {targetPath}");
+                    ReportPercent(result, progressPercent);
+                    continue;
+                }
+
+                try
+                {
+                    var targetDir = Path.GetDirectoryName(targetPath);
+                    if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
+
+                    if (File.Exists(targetPath) && !overwriteExisting)
+                    {
+                        result.FilesSkipped++;
+                        progress?.Report($"Skipped (exists): {entry.Name}");
+                        ReportPercent(result, progressPercent);
+                        continue;
+                    }
+
+                    entry.ExtractToFile(targetPath, overwrite: overwriteExisting);
+                    result.FilesCopied++;
+                    result.BytesTransferred += entry.Length;
+                    progress?.Report($"Extracted: {entry.Name}");
+                }
+                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+                {
+                    result.FilesLocked++;
+                    result.AddFileError(targetPath, "File is in use");
+                    FileLogger.Warn($"Extract locked: {targetPath}");
+                }
+                catch (Exception ex)
+                {
+                    result.FilesFailed++;
+                    result.AddFileError(entry.FullName, ex.Message);
+                    FileLogger.LogException($"Extract failed: {entry.FullName}", ex);
+                }
+
+                ReportPercent(result, progressPercent);
+            }
+        }, cancellationToken);
+
+        return result;
+    }
+
+    /// <summary>Shared progress-percent emission for <see cref="ExtractAsync"/>.</summary>
+    private static void ReportPercent(TransferResult result, IProgress<int>? progressPercent)
+    {
+        if (result.TotalFiles <= 0) return;
+        var done = result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.FilesLocked;
+        progressPercent?.Report(Math.Min((int)Math.Round(done * 100.0 / result.TotalFiles), 100));
     }
 
     public async Task<TransferResult> MoveAsync(IEnumerable<string> sourcePaths, string destinationDir,
@@ -168,7 +477,8 @@ public sealed class TransferService
         TransferMode mode, IProgress<string>? progress, IProgress<int>? progressPercent,
         TransferResult result, CancellationToken ct, ManualResetEventSlim? pauseToken,
         bool verifyChecksums, IReadOnlyList<string>? exclusions = null,
-        long throttleBytesPerSec = 0, VssSnapshotService? vss = null)
+        long throttleBytesPerSec = 0, VssSnapshotService? vss = null,
+        VersioningOptions? versioning = null)
     {
         pauseToken?.Wait(ct);
         ct.ThrowIfCancellationRequested();
@@ -209,7 +519,7 @@ public sealed class TransferService
             {
                 try
                 {
-                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss);
+                    CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss, versioning);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -239,7 +549,7 @@ public sealed class TransferService
             {
                 try
                 {
-                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss);
+                    CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss, versioning);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
@@ -279,7 +589,16 @@ public sealed class TransferService
                         var destInfo = new FileInfo(destFile);
                         if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
                         {
-                            File.Delete(destFile);
+                            // If versioning was requested and archiving fails, DO NOT destroy the
+                            // destination — the user asked us to protect it. Record a failure and skip.
+                            if (!VersioningService.ArchiveBeforeOverwrite(destFile, versioning))
+                            {
+                                result.FilesFailed++;
+                                result.AddFileError(destFile, "Could not archive existing version; destination left untouched.");
+                                progress?.Report($"ERROR: {name} — version archive failed, keeping existing");
+                                break;
+                            }
+                            if (File.Exists(destFile)) File.Delete(destFile);
                             CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
                             progress?.Report($"Updated (changed): {name}");
                         }
@@ -297,7 +616,14 @@ public sealed class TransferService
                         break;
 
                     case TransferMode.Replace:
-                        File.Delete(destFile);
+                        if (!VersioningService.ArchiveBeforeOverwrite(destFile, versioning))
+                        {
+                            result.FilesFailed++;
+                            result.AddFileError(destFile, "Could not archive existing version; destination left untouched.");
+                            progress?.Report($"ERROR: {name} — version archive failed, keeping existing");
+                            break;
+                        }
+                        if (File.Exists(destFile)) File.Delete(destFile);
                         CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
                         progress?.Report($"Replaced: {name}");
                         break;
@@ -366,8 +692,11 @@ public sealed class TransferService
                     catch (Exception vssEx)
                     {
                         FileLogger.Warn($"VSS fallback failed for {source}: {vssEx.Message}");
-                        // Re-throw the original sharing violation so CopyItem's catch handles it
-                        throw ioEx;
+                        // Re-throw the original sharing violation so CopyItem's catch handles it.
+                        // Use ExceptionDispatchInfo to preserve the original stack trace rather than
+                        // `throw ioEx;` which resets it and makes the root cause unloggable.
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ioEx).Throw();
+                        throw; // Unreachable, but the compiler needs it for definite-assignment analysis.
                     }
                 }
 
@@ -537,6 +866,11 @@ public sealed class TransferService
         {
             ct.ThrowIfCancellationRequested();
             var name = Path.GetFileName(destSub);
+
+            // Never touch the versioning archive during mirror cleanup
+            if (name.Equals(VersioningOptions.VersionsFolderName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
             var sourceSub = Path.Combine(sourceDir, name);
             if (Directory.Exists(sourceSub))
             {
@@ -622,16 +956,41 @@ public sealed class TransferService
             var attr = File.GetAttributes(path);
             if (attr.HasFlag(FileAttributes.Directory))
             {
-                var files = Directory.EnumerateFiles(path, "*", EnumOptions);
-                if (exclusions != null)
-                    files = files.Where(f => !IsExcluded(Path.GetFileName(f), exclusions));
-                return files.Count();
+                // Manual walk so we can honor DIRECTORY-name exclusions (e.g. "node_modules").
+                // Directory.EnumerateFiles with RecurseSubdirectories has no way to prune by name,
+                // so it would inflate TotalFiles when excluded directories contain many files, and
+                // the transfer progress percent would stall below 100%.
+                if (exclusions != null && exclusions.Count > 0)
+                    return CountFilesPruned(path, exclusions);
+
+                return Directory.EnumerateFiles(path, "*", EnumOptions).Count();
             }
             if (exclusions != null && IsExcluded(Path.GetFileName(path), exclusions))
                 return 0;
             return 1;
         }
         catch { return 0; }
+    }
+
+    /// <summary>Recursive file count that prunes whole directory subtrees whose name matches an exclusion.</summary>
+    private static int CountFilesPruned(string dir, IReadOnlyList<string> exclusions)
+    {
+        int total = 0;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(dir, "*", ShallowEnumOptions))
+            {
+                if (!IsExcluded(Path.GetFileName(file), exclusions))
+                    total++;
+            }
+            foreach (var sub in Directory.EnumerateDirectories(dir, "*", ShallowEnumOptions))
+            {
+                if (IsExcluded(Path.GetFileName(sub), exclusions)) continue;
+                total += CountFilesPruned(sub, exclusions);
+            }
+        }
+        catch { /* best-effort count */ }
+        return total;
     }
 
     private static bool IsExcluded(string name, IReadOnlyList<string> exclusions)
@@ -666,15 +1025,57 @@ public sealed class TransferService
             var attr = File.GetAttributes(path);
             if (attr.HasFlag(FileAttributes.Directory))
             {
-                var files = new DirectoryInfo(path).EnumerateFiles("*", EnumOptions);
-                if (exclusions != null)
-                    files = files.Where(f => !IsExcluded(f.Name, exclusions));
-                return files.Sum(f => { try { return f.Length; } catch { return 0L; } });
+                // Honor directory-name exclusions (same rationale as CountFiles).
+                if (exclusions != null && exclusions.Count > 0)
+                    return CalculateTotalSizePruned(path, exclusions);
+
+                return new DirectoryInfo(path).EnumerateFiles("*", EnumOptions)
+                    .Sum(f => { try { return f.Length; } catch { return 0L; } });
             }
             if (exclusions != null && IsExcluded(Path.GetFileName(path), exclusions))
                 return 0;
             return new FileInfo(path).Length;
         }
         catch { return 0; }
+    }
+
+    /// <summary>Recursive size total that prunes whole directory subtrees whose name matches an exclusion.</summary>
+    private static long CalculateTotalSizePruned(string dir, IReadOnlyList<string> exclusions)
+    {
+        long total = 0;
+        try
+        {
+            foreach (var fi in new DirectoryInfo(dir).EnumerateFiles("*", ShallowEnumOptions))
+            {
+                if (IsExcluded(fi.Name, exclusions)) continue;
+                try { total += fi.Length; } catch { /* skip unreadable */ }
+            }
+            foreach (var sub in new DirectoryInfo(dir).EnumerateDirectories("*", ShallowEnumOptions))
+            {
+                if (IsExcluded(sub.Name, exclusions)) continue;
+                total += CalculateTotalSizePruned(sub.FullName, exclusions);
+            }
+        }
+        catch { /* best-effort */ }
+        return total;
+    }
+
+    /// <summary>
+    /// Returns a unique archive-entry prefix derived from <paramref name="desired"/>, disambiguating
+    /// against names already reserved in <paramref name="used"/>. Falls back to a numbered suffix
+    /// ("Data (2)", "Data (3)", …) and reserves the chosen name before returning.
+    /// Used to prevent duplicate top-level entries when multiple sources share the same leaf name.
+    /// </summary>
+    private static string ReserveUniquePrefix(string desired, HashSet<string> used)
+    {
+        if (string.IsNullOrEmpty(desired)) desired = "root";
+
+        if (used.Add(desired)) return desired;
+
+        for (int i = 2; ; i++)
+        {
+            var candidate = $"{desired} ({i})";
+            if (used.Add(candidate)) return candidate;
+        }
     }
 }

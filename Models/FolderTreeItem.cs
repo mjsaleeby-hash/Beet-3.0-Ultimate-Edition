@@ -107,20 +107,28 @@ public sealed class FolderTreeItem : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Adds a dummy child so the TreeView shows an expander arrow before the node is expanded.
+    /// Adds a placeholder child so the TreeView shows an expander arrow before the node is expanded.
     /// </summary>
     private void AddPlaceholder()
     {
-        Children.Add(new FolderTreeItem("__placeholder__", dummy: true));
+        Children.Add(CreatePlaceholder());
         _hasPlaceholder = true;
     }
 
     /// <summary>
-    /// Private constructor for the dummy placeholder node.
+    /// Builds the lazy-load placeholder node — a throwaway child used only so the TreeView
+    /// shows an expander arrow before the real children are enumerated.
     /// </summary>
-    private FolderTreeItem(string name, bool dummy)
+    private static FolderTreeItem CreatePlaceholder() => new(placeholder: true);
+
+    /// <summary>
+    /// Private constructor for the placeholder node. The <paramref name="placeholder"/> parameter
+    /// exists purely to select this overload — it's the factory method that carries the intent.
+    /// </summary>
+    private FolderTreeItem(bool placeholder)
     {
-        Name = name;
+        _ = placeholder;
+        Name = "__placeholder__";
         FullPath = string.Empty;
         IsDrive = false;
         _hasPlaceholder = false;

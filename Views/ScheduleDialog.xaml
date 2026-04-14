@@ -104,6 +104,30 @@
                                VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </StackPanel>
 
+                <!-- Pre-flight disk-space message (populated after Estimate Size runs) -->
+                <Border CornerRadius="4" Padding="10,8" Margin="0,8,0,0"
+                        BorderThickness="1"
+                        Visibility="{Binding HasDiskSpaceMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="#F4F4F4"/>
+                            <Setter Property="BorderBrush" Value="#D0D0D0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsInsufficientSpace}" Value="True">
+                                    <Setter Property="Background" Value="#FBE5E5"/>
+                                    <Setter Property="BorderBrush" Value="#D84040"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsTightSpace}" Value="True">
+                                    <Setter Property="Background" Value="#FFF4D6"/>
+                                    <Setter Property="BorderBrush" Value="#D89A40"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding DiskSpaceMessage}" TextWrapping="Wrap"
+                               FontSize="12" Foreground="#1A1A1A"/>
+                </Border>
+
                 <!-- Destination -->
                 <TextBlock Text="Destination Folder / Drive" FontWeight="SemiBold" Margin="0,14,0,6"/>
                 <Grid>
@@ -197,6 +221,32 @@
                                   SelectedItem="{Binding SelectedThrottleSpeed}"
                                   MinWidth="110"/>
                     </StackPanel>
+                </StackPanel>
+
+                <!-- Versioning -->
+                <StackPanel Margin="0,10,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox IsChecked="{Binding EnableVersioning}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Keep previous versions of overwritten files" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Before a file is overwritten, its current copy is archived to a hidden .versions folder at the destination root."
+                               Foreground="#6B6B6B" FontSize="11" TextWrapping="Wrap" Margin="24,2,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="24,6,0,0"
+                                Visibility="{Binding EnableVersioning, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock Text="Keep this many versions per file:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Text="{Binding MaxVersions, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="52" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Compression -->
+                <StackPanel Margin="0,10,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox IsChecked="{Binding EnableCompression}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Compress this backup into a single .zip archive" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Each run produces a timestamped .zip at the destination. Incremental/mirror options do not apply in compressed mode."
+                               Foreground="#6B6B6B" FontSize="11" TextWrapping="Wrap" Margin="24,2,0,0"/>
                 </StackPanel>
 
                 <!-- Transfer Mode -->

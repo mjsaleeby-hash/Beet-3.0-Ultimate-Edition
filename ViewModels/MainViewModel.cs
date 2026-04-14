@@ -766,6 +766,179 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return dialog.ShowDialog() == true ? dialog.SelectedMode : null;
     }
 
+    /// <summary>
+    /// Archive Now — compresses the passed-in items (or the current top-pane folder if none provided)
+    /// into a single timestamped <c>.zip</c> at a user-chosen destination folder.
+    /// Shows completion via toast + status bar.
+    /// </summary>
+    /// <param name="selection">Items bound from the caller's ListView selection; may be <c>null</c> or empty.</param>
+    [RelayCommand]
+    private async Task ArchiveNowAsync(IList<FileSystemItem>? selection)
+    {
+        // Prefer the caller's selection; fall back to the current top-pane folder.
+        var items = (selection != null && selection.Count > 0)
+            ? selection.Select(i => i.FullPath).ToList()
+            : !string.IsNullOrEmpty(TopCurrentPath)
+                ? new List<string> { TopCurrentPath }
+                : new List<string>();
+
+        if (items.Count == 0)
+        {
+            System.Windows.MessageBox.Show(
+                "Select one or more files or folders to archive, or navigate into a folder first.",
+                "Archive Now", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var folderDialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select destination folder for the archive" };
+        if (folderDialog.ShowDialog() != true) return;
+        var destDir = folderDialog.FolderName;
+
+        var archiveName = $"archive_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.zip";
+
+        BeginTransfer();
+        StatusMessage = $"Compressing {items.Count} item(s)...";
+        FileLogger.Info($"Archive Now started: {items.Count} item(s) → {destDir}\\{archiveName}");
+        var progress = new Progress<string>(OnTransferProgress);
+        var progressPercent = new Progress<int>(OnTransferPercent);
+        try
+        {
+            var result = await _transfer.CompressAsync(items, destDir, archiveName,
+                exclusions: null,
+                cancellationToken: _transferCts!.Token,
+                pauseToken: _pauseGate,
+                progress: progress,
+                progressPercent: progressPercent);
+            var summary = FormatTransferResult(result);
+            FileLogger.Info($"Archive Now completed: {summary}");
+            EndTransfer($"Archive saved: {archiveName} — {summary}");
+            NotifyTransferCompletion("Archive complete", result);
+        }
+        catch (OperationCanceledException)
+        {
+            FileLogger.Warn("Archive Now cancelled by user");
+            EndTransfer("Archive stopped.");
+            ToastNotifier.Notify("Archive stopped", "Compression was cancelled.", ToastKind.Warning);
+        }
+        catch (InsufficientSpaceException ex)
+        {
+            FileLogger.Error($"Archive Now failed — insufficient space: {ex.Message}");
+            EndTransfer("Archive aborted — not enough space.");
+            ToastNotifier.Notify("Archive failed", "Not enough disk space on the destination drive.", ToastKind.Error);
+        }
+    }
+
+    /// <summary>
+    /// Extract Here — extracts a <c>.zip</c> into a sibling folder next to the archive.
+    /// Folder name is derived from the archive's base name; disambiguated with a counter if it already exists.
+    /// </summary>
+    [RelayCommand]
+    private async Task ExtractHereAsync(FileSystemItem? archive)
+    {
+        if (!TryResolveArchive(archive, out var archivePath)) return;
+
+        var parentDir = Path.GetDirectoryName(archivePath);
+        if (string.IsNullOrEmpty(parentDir))
+        {
+            System.Windows.MessageBox.Show(
+                "Cannot determine a folder next to this archive.",
+                "Extract", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        // Build a unique target folder: "name", "name (2)", "name (3)", …
+        // TryResolveArchive guarantees archivePath is non-null on the true branch.
+        var baseName = Path.GetFileNameWithoutExtension(archivePath!);
+        var destDir = Path.Combine(parentDir, baseName);
+        int counter = 2;
+        while (Directory.Exists(destDir) || File.Exists(destDir))
+        {
+            destDir = Path.Combine(parentDir, $"{baseName} ({counter})");
+            counter++;
+        }
+
+        await RunExtractAsync(archivePath!, destDir);
+    }
+
+    /// <summary>
+    /// Extract To… — prompts for a destination folder and extracts into it.
+    /// Existing files are skipped (safer default); users who want to overwrite can re-extract to an empty folder.
+    /// </summary>
+    [RelayCommand]
+    private async Task ExtractToAsync(FileSystemItem? archive)
+    {
+        if (!TryResolveArchive(archive, out var archivePath)) return;
+
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Select a folder to extract into" };
+        if (dlg.ShowDialog() != true) return;
+
+        await RunExtractAsync(archivePath!, dlg.FolderName);
+    }
+
+    /// <summary>
+    /// Validates that <paramref name="item"/> is a <c>.zip</c> file and resolves its full path.
+    /// Shows a user-facing message if validation fails. Kept as a single point of enforcement
+    /// so both Extract commands treat bad input identically.
+    /// </summary>
+    private bool TryResolveArchive(FileSystemItem? item, out string? archivePath)
+    {
+        archivePath = null;
+        if (item == null || item.IsDirectory || string.IsNullOrEmpty(item.FullPath))
+        {
+            System.Windows.MessageBox.Show(
+                "Select a .zip archive first.",
+                "Extract", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return false;
+        }
+        if (!item.FullPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            System.Windows.MessageBox.Show(
+                "Extract only works on .zip archives. This item doesn't appear to be one.",
+                "Extract", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return false;
+        }
+
+        archivePath = item.FullPath;
+        return true;
+    }
+
+    /// <summary>Shared transfer-lifecycle wrapper around <see cref="TransferService.ExtractAsync"/>.</summary>
+    private async Task RunExtractAsync(string archivePath, string destDir)
+    {
+        BeginTransfer();
+        StatusMessage = $"Extracting {Path.GetFileName(archivePath)}...";
+        FileLogger.Info($"Extract started: {archivePath} → {destDir}");
+        var progress = new Progress<string>(OnTransferProgress);
+        var progressPercent = new Progress<int>(OnTransferPercent);
+        try
+        {
+            var result = await _transfer.ExtractAsync(archivePath, destDir,
+                overwriteExisting: false,
+                cancellationToken: _transferCts!.Token,
+                pauseToken: _pauseGate,
+                progress: progress,
+                progressPercent: progressPercent);
+            var summary = FormatTransferResult(result);
+            FileLogger.Info($"Extract completed: {summary}");
+            EndTransfer($"Extracted to {destDir} — {summary}");
+            NotifyTransferCompletion("Extract complete", result);
+            // If the destination's parent is the current top-pane folder, re-navigate to refresh
+            // the listing so the extracted folder appears without the user manually hitting F5.
+            var parentOfDest = Path.GetDirectoryName(destDir);
+            if (!string.IsNullOrEmpty(parentOfDest) &&
+                string.Equals(TopCurrentPath, parentOfDest, StringComparison.OrdinalIgnoreCase))
+            {
+                await NavigateTop(parentOfDest);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            FileLogger.Warn("Extract cancelled by user");
+            EndTransfer("Extract stopped.");
+            ToastNotifier.Notify("Extract stopped", "Extraction was cancelled.", ToastKind.Warning);
+        }
+    }
+
     /// <summary>Copies selected items from the top pane to the bottom pane's current directory.</summary>
     [RelayCommand]
     private async Task CopyToBottomAsync(IList<FileSystemItem> items)
@@ -785,16 +958,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var summary = FormatTransferResult(result);
             FileLogger.Info($"Copy completed: {summary}");
             EndTransfer(summary);
+            NotifyTransferCompletion("Copy complete", result);
         }
         catch (OperationCanceledException)
         {
             FileLogger.Warn("Copy cancelled by user");
             EndTransfer("Transfer stopped.");
+            ToastNotifier.Notify("Copy stopped", "Transfer was cancelled.", ToastKind.Warning);
         }
         catch (InsufficientSpaceException ex)
         {
             FileLogger.Error($"Copy failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
+            ToastNotifier.Notify("Copy failed", "Not enough disk space on the destination drive.", ToastKind.Error);
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
@@ -818,16 +994,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var summary = FormatTransferResult(result);
             FileLogger.Info($"Copy completed: {summary}");
             EndTransfer(summary);
+            NotifyTransferCompletion("Copy complete", result);
         }
         catch (OperationCanceledException)
         {
             FileLogger.Warn("Copy cancelled by user");
             EndTransfer("Transfer stopped.");
+            ToastNotifier.Notify("Copy stopped", "Transfer was cancelled.", ToastKind.Warning);
         }
         catch (InsufficientSpaceException ex)
         {
             FileLogger.Error($"Copy failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
+            ToastNotifier.Notify("Copy failed", "Not enough disk space on the destination drive.", ToastKind.Error);
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
@@ -852,16 +1031,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var summary = FormatTransferResult(result);
             FileLogger.Info($"Move completed: {summary}");
             EndTransfer(summary);
+            NotifyTransferCompletion("Move complete", result);
         }
         catch (OperationCanceledException)
         {
             FileLogger.Warn("Move cancelled by user");
             EndTransfer("Transfer stopped.");
+            ToastNotifier.Notify("Move stopped", "Transfer was cancelled.", ToastKind.Warning);
         }
         catch (InsufficientSpaceException ex)
         {
             FileLogger.Error($"Move failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
+            ToastNotifier.Notify("Move failed", "Not enough disk space on the destination drive.", ToastKind.Error);
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
@@ -886,16 +1068,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var summary = FormatTransferResult(result);
             FileLogger.Info($"Move completed: {summary}");
             EndTransfer(summary);
+            NotifyTransferCompletion("Move complete", result);
         }
         catch (OperationCanceledException)
         {
             FileLogger.Warn("Move cancelled by user");
             EndTransfer("Transfer stopped.");
+            ToastNotifier.Notify("Move stopped", "Transfer was cancelled.", ToastKind.Warning);
         }
         catch (InsufficientSpaceException ex)
         {
             FileLogger.Error($"Move failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
+            ToastNotifier.Notify("Move failed", "Not enough disk space on the destination drive.", ToastKind.Error);
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
@@ -911,25 +1096,48 @@ public partial class MainViewModel : ObservableObject, IDisposable
         long throttle = job.ThrottleMBps * 1024L * 1024L;
         try
         {
-            var result = await _transfer.CopyAsync(
-                job.SourcePaths, job.DestinationPath, job.StripPermissions,
-                job.TransferMode, progress, progressPercent,
-                _transferCts!.Token, _pauseGate, job.VerifyChecksums,
-                exclusions: job.ExclusionFilters.Count > 0 ? job.ExclusionFilters : null,
-                throttleBytesPerSec: throttle);
+            var versioning = job.EnableVersioning
+                ? new VersioningOptions { Enabled = true, MaxVersions = job.MaxVersions }
+                : null;
+
+            TransferResult result;
+            if (job.EnableCompression)
+            {
+                result = await _transfer.CompressAsync(
+                    job.SourcePaths, job.DestinationPath,
+                    archiveName: $"{SanitizeName(job.Name)}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.zip",
+                    exclusions: job.ExclusionFilters.Count > 0 ? job.ExclusionFilters : null,
+                    cancellationToken: _transferCts!.Token,
+                    pauseToken: _pauseGate,
+                    progress: progress,
+                    progressPercent: progressPercent);
+            }
+            else
+            {
+                result = await _transfer.CopyAsync(
+                    job.SourcePaths, job.DestinationPath, job.StripPermissions,
+                    job.TransferMode, progress, progressPercent,
+                    _transferCts!.Token, _pauseGate, job.VerifyChecksums,
+                    exclusions: job.ExclusionFilters.Count > 0 ? job.ExclusionFilters : null,
+                    throttleBytesPerSec: throttle,
+                    versioning: versioning);
+            }
             var summary = FormatTransferResult(result);
             FileLogger.Info($"Wizard backup completed: {summary}");
             EndTransfer(summary);
+            NotifyTransferCompletion($"Backup complete: {job.Name}", result);
         }
         catch (OperationCanceledException)
         {
             FileLogger.Warn("Wizard backup cancelled by user");
             EndTransfer("Transfer stopped.");
+            ToastNotifier.Notify($"Backup stopped: {job.Name}", "Transfer was cancelled.", ToastKind.Warning);
         }
         catch (InsufficientSpaceException ex)
         {
             FileLogger.Error($"Wizard backup failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
+            ToastNotifier.Notify($"Backup failed: {job.Name}", "Not enough disk space on the destination drive.", ToastKind.Error);
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
@@ -1018,6 +1226,29 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Owner = System.Windows.Application.Current.MainWindow
         };
         dialog.ShowDialog();
+    }
+
+    /// <summary>Strips invalid filename characters from a job name so it can be embedded in an archive filename.</summary>
+    private static string SanitizeName(string name)
+    {
+        var safe = string.Concat(name.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        // Windows rejects filenames ending in '.' or whitespace — strip those too.
+        safe = safe.TrimEnd(' ', '.', '\t');
+        return string.IsNullOrWhiteSpace(safe) ? "backup" : safe;
+    }
+
+    /// <summary>
+    /// Fires a Windows toast notification summarizing the outcome of a completed transfer.
+    /// Warning kind if there were any per-file errors; otherwise success.
+    /// </summary>
+    private static void NotifyTransferCompletion(string title, TransferResult result)
+    {
+        var totalFailed = result.FilesFailed + result.DirectoriesFailed + result.DiskFullErrors + result.FilesLocked + result.ChecksumMismatches;
+        var body = totalFailed > 0
+            ? $"{result.FilesCopied} copied, {totalFailed} failed."
+            : $"{result.FilesCopied} copied, {result.FilesSkipped} skipped.";
+        var kind = totalFailed > 0 ? ToastKind.Warning : ToastKind.Success;
+        ToastNotifier.Notify(title, body, kind);
     }
 
     /// <summary>Builds a human-readable summary string from a <see cref="TransferResult"/>.</summary>
