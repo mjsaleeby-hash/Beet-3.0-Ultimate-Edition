@@ -14,6 +14,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 - **Single-pane mode** with full drag-and-drop support
 - **Drive browser** with circular usage rings showing used, total, and free space per drive
 - **Copy, cut, paste, delete** via right-click context menus
+- **Previous Versions** — right-click any file to open a timestamped list of archived copies; double-click an entry to restore it; delete individual archived versions; populated automatically by the versioning system whenever a file would be overwritten
 - **Open in Explorer** — right-click any file or folder to open its location in Windows Explorer (folders open directly; files are pre-selected in Explorer)
 - **Drag-and-drop transfers** in both single and split pane modes
 - **File and folder rename** via right-click context menu
@@ -36,17 +37,23 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 - **Pause, resume, and stop** controls during active transfers
 - **Transfer throttling** — "Limit Speed" toolbar toggle caps bandwidth at 10 MB/s (bound to `ThrottleTransfer` in `MainViewModel`); scheduled jobs additionally support a per-job speed picker (1–100 MB/s) in the schedule dialog
 - **VSS Shadow Copy fallback** — locked or in-use files (e.g. open Outlook PSTs, live database files) are retried 3 times with 500 ms delays; if still inaccessible, a Volume Shadow Copy snapshot is created via P/Invoke to `vssapi.dll` (no external packages) so the file can be read without interrupting the owning process; snapshots are cached per volume for the duration of the transfer session and cleaned up automatically afterward; the transfer summary reports how many files were copied via shadow copy
-- **Insufficient disk space detection** with a warning before transfer begins
+- **Pre-flight disk space preview** — before every backup, `DiskSpaceService` calculates required vs. available space; result shown as a colored banner (red = Insufficient, amber = Tight) in the wizard summary and schedule dialog; Insufficient status requires confirmation before the job is committed; applies a 0.7× estimate for compressed (zip) jobs; UNC/network destinations return a non-fatal Unknown status
+- **Extract archive** — right-click any `.zip` file and choose **Extract Here** (sibling folder) or **Extract To…** (folder picker); full zip-slip protection; cancel/pause/progress support; sharing-violation handling
 - **Overall progress bar with ETA** displayed in the status bar
+- **Transfer progress dialog** — docked circular progress indicator shown during active transfers; DPI-aware multi-monitor positioning
 
 ### Scheduled Backups
 
 - **One-time or recurring** schedules (Daily, Weekly, Every 6 Hours, Every 12 Hours)
 - **Jobs persist to disk** and survive app restarts
+- **Windows Task Scheduler integration** — each job is registered as a Windows Task (`BeetsBackup_{Guid}`) so backups run even if the app is not open; past-due times are bumped to now + 1 min; the in-process `PeriodicTimer` is kept as a safety net when the app is open
+- **Headless CLI mode** — Windows Task Scheduler launches the app with `--run-job {guid}`; the app runs the job with no window and exits with code 0 (success), 1 (not found), or 2 (failed)
 - **Missed backup detection** — on startup, detects jobs that were missed while the app was closed and prompts to run them immediately or skip
-- **Runs in the background** via a `PeriodicTimer` while the app is open
 - **Scheduler errors surfaced in status bar** — job failures and scheduler loop errors are reported immediately in the main window status bar
-- **Per-job settings** for transfer mode, permission stripping, checksum verification, and exclusion filters
+- **Toast notifications** — Windows balloon-tip notifications on job completion or failure (Success / Warning / Error)
+- **Per-job settings** for transfer mode, permission stripping, checksum verification, exclusion filters, versioning, and compression
+- **File versioning** — enable per job to archive existing destination files before overwriting; configurable maximum number of kept versions (default 5); versioning and compression are mutually exclusive
+- **Compression** — compress backup output to `.zip` per job; mutually exclusive with versioning
 - **Exclusion filters** — skip files by extension pattern (e.g. `*.tmp`, `*.log`) or exact name (e.g. `Thumbs.db`, `node_modules`)
 - **Backup size estimation** — "Estimate Size" button calculates total source size and file count respecting active filters; auto-runs at job start
 - **Pause / resume** for running scheduled jobs via the log dialog
@@ -124,33 +131,46 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 7. **Choose a transfer mode** (Skip Existing, Keep Both, Replace, or Mirror) before starting a transfer. Mirror mode will delete destination files not in the source — confirm the warning before proceeding.
 8. **Enable checksum verification** or **permission stripping** via the toolbar checkboxes as needed (visible in Advanced toolbar mode).
 9. **Monitor progress** in the status bar, and use pause, resume, or stop controls during transfers. Enable the **"Limit Speed"** toolbar toggle to cap bandwidth at 10 MB/s when transfers should not saturate the drive. Locked files are handled automatically via a VSS Shadow Copy fallback — no action required; the transfer summary reports how many files required it.
-10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, permission options, checksum verification, and exclusion filters. Use "Estimate Size" to preview how much data will be transferred.
+10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, permission options, checksum verification, exclusion filters, versioning, and compression. Use "Estimate Size" to preview how much data will be transferred and see the disk space forecast before committing.
 11. **Review backup history** in the log dialog to see past and active operations. Use **"View Errors"** on any entry with failures to see which files failed and why. Use **"Open Log Folder"** for direct access to all log files. Export to CSV if needed.
+12. **Restore previous versions** — right-click any file and choose **Previous Versions…** to browse and restore archived copies created automatically by the versioning system.
+13. **Extract archives** — right-click a `.zip` file and choose **Extract Here** or **Extract To…** to expand it directly from the file browser.
 
-> **Tip:** The app must remain running for scheduled backups to execute. Enable **"Launch at Startup"** in the Options menu to have the app start automatically at login — it will hide to the system tray so it stays out of the way, and will open normally if any scheduled backups were missed. To fully quit the app, right-click the tray icon and choose **Quit** — closing the window only hides it.
+> **Tip:** Scheduled backups are registered with **Windows Task Scheduler**, so they run even if the app is not open. If the app is running, jobs execute in-process as well. Enable **"Launch at Startup"** in the Options menu to have the app start automatically at login — it will hide to the system tray so it stays out of the way, and will open normally if any scheduled backups were missed. To fully quit the app, right-click the tray icon and choose **Quit** — closing the window only hides it.
 
 ---
 
 ## Project Structure
 
 ```
-├── Views/               UI (MainWindow, PieChartControl, dialogs: Schedule, Jobs, Log, Rename, TransferMode, UpdateBanner)
+├── Views/               UI (MainWindow, PieChartControl, dialogs: Schedule, Jobs, Log, Rename, TransferMode,
+│                            UpdateBanner, PreviousVersionsDialog, TransferProgressDialog)
 ├── ViewModels/          Presentation logic (MVVM)
-├── Models/              Data types (FileSystemItem, DriveItem, ScheduledJob, TransferResult, FileError, PieSlice, etc.)
+│   └── WizardSteps/     Per-step view models including WizardStepAdvancedViewModel, WizardStepSummaryViewModel
+├── Models/              Data types (FileSystemItem, DriveItem, ScheduledJob, TransferResult, FileError,
+│                            PieSlice, ArchivedVersion, etc.)
 ├── Services/            Core logic
-│   ├── FileSystemService    Drive & file enumeration, rename, timestamp-preserving copy
-│   ├── TransferService      Copy/move with dedup, permission stripping, checksum verification, per-file error tracking, VSS fallback
-│   ├── VssService           P/Invoke wrapper for vssapi.dll — creates and caches per-volume shadow copy snapshots, cleans up after transfer
-│   ├── SchedulerService     Periodic backup job runner with disk persistence and SchedulerError event
-│   ├── BackupLogService     JSON-based backup history with debounced saves
-│   ├── FileLogger           Operational log + crash dump writer (LogDirectory: %LocalAppData%\Beet's Backup\)
-│   ├── SettingsService      User preferences, dark/light mode flag, toolbar mode, Launch at Startup shortcut management, skip-version persistence
-│   ├── UpdateService        GitHub Releases API update checker with banner notification and skip-version support
-│   └── ThemeService         Light/dark mode (Light.xaml & Dark.xaml; dedicated brush keys for toggles, rings, donut center)
-├── Helpers/             Value converters for WPF bindings
+│   ├── FileSystemService           Drive & file enumeration, rename, timestamp-preserving copy
+│   ├── TransferService             Copy/move with dedup, permission stripping, checksum verification,
+│   │                               per-file error tracking, VSS fallback, zip extraction (zip-slip safe),
+│   │                               archive-before-overwrite versioning gate
+│   ├── VersioningService           Archive-before-overwrite, version listing, restore, delete
+│   ├── VssService                  P/Invoke wrapper for vssapi.dll — per-volume shadow copy snapshots
+│   ├── DiskSpaceService            Pre-flight disk space preview (Sufficient / Tight / Insufficient / Unknown)
+│   ├── SchedulerService            Backup job runner; Task Scheduler integration; headless RunJobByIdAsync;
+│   │                               SchedulerError event; toast notifications on completion/failure
+│   ├── WindowsTaskSchedulerService schtasks.exe wrapper — Register, Unregister, ReconcileAll, BuildScheduleArgs
+│   ├── ToastNotifier               Windows balloon-tip notifications (Success / Warning / Error)
+│   ├── BackupLogService            JSON-based backup history with debounced saves
+│   ├── FileLogger                  Operational log + crash dump writer (LogDirectory: %LocalAppData%\Beet's Backup\)
+│   ├── SettingsService             User preferences, dark/light mode flag, toolbar mode, Launch at Startup
+│   │                               shortcut management, skip-version persistence
+│   ├── UpdateService               GitHub Releases API update checker with banner notification and skip-version support
+│   └── ThemeService                Light/dark mode (Light.xaml & Dark.xaml; dedicated brush keys)
+├── Helpers/             Value converters for WPF bindings; CliArgs (--run-job parser)
 ├── Themes/              Light.xaml & Dark.xaml resource dictionaries
 ├── Assets/              App icon & logo
-├── BeetsBackup.Tests/   xUnit test project (132 tests)
+├── BeetsBackup.Tests/   xUnit test project (159 tests, all passing)
 └── mockups/             HTML design mockups (data-distribution-chart.html, etc.)
 ```
 

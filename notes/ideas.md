@@ -97,19 +97,19 @@ Discussion of features common in other backup tools that Beets Backup does not y
 
 **Not yet implemented — candidates for future sessions:**
 
-- **File versioning** — keep N previous versions of a changed file instead of overwriting; store older versions in a versioned subfolder or with a timestamp suffix
-- **Compression** — zip or archive the backup output to save destination disk space
 - **Encryption** — encrypt backups at rest so destination files are unreadable without a key
 - **Pre / post backup scripts** — run a user-specified command (batch file, PowerShell script) before and/or after a job completes
-- ~~**VSS / Volume Shadow Copy**~~ — **Implemented 2026-04-03.** Retry + VSS fallback in `TransferService`; `VssService` wraps `vssapi.dll` via P/Invoke; per-volume snapshot caching and cleanup; summary reports shadow copy count.
 - **Dry run / preview mode** — show exactly which files would be copied, skipped, or deleted by a job without actually making any changes; especially important for Mirror mode
 - **Delta / block-level copying** — transfer only the changed byte ranges of large files rather than re-copying the entire file (useful for VM images, large databases)
-- **Email / toast notifications** — alert the user on job completion or failure via Windows toast notification or email
 
 **Implemented since this list was written (no longer pending):**
 - VSS / Volume Shadow Copy — done 2026-04-03
 - Simple/Advanced toolbar mode — done 2026-04-03
 - Backup Wizard button (placeholder) — done 2026-04-03 (full wizard still pending)
+- ~~**File versioning**~~ — **Implemented 2026-04-14.** `VersioningService` archives before overwrite; Previous Versions dialog (640×500, double-click restore); configurable Max Versions; wizard + schedule dialog settings; overwrite skipped if archive fails.
+- ~~**Compression**~~ — **Implemented 2026-04-14.** Per-job compression to `.zip`; mutually exclusive with versioning; wizard + schedule dialog settings; disk space preview uses 0.7× estimate.
+- ~~**Toast notifications**~~ — **Implemented 2026-04-14.** `ToastNotifier` wraps `NotifyIcon.ShowBalloonTip`; `SchedulerService` notifies on job complete/fail.
+- ~~**Scheduler survives reboot**~~ — **Implemented 2026-04-14.** `WindowsTaskSchedulerService` wraps `schtasks.exe`; jobs registered as Windows Tasks; headless `--run-job` CLI mode; `ReconcileWindowsTasks` at startup.
 
 **Explicitly out of scope:**
 - Cloud integration (user does not want this)

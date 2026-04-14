@@ -2,7 +2,7 @@
 
 **Purpose:** This document is the authoritative reference for an AI support agent answering customer emails about Beet's Backup. Every feature, setting, behavior, file path, and known quirk is documented here. When a user asks a question, locate the relevant section and paraphrase the answer in a friendly, plain-English tone.
 
-**Last updated:** 2026-04-04
+**Last updated:** 2026-04-14
 
 ---
 
@@ -25,6 +25,10 @@
 
 ---
 
+> **What's new in this version:** Windows Task Scheduler integration (scheduled backups now survive reboots), headless CLI mode (`--run-job`), Previous Versions recovery, ZIP extraction, pre-flight disk space preview, toast notifications, file versioning and compression settings in the wizard and schedule dialog, and a new transfer progress dialog.
+
+---
+
 ## 1. Application Overview
 
 **Beet's Backup** is a lightweight, portable Windows application that combines a dual-pane file manager with a full backup workflow engine. It is designed strictly for transferring and backing up files — not for launching or opening them.
@@ -32,11 +36,13 @@
 **What it does:**
 - Provides a side-by-side (source/destination) view of your drives and folders
 - Copies, moves, and deletes files with multiple conflict-handling strategies
-- Schedules automatic backups that run in the background while the app is open
+- Schedules automatic backups registered with Windows Task Scheduler — they run even if the app is closed
 - Verifies file integrity using SHA-256 checksums
 - Handles locked/in-use files transparently using Windows Volume Shadow Copy (VSS)
 - Maintains a full history log of every backup operation
 - Strips NTFS permissions so backup files work cleanly on other machines
+- Archives previous versions of overwritten files for later recovery
+- Extracts ZIP archives directly from the file browser
 
 **Who it is for:** Home users and small office users who want a reliable, straightforward backup tool without cloud subscriptions, installer bloat, or complicated configuration. It ships as a single `.exe` file with no installer and no dependencies to manage.
 
@@ -205,6 +211,22 @@ Click the **Theme** button (or use **Options > Theme** in Advanced mode) to togg
 
 - Double-clicking a file shows a reminder that Beet's Backup is a backup tool, not a file launcher. Files cannot be opened from within the app.
 
+### Restoring previous versions
+
+- Right-click any file and choose **Previous Versions…** to open a dialog showing all archived copies of that file.
+- The dialog lists each version with its archived timestamp, file size, and archive location.
+- **Double-click** an entry to restore that version, replacing the current file.
+- Use the **Delete** button to remove a specific archived version without affecting the live file.
+- Versions are created automatically whenever versioning is enabled on a backup job and a file would be overwritten. If archiving fails for any reason, the overwrite is skipped to protect the existing file.
+
+### Extracting ZIP archives
+
+- Right-click any `.zip` file in the file browser and choose:
+  - **Extract Here** — extracts the archive contents into a new folder alongside the zip file (same directory, folder named after the archive).
+  - **Extract To…** — opens a folder picker so you can choose any destination.
+- Extraction honors pause and cancel controls and reports progress the same as a regular file copy.
+- The app uses zip-slip protection: any archive entry that would write outside the target folder is silently skipped.
+
 ### Folder sizes
 
 - Folder sizes are calculated asynchronously in the background.
@@ -329,6 +351,8 @@ All options are off by default. Most users can skip this step.
 - **Verify Checksums** — enables SHA-256 verification after each file copy (slower but confirms data integrity).
 - **Remove Permissions** — strips NTFS access control lists (ACLs) from copied files so they are fully accessible on other machines or user accounts.
 - **Speed Limit (throttle)** — caps transfer speed at a selected value: 1, 5, 10, 25, 50, or 100 MB/s.
+- **Enable Versioning** — before overwriting a file, saves the existing copy to an archive folder. A **Max Versions** field appears (default: 5) to control how many archived copies are kept per file. Mutually exclusive with Compression.
+- **Enable Compression** — compresses the backup output into a `.zip` archive instead of copying files individually. Mutually exclusive with Versioning.
 - **Exclusion Filters** — skip files matching a pattern. Type a pattern and click Add:
   - Extension patterns: `*.tmp`, `*.log`, `*.bak`
   - Exact name matches: `Thumbs.db`, `node_modules`, `desktop.ini`
@@ -342,15 +366,17 @@ A final summary shows all chosen settings:
 - Source paths
 - Destination path
 - Transfer mode
-- Options (checksum, permissions, throttle, exclusions)
+- Options (checksum, permissions, throttle, versioning/max versions or compression, exclusions)
 - **Estimated size** — automatically calculated from the source paths; shown as total data volume
+- **Disk space forecast** — a colored banner shows whether the destination drive has enough free space: green/neutral (Sufficient), amber (Tight — less than 10% free after transfer), or red (Insufficient). UNC/network paths show an informational Unknown status.
 
 If anything looks wrong, click **Back** to return to the relevant step.
 
 #### Finishing the wizard
 
 - For **One-time now:** the finish button reads "Start Backup Now". The backup starts immediately and appears in the log.
-- For **Scheduled or Recurring:** the finish button reads "Schedule Backup". The job is saved and appears in the Jobs list. The app must be running for it to execute at the scheduled time.
+- For **Scheduled or Recurring:** the finish button reads "Schedule Backup". The job is saved, registered with Windows Task Scheduler, and appears in the Jobs list. The job will run at its scheduled time regardless of whether the app is open.
+- If the disk space forecast shows **Insufficient**, a confirmation dialog appears before the job is committed. You can proceed anyway or go back to change the destination.
 
 ---
 
@@ -358,11 +384,23 @@ If anything looks wrong, click **Back** to return to the relevant step.
 
 ### How scheduled backups work
 
-Beet's Backup runs a **background scheduler** (checking every minute) while the app is open. When a job's scheduled time arrives, it runs automatically without any user interaction. Jobs persist to disk and survive app restarts.
+When a job is created or updated, Beet's Backup registers it with **Windows Task Scheduler** as a task named `BeetsBackup_{id}`. At the scheduled time, Windows launches the app in a special **headless mode** (`--run-job {guid}`) — no window appears, the job runs, and the process exits. This means backups execute **even when the app is fully closed**.
 
-**Critical:** The app must be running (at minimum in the system tray) for scheduled backups to execute. If the app is fully closed, jobs will not run.
+While the app is open (in the tray or as a visible window), an in-process background timer also watches jobs as a safety net — whichever triggers first runs the job.
 
-**Recommended:** Enable **Launch at Startup** in the Options menu so the app starts automatically with Windows and hides to the tray.
+**Result:** You no longer need to keep the app running for scheduled backups to execute. However, enabling **Launch at Startup** is still recommended so the app is available in the tray for the missed-backup dialog and manual operations.
+
+**Exit codes in headless mode:**
+- `0` — job ran successfully
+- `1` — job ID not found
+- `2` — job ran but failed
+
+### Toast notifications
+
+When a scheduled job completes (whether headless or in-process), a Windows system tray balloon notification appears:
+- **Success** — job completed without errors
+- **Warning** — job completed with some file errors
+- **Error** — job failed entirely
 
 ### Creating a scheduled job via the Wizard
 
@@ -377,9 +415,13 @@ In Advanced toolbar mode, click **Schedule** to open the schedule dialog directl
 - Transfer mode
 - Strip permissions toggle
 - Verify checksums toggle
+- Enable Versioning (with Max Versions) — mutually exclusive with Compression
+- Enable Compression — mutually exclusive with Versioning
 - Exclusion filters
 - Per-job speed limit (1–100 MB/s)
-- **Estimate Size** button — calculates total source data volume respecting active filters
+- **Estimate Size** button — calculates total source data volume respecting active filters and shows a **disk space forecast** banner (Sufficient / Tight / Insufficient / Unknown)
+
+If the forecast shows **Insufficient**, a confirmation is required before the job can be saved.
 
 ### Recurring backup intervals
 
@@ -504,6 +546,40 @@ Settings are accessed via the **Options** menu in Advanced toolbar mode. All set
 - This runs automatically at the start of every scheduled job so the log can show estimated vs. actual data transferred.
 - The wizard summary page shows the estimate automatically before finishing.
 
+### Pre-flight Disk Space Preview
+
+Triggered automatically when Estimate Size runs and on the wizard summary page.
+
+- Compares the estimated transfer size against available free space on the destination drive.
+- **Sufficient** — destination has enough space with room to spare.
+- **Tight** — the destination drive would have less than 10% free space remaining after the transfer. A yellow/amber warning banner is shown.
+- **Insufficient** — the destination does not have enough free space. A red banner is shown and the job requires confirmation before it can be started or saved.
+- **Unknown** — the destination is a UNC/network path or cannot be analyzed. This is not an error; the backup can still proceed.
+- For jobs with compression enabled, the estimate uses a 0.7× factor (compressed output is estimated at 70% of the raw source size).
+
+### File Versioning
+
+Versioning protects files from being silently overwritten during backups.
+
+- When enabled on a job, any file that would be overwritten is first copied to a versioned archive folder with a timestamp in the filename.
+- The **Max Versions** setting (default: 5) controls how many archived copies are kept per file. Older versions beyond the limit are pruned automatically.
+- Versioning and Compression are mutually exclusive — enabling one disables the other.
+- To browse and recover archived versions: right-click any file > **Previous Versions…**. The dialog shows all archived copies with timestamps and sizes. Double-click to restore, or select and delete to remove a specific version.
+- If archiving fails for any reason (e.g. destination disk full), the overwrite is **skipped** rather than proceeding unprotected.
+
+### Compression
+
+- When enabled on a job, the backup output is written as a `.zip` archive instead of individual files.
+- Mutually exclusive with Versioning.
+- The pre-flight disk space preview applies a 0.7× compression estimate when this option is active.
+
+### ZIP Archive Extraction
+
+- Right-click any `.zip` file in the file browser and choose **Extract Here** or **Extract To…**.
+- **Extract Here** creates a folder next to the archive with the same base name and extracts into it.
+- **Extract To…** opens a folder browser to choose any destination.
+- Fully integrated with the transfer system: supports pause, resume, and cancel; reports per-file errors; guards against zip-slip attacks.
+
 ---
 
 ## 11. Troubleshooting
@@ -522,12 +598,14 @@ This appears the first time you run a downloaded executable that is not code-sig
 
 ### "My scheduled backup didn't run"
 
-Scheduled backups only run while Beet's Backup is **open** (even if minimized to the tray). If the app was closed, the backup did not run.
+Scheduled backups are registered with **Windows Task Scheduler**, so they should run even when the app is closed. If a backup did not run, here are the most likely causes:
 
-**Solutions:**
-1. Enable **Launch at Startup** in the Options menu so the app starts automatically with Windows.
-2. When the app starts after a missed backup, it will show a **Missed Backups dialog** offering to run them immediately.
-3. Check the backup log (Advanced mode > Log) to confirm whether the job ran or was recorded as interrupted.
+1. **The job is disabled** — check the Jobs dialog (Advanced mode > Jobs) to confirm the job is enabled.
+2. **Windows Task Scheduler is disabled or the task was deleted** — open Task Scheduler (`taskschd.msc`) and look for a task named `BeetsBackup_...`. If missing, open the app and edit/re-save the job to re-register it.
+3. **Insufficient permissions for headless run** — if the task requires elevation that Windows Task Scheduler can't provide silently, the headless run may be blocked. Try running the app as administrator once to let it re-register the task.
+4. **Operational log** — check `operational.log` in `%LOCALAPPDATA%\Beet's Backup\` for any error messages around the scheduled time.
+
+When the app starts after a missed backup, it will show a **Missed Backups dialog** offering to run them immediately.
 
 ### "A scheduled backup shows 'Interrupted' in the log"
 
