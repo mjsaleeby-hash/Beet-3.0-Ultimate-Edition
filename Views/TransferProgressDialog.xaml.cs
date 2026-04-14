@@ -1,8 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
-using System.Windows.Interop;
 using BeetsBackup.ViewModels;
-using WinFormsScreen = System.Windows.Forms.Screen;
 
 namespace BeetsBackup.Views;
 
@@ -41,57 +39,22 @@ public partial class TransferProgressDialog : Window
         // Hide the dialog automatically when the transfer ends
         _vm.PropertyChanged += OnVmPropertyChanged;
 
-        Loaded += (_, _) => DockToOwner();
+        Loaded += (_, _) => CenterOnOwner();
     }
 
     /// <summary>
-    /// Docks the dialog to the right edge of the owner window, vertically aligned near the top.
-    /// If the ideal docked position would fall off-screen, pins the dialog inside the owner's right edge.
+    /// Centers the dialog over the owner window. Tracks owner moves so the dialog
+    /// stays centered if the user drags the main window during a transfer.
     /// </summary>
-    private void DockToOwner()
+    private void CenterOnOwner()
     {
         if (_owner.WindowState == WindowState.Minimized) return;
 
-        // Prefer placing the dialog just outside the owner's right edge
-        double desiredLeft = _owner.Left + _owner.ActualWidth + 8;
-        double desiredTop = _owner.Top + 80;
-
-        // Use the work area of whichever monitor the owner is currently on, not the primary.
-        // SystemParameters.WorkArea always returns the primary monitor — on a multi-monitor
-        // setup that would force the dialog to tuck inside the owner even when there's plenty
-        // of free space on the actual host monitor.
-        var workRight = GetOwnerMonitorWorkAreaRight();
-        if (desiredLeft + Width > workRight)
-            desiredLeft = _owner.Left + _owner.ActualWidth - Width - 16;
-
-        Left = desiredLeft;
-        Top = desiredTop;
+        Left = _owner.Left + (_owner.ActualWidth  - ActualWidth)  / 2;
+        Top  = _owner.Top  + (_owner.ActualHeight - ActualHeight) / 2;
     }
 
-    /// <summary>
-    /// Returns the right edge (in WPF DIPs) of the work area on the monitor that currently hosts
-    /// the owner window. Converts from physical pixels using the owner's DPI scale.
-    /// </summary>
-    private double GetOwnerMonitorWorkAreaRight()
-    {
-        try
-        {
-            var handle = new WindowInteropHelper(_owner).Handle;
-            if (handle == IntPtr.Zero)
-                return SystemParameters.WorkArea.Right; // Fallback before the owner has an HWND.
-
-            var screen = WinFormsScreen.FromHandle(handle);
-            var source = PresentationSource.FromVisual(_owner);
-            var dpiScaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-            return screen.WorkingArea.Right / dpiScaleX;
-        }
-        catch
-        {
-            return SystemParameters.WorkArea.Right;
-        }
-    }
-
-    private void OwnerOnBoundsChanged(object? sender, EventArgs e) => DockToOwner();
+    private void OwnerOnBoundsChanged(object? sender, EventArgs e) => CenterOnOwner();
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
