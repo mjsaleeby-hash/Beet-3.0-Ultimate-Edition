@@ -18,6 +18,13 @@ public sealed class SettingsData
     /// <summary>Whether the simplified toolbar mode is enabled.</summary>
     public bool IsSimpleMode { get; set; }
 
+    /// <summary>
+    /// When <c>true</c>, the app starts silently in the system tray when launched with the
+    /// <c>--startup</c> flag (i.e. via the Windows Startup shortcut). When <c>false</c> (default),
+    /// the main window is always shown on launch, even when auto-started.
+    /// </summary>
+    public bool StartMinimized { get; set; }
+
     /// <summary>Version string the user chose to skip in the update dialog.</summary>
     public string? SkippedVersion { get; set; }
 }
@@ -41,6 +48,13 @@ public sealed class SettingsService
     {
         get => Data.IsDarkMode;
         set => Data.IsDarkMode = value;
+    }
+
+    /// <summary>Whether to start silently in tray when auto-launched (convenience wrapper).</summary>
+    public bool StartMinimized
+    {
+        get => Data.StartMinimized;
+        set { Data.StartMinimized = value; Save(); }
     }
 
     /// <summary>

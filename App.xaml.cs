@@ -86,12 +86,17 @@ public partial class App : Application
         var missedJobs = scheduler.GetMissedJobs();
         bool hasMissedBackups = missedJobs.Count > 0;
 
-        // Launch to tray only when auto-started by Windows (--startup flag from shortcut)
+        // Only suppress the window when ALL THREE conditions are met:
+        //   1. Launched via the Windows Startup shortcut (--startup flag)
+        //   2. User opted into "Start minimized" in Options
+        //   3. No missed backups that need attention
+        // Without the StartMinimized preference, hitting the exe always opens the window —
+        // even from the Startup shortcut — so users aren't left wondering if the app launched.
         bool isAutoStartup = Environment.GetCommandLineArgs().Contains("--startup", StringComparer.OrdinalIgnoreCase);
-        if (isAutoStartup && !hasMissedBackups)
+        bool startMinimized = settings.StartMinimized;
+        if (isAutoStartup && startMinimized && !hasMissedBackups)
         {
-            // Don't show window — it's already in the tray via InitializeTrayIcon
-            FileLogger.Info("Launched to system tray (auto-startup, no missed backups)");
+            FileLogger.Info("Launched to system tray (auto-startup, start-minimized enabled, no missed backups)");
         }
         else
         {

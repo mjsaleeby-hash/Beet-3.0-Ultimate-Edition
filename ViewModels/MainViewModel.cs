@@ -39,6 +39,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     // --- Options ---
     [ObservableProperty] private bool _launchAtStartup;
+    [ObservableProperty] private bool _startMinimized;
 
     // --- Update notification ---
     [ObservableProperty] private bool _isUpdateAvailable;
@@ -143,6 +144,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _update = update;
         IsDarkMode = theme.IsDark;
         LaunchAtStartup = settings.LaunchAtStartup;
+        StartMinimized = settings.StartMinimized;
         IsSimpleMode = settings.Data.IsSimpleMode;
         _scheduler.SchedulerError += OnSchedulerError;
         LoadDrives();
@@ -151,6 +153,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     partial void OnLaunchAtStartupChanged(bool value)
     {
         _settings.LaunchAtStartup = value;
+    }
+
+    partial void OnStartMinimizedChanged(bool value)
+    {
+        _settings.StartMinimized = value;
     }
 
     partial void OnIsSimpleModeChanged(bool value)

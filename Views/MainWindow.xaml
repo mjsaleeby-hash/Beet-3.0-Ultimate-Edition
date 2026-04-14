@@ -406,6 +406,10 @@
                                 <MenuItem IsCheckable="True"
                                           Header="Launch at Startup"
                                           IsChecked="{Binding LaunchAtStartup}"/>
+                                <MenuItem IsCheckable="True"
+                                          Header="Start Minimized to Tray"
+                                          IsChecked="{Binding StartMinimized}"
+                                          ToolTip="When enabled, launching via the Windows Startup shortcut opens to the tray without showing the window."/>
                                 <Separator/>
                                 <MenuItem Header="Check for Updates"
                                           Command="{Binding CheckForUpdatesCommand}"/>
