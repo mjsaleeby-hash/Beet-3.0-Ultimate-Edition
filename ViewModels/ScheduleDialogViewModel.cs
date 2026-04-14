@@ -46,8 +46,9 @@ public partial class ScheduleDialogViewModel : ObservableObject
     [ObservableProperty] private bool _isInsufficientSpace;
     [ObservableProperty] private bool _isTightSpace;
 
-    /// <summary>Last pre-flight preview (for the Save command to re-check before adding the job).</summary>
-    public DiskSpacePreview? LastDiskSpacePreview { get; private set; }
+    /// <summary>Last pre-flight preview (written by EstimateSize and overwritten by Schedule_Click's
+    /// mandatory check at save time so it always reflects current state).</summary>
+    public DiskSpacePreview? LastDiskSpacePreview { get; set; }
 
     [ObservableProperty] private bool _enableVersioning;
     [ObservableProperty] private int _maxVersions = 5;

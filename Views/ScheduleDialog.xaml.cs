@@ -1,4 +1,5 @@
 using BeetsBackup.Models;
+using BeetsBackup.Services;
 using BeetsBackup.ViewModels;
 using System.Windows;
 using MessageBox = System.Windows.MessageBox;
@@ -19,7 +20,8 @@ public partial class ScheduleDialog : Window
         DataContext = _vm;
     }
 
-    private void Schedule_Click(object sender, RoutedEventArgs e)
+    // async void is correct for WPF event handlers — exceptions propagate to the dispatcher.
+    private async void Schedule_Click(object sender, RoutedEventArgs e)
     {
         if (!_vm.IsValid)
         {
@@ -36,14 +38,29 @@ public partial class ScheduleDialog : Window
             if (confirm != MessageBoxResult.Yes) return;
         }
 
-        // Pre-flight disk-space gate: if the last estimate flagged insufficient room,
-        // require an explicit "proceed anyway" before persisting the schedule.
-        if (_vm.IsInsufficientSpace)
+        // Always run the pre-flight disk-space check at save time — don't rely on the user
+        // having clicked "Estimate Size". We run the check on a background thread so the UI
+        // stays responsive on large source trees, then come back to prompt if needed.
+        var sources = _vm.SourcePaths.ToList();
+        var exclusions = _vm.ExclusionFilters.Count > 0 ? (IReadOnlyList<string>)_vm.ExclusionFilters.ToList() : null;
+        var willCompress = _vm.EnableCompression;
+        var destination = _vm.DestinationPath;
+
+        var preview = await Task.Run(() =>
+            DiskSpaceService.Preview(sources, destination, exclusions, willCompress));
+
+        // Update the VM so the inline banner reflects the fresh result.
+        _vm.LastDiskSpacePreview = preview;
+        _vm.DiskSpaceMessage = preview.Summary;
+        _vm.HasDiskSpaceMessage = !string.IsNullOrEmpty(preview.Summary);
+        _vm.IsInsufficientSpace = preview.Status == DiskSpaceStatus.Insufficient;
+        _vm.IsTightSpace = preview.Status == DiskSpaceStatus.Tight;
+
+        if (preview.Status == DiskSpaceStatus.Insufficient)
         {
-            var preview = _vm.LastDiskSpacePreview;
             var body =
-                $"The estimated backup size ({preview?.RequiredDisplay}) is larger than the free space " +
-                $"available on {preview?.DriveRoot} ({preview?.AvailableDisplay}).\n\n" +
+                $"The estimated backup size ({preview.RequiredDisplay}) is larger than the free space " +
+                $"available on {preview.DriveRoot} ({preview.AvailableDisplay}).\n\n" +
                 "If you schedule this job, it will likely run out of space partway through. Continue anyway?";
             var spaceConfirm = MessageBox.Show(body,
                 "Not Enough Disk Space", MessageBoxButton.YesNo, MessageBoxImage.Warning);
