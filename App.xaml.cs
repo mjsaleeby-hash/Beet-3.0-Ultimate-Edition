@@ -20,6 +20,13 @@ public partial class App : Application
     /// <summary>Gets the application-wide DI service provider.</summary>
     public static IServiceProvider Services { get; private set; } = null!;
 
+    /// <summary>
+    /// When the previous session ended without firing <c>OnExit</c> (crash, kill, power loss),
+    /// this holds the timestamp the previous session started. Read once by <see cref="MainWindow"/>
+    /// to surface a recovery banner; null on a clean prior shutdown.
+    /// </summary>
+    public static DateTime? PreviousUncleanShutdownAt { get; private set; }
+
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _showSignal;
     private CancellationTokenSource? _showSignalCts;
@@ -68,6 +75,13 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
         FileLogger.Info("═══ Application starting ═══");
+
+        // Detect if the previous session ended uncleanly (crash, kill, power loss). Read this BEFORE
+        // MarkRunning() so we don't immediately overwrite the prior session's sentinel.
+        PreviousUncleanShutdownAt = DiagnosticsService.ConsumeUncleanShutdown();
+        if (PreviousUncleanShutdownAt.HasValue)
+            FileLogger.Warn($"Previous session did not exit cleanly (started {PreviousUncleanShutdownAt:yyyy-MM-dd HH:mm:ss})");
+        DiagnosticsService.MarkRunning();
 
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -164,7 +178,11 @@ public partial class App : Application
         finally
         {
             try { (Services as IDisposable)?.Dispose(); } catch { /* best effort */ }
-            Current.Shutdown(Environment.ExitCode);
+            DiagnosticsService.MarkExitedCleanly();
+            // Environment.Exit hard-kills the process. In the headless path there is no UI,
+            // so WPF's Shutdown() (which posts to the dispatcher) can leave a zombie if the
+            // dispatcher never drains. Environment.Exit guarantees the process terminates.
+            Environment.Exit(Environment.ExitCode);
         }
     }
 
@@ -190,7 +208,11 @@ public partial class App : Application
         try { _singleInstanceMutex?.ReleaseMutex(); }
         catch (ApplicationException) { /* Mutex not owned — second instance path */ }
         _singleInstanceMutex?.Dispose();
+        DiagnosticsService.MarkExitedCleanly();
         base.OnExit(e);
+        // Failsafe: if WPF's dispatcher loop doesn't exit cleanly (rare edge cases with
+        // background threads or WinForms interop), force-terminate the process.
+        Environment.Exit(e.ApplicationExitCode);
     }
 
     /// <summary>Logs UI-thread exceptions and marks them handled to prevent a crash.</summary>

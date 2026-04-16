@@ -45,6 +45,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isUpdateAvailable;
     [ObservableProperty] private string _updateMessage = string.Empty;
 
+    // --- Crash recovery banner (shown once if the previous session didn't exit cleanly) ---
+    [ObservableProperty] private bool _isCrashBannerVisible;
+    [ObservableProperty] private string _crashBannerMessage = string.Empty;
+
     // --- Pane data ---
     public ObservableCollection<DriveItem> Drives { get; } = new();
     public ObservableCollection<FolderTreeItem> TopTreeItems { get; } = new();
@@ -148,6 +152,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsSimpleMode = settings.Data.IsSimpleMode;
         _scheduler.SchedulerError += OnSchedulerError;
         LoadDrives();
+
+        if (App.PreviousUncleanShutdownAt is { } whenStarted)
+        {
+            IsCrashBannerVisible = true;
+            CrashBannerMessage = $"Previous session ended unexpectedly (started {whenStarted:MMM d, h:mm tt}). Export diagnostics to send to support.";
+        }
     }
 
     partial void OnLaunchAtStartupChanged(bool value)
@@ -208,6 +218,33 @@ public partial class MainViewModel : ObservableObject, IDisposable
         UpdateMessage = string.Empty;
         StatusMessage = "Ready";
     }
+
+    /// <summary>
+    /// Bundles operational logs, crash dumps, settings, backup history, and system info into a
+    /// timestamped zip on the user's Desktop, then opens Explorer with the file selected so the
+    /// user can attach it to a support email.
+    /// </summary>
+    [RelayCommand]
+    private async Task ExportDiagnosticsAsync()
+    {
+        StatusMessage = "Exporting diagnostics…";
+        try
+        {
+            var path = await Task.Run(DiagnosticsService.ExportToDesktop);
+            DiagnosticsService.RevealInExplorer(path);
+            StatusMessage = $"Diagnostics saved to Desktop: {Path.GetFileName(path)}";
+            // Recovery banner is one-shot — once the user has the bundle, it served its purpose.
+            IsCrashBannerVisible = false;
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("Diagnostics export failed", ex);
+            StatusMessage = $"Diagnostics export failed: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void DismissCrashBanner() => IsCrashBannerVisible = false;
 
     /// <summary>Creates a filtered <see cref="ICollectionView"/> that live-filters by <see cref="SearchFilter"/>.</summary>
     private ICollectionView CreateFilteredView(ObservableCollection<FileSystemItem> source)

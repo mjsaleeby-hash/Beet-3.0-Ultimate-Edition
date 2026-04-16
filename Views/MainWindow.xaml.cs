@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     // System tray
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private bool _isReallyClosing;
+    private bool _shownTrayHint;
 
     // Transfer progress popup (non-modal, docks to the right of the main window)
     private TransferProgressDialog? _progressDialog;
@@ -108,9 +109,15 @@ public partial class MainWindow : Window
     {
         if (!_isReallyClosing)
         {
-            // Hide to tray instead of closing
             e.Cancel = true;
             Hide();
+            if (!_shownTrayHint)
+            {
+                _shownTrayHint = true;
+                ToastNotifier.Notify("Beet's Backup is still running",
+                    "Right-click the tray icon and choose Quit to fully exit.",
+                    ToastKind.Success, 4000);
+            }
             return;
         }
         base.OnClosing(e);
