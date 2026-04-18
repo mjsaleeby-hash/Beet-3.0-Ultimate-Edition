@@ -76,9 +76,9 @@ No installer, no registry changes, no dependencies.
 
 ### First launch
 
-On first launch the app opens directly to the main window in **dark mode** with the toolbar set to **Simple mode**. No setup wizard is required to start browsing files.
+On first launch the app opens directly to the main window in **dark mode**. No setup wizard is required to start browsing files.
 
-To start a guided backup setup, click the **Backup Wizard** button in the toolbar (visible in Simple mode).
+To start a guided backup setup, click the **Backup Wizard** button in the toolbar (next to the Schedule button).
 
 ### System tray behavior
 
@@ -92,26 +92,30 @@ If you try to launch a second copy of the app, the already-running instance will
 
 ## 4. User Interface Guide
 
-### Simple mode vs. Advanced mode
+### Toolbar
 
-The toolbar has two modes, switchable via the **Simple/Advanced toggle** on the left side of the toolbar. The chosen mode is saved and restored every time the app starts.
+The toolbar shows all controls at all times. There is no mode toggle.
 
-**Simple mode** shows five buttons:
+**Command bar buttons:**
 - **Visual** — toggle the donut pie chart view
 - **Theme** — switch between dark and light themes
 - **Split Pane** — open or close the second file pane
 - **Refresh** — reload the current folder and recalculate folder sizes
-- **Backup Wizard** — open the step-by-step backup setup wizard (purple badge button)
-
-**Advanced mode** shows the full toolbar including:
+- **Backup Wizard** — open the step-by-step backup setup wizard (purple badge button); sits next to Schedule
 - **Schedule** — open the schedule dialog to create/edit backup jobs
 - **Jobs** — view scheduled jobs
 - **Log** — view backup history
-- **Options** — settings menu (theme, startup, update check)
+- **Options** — open the Options popup (see below)
 - **Pause / Stop** — controls for active transfers
-- **Remove Permissions** checkbox — strip NTFS ACLs on copy
-- **Verify Checksums** checkbox — SHA-256 integrity check after every copy
-- **Limit Speed** toggle — cap transfer bandwidth at 10 MB/s
+
+**Options popup** (stays open when clicked):
+- **Remove Permissions** — strip NTFS ACLs on copy
+- **Verify Checksums** — SHA-256 integrity check after every copy
+- **Limit Speed** — cap transfer bandwidth at 10 MB/s
+- **Archive Now** — immediately archive the current selection
+- **Launch at Startup** — create or remove the Windows startup shortcut
+- **Theme** — toggle dark/light theme
+- **Check for Updates** — run an immediate update check
 
 ### Dual-pane file browser
 
@@ -158,7 +162,7 @@ Click the **Visual** button to toggle between List view and a **donut pie chart*
 
 ### Theme switching
 
-Click the **Theme** button (or use **Options > Theme** in Advanced mode) to toggle between dark and light themes. The chosen theme is saved and applied on next launch.
+Click the **Theme** button on the toolbar (or use **Options > Theme**) to toggle between dark and light themes. The chosen theme is saved and applied on next launch.
 
 ---
 
@@ -277,7 +281,7 @@ The Backup Wizard is a step-by-step guided flow for setting up a backup job. It 
 
 ### How to access it
 
-The **Backup Wizard** button is visible only in **Simple toolbar mode** (the purple badge button at the right end of the toolbar). Switch to Simple mode using the toggle on the left of the toolbar if it is not visible.
+The **Backup Wizard** button is always visible in the toolbar command bar (the purple badge button, located next to the Schedule button).
 
 ### Wizard steps overview
 
@@ -406,9 +410,9 @@ When a scheduled job completes (whether headless or in-process), a Windows syste
 
 See Section 7 (Backup Wizard) — the easiest way for most users.
 
-### Creating a scheduled job via the Schedule dialog (Advanced mode)
+### Creating a scheduled job via the Schedule dialog
 
-In Advanced toolbar mode, click **Schedule** to open the schedule dialog directly. Configure:
+Click **Schedule** in the toolbar to open the schedule dialog directly. Configure:
 - Source folder(s)
 - Destination folder
 - Date, time, and recurrence
@@ -444,26 +448,26 @@ If the app was launched via the Windows startup shortcut (`--startup` flag) and 
 
 ### Viewing and managing jobs
 
-In Advanced toolbar mode, click **Jobs** to open the Jobs dialog. From here:
+Click **Jobs** in the toolbar to open the Jobs dialog. From here:
 - View all scheduled jobs with their name, source, destination, next run time, and status.
 - Delete a job.
 - Enable or disable individual jobs.
 
 ### Pausing a running scheduled job
 
-Open the **Log** dialog (Advanced mode > Log). Find the running job entry. Click the **Pause** button to pause it. Click again to resume.
+Open the **Log** dialog (toolbar > Log). Find the running job entry. Click the **Pause** button to pause it. Click again to resume.
 
 ---
 
 ## 9. Settings & Options
 
-Settings are accessed via the **Options** menu in Advanced toolbar mode. All settings persist in `settings.json` (see Section 12 for path).
+Settings are accessed via the **Options** popup in the toolbar. All settings persist in `settings.json` (see Section 12 for path).
 
 ### Launch at Startup
 
 - **What it does:** Creates a Windows shortcut in the startup folder so the app launches automatically every time Windows starts.
 - **How it works:** The shortcut uses a `--startup` flag. When the app sees this flag, it launches silently to the system tray (no window shown), unless there are missed backups.
-- **To enable/disable:** Options menu > Launch at Startup toggle. Or in the wizard if prompted.
+- **To enable/disable:** Options popup > Launch at Startup toggle. Or in the wizard if prompted.
 - **Shortcut location:** `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Beet's Backup.lnk`
 
 ### Theme preference
@@ -471,16 +475,13 @@ Settings are accessed via the **Options** menu in Advanced toolbar mode. All set
 - Toggle between **Dark** (default) and **Light** using the Theme button or Options menu.
 - The chosen theme is saved and applied on every launch.
 
-### Simple / Advanced mode
+### Toolbar layout
 
-- Toggle using the switch on the left side of the toolbar.
-- The preference is saved and restored on next launch.
-- Simple mode: 5 toolbar buttons (Visual, Theme, Split Pane, Refresh, Backup Wizard).
-- Advanced mode: full toolbar with all controls.
+The toolbar always shows all controls. There is no Simple/Advanced mode toggle. The Options popup (stays open) provides quick access to per-transfer settings: Remove Permissions, Verify Checksums, Limit Speed, and Archive Now, as well as Launch at Startup, theme switching, and update checks.
 
 ### Check for Updates
 
-- Options menu > Check for Updates runs an immediate update check.
+- Options popup > Check for Updates runs an immediate update check.
 - The app also checks automatically in the background 3 seconds after launch.
 - If a newer version is found, a banner appears in the status bar with **Download** and **Dismiss** buttons.
 - Clicking **Dismiss** permanently suppresses that specific version (saved to settings as `SkippedVersion`). The user will still be notified about future versions.
@@ -507,21 +508,21 @@ Settings are accessed via the **Options** menu in Advanced toolbar mode. All set
 
 ### SHA-256 Checksum Verification
 
-- Enabled via the **Verify Checksums** checkbox in Advanced toolbar mode, or in the wizard's Options step.
+- Enabled via the **Verify Checksums** toggle in the Options popup, or in the wizard's Options step.
 - After every file is copied, the app computes a SHA-256 hash of both the source and destination files and compares them.
 - If they do not match, a **"Checksum mismatch"** error is recorded for that file in the log.
 - **Performance note:** verification reads every file twice (once during copy, once after), so transfers take longer. Recommended for critical backups where data integrity must be confirmed.
 
 ### NTFS Permission Stripping (Remove Permissions)
 
-- Enabled via the **Remove Permissions** checkbox in Advanced toolbar mode, or in the wizard's Options step.
+- Enabled via the **Remove Permissions** toggle in the Options popup, or in the wizard's Options step.
 - Strips the NTFS Access Control List (ACL) from every copied file so it inherits permissions from its new parent folder.
 - Useful when backing up to a drive that will be used on a different machine or under a different user account — without this, files may appear as inaccessible or "locked" to other users.
 - Does not modify the source files, only the destination copies.
 
 ### Transfer Throttling (Speed Limit)
 
-- **Manual throttle (Advanced mode):** Enable the **Limit Speed** toggle on the toolbar. This caps transfer speed at exactly **10 MB/s**.
+- **Manual throttle:** Enable the **Limit Speed** toggle in the Options popup. This caps transfer speed at exactly **10 MB/s**.
 - **Per-job throttle (Schedule dialog / Wizard):** A speed picker lets you choose 1, 5, 10, 25, 50, or 100 MB/s for a specific job.
 - **When to use:** Enable throttling when running a large backup and you need to keep the computer or network responsive for other tasks.
 - Throttling works by pacing file copy chunks with timed delays — it also supports Pause/Resume and cancellation during throttled transfers.
@@ -600,7 +601,7 @@ This appears the first time you run a downloaded executable that is not code-sig
 
 Scheduled backups are registered with **Windows Task Scheduler**, so they should run even when the app is closed. If a backup did not run, here are the most likely causes:
 
-1. **The job is disabled** — check the Jobs dialog (Advanced mode > Jobs) to confirm the job is enabled.
+1. **The job is disabled** — check the Jobs dialog (toolbar > Jobs) to confirm the job is enabled.
 2. **Windows Task Scheduler is disabled or the task was deleted** — open Task Scheduler (`taskschd.msc`) and look for a task named `BeetsBackup_...`. If missing, open the app and edit/re-save the job to re-register it.
 3. **Insufficient permissions for headless run** — if the task requires elevation that Windows Task Scheduler can't provide silently, the headless run may be blocked. Try running the app as administrator once to let it re-register the task.
 4. **Operational log** — check `operational.log` in `%LOCALAPPDATA%\Beet's Backup\` for any error messages around the scheduled time.
@@ -624,7 +625,7 @@ To see the full list of which files failed and why: open the **Log** dialog, sel
 
 ### "Transfer seems slow"
 
-Check whether **Limit Speed** is enabled on the toolbar (Advanced mode). If the toggle is on, transfer speed is capped at 10 MB/s. Turn it off if you want full-speed transfers.
+Check whether **Limit Speed** is enabled in the Options popup. If the toggle is on, transfer speed is capped at 10 MB/s. Turn it off if you want full-speed transfers.
 
 Also check whether **Verify Checksums** is enabled — verification reads each file twice, roughly halving effective throughput.
 
@@ -656,7 +657,7 @@ An update banner in the status bar means a newer version of Beet's Backup is ava
 
 ## 12. Log Files & Diagnostics
 
-All log files and data files are stored in a single folder. To open it: in Advanced toolbar mode, click **Log** > **Open Log Folder**. Or navigate there manually:
+All log files and data files are stored in a single folder. To open it: click **Log** in the toolbar, then **Open Log Folder**. Or navigate there manually:
 
 **Log folder path:**
 ```
@@ -692,11 +693,11 @@ C:\Users\YourName\AppData\Local\Beet's Backup\
 
 #### `backup_log.json`
 - **What it contains:** The complete history of all backup operations — job names, source/destination paths, timestamps, files copied/skipped/failed, bytes transferred, and per-file error details (up to 200 error entries per job). Capped at 500 total log entries.
-- **Format:** JSON array. Viewable from inside the app via Advanced mode > Log.
+- **Format:** JSON array. Viewable from inside the app via the toolbar > Log button.
 - **When to send to support:** If a backup job shows unexpected results and the in-app log view is not sufficient detail.
 
 #### `settings.json`
-- **What it contains:** User preferences — dark/light mode, Simple/Advanced toolbar mode, Launch at Startup flag, and the version tag for any dismissed update notification.
+- **What it contains:** User preferences — dark/light mode, Launch at Startup flag, and the version tag for any dismissed update notification.
 - **Format:** JSON. Can be deleted to reset all settings to defaults (the app will recreate it on next launch).
 - **When to send to support:** If settings appear to not be saving or are behaving unexpectedly.
 
@@ -731,7 +732,7 @@ If no internet connection is available, or the check fails for any reason, it fa
 
 ### Manual update check
 
-In Advanced toolbar mode: **Options > Check for Updates**. This triggers an immediate check and shows the result in the status bar.
+Click **Options** in the toolbar, then **Check for Updates**. This triggers an immediate check and shows the result in the status bar.
 
 ### Where to download updates
 

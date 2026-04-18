@@ -35,7 +35,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _verifyChecksums;
     [ObservableProperty] private bool _throttleTransfer;
     [ObservableProperty] private bool _isSplitPane;
-    [ObservableProperty] private bool _isSimpleMode;
 
     // --- Options ---
     [ObservableProperty] private bool _launchAtStartup;
@@ -149,7 +148,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IsDarkMode = theme.IsDark;
         LaunchAtStartup = settings.LaunchAtStartup;
         StartMinimized = settings.StartMinimized;
-        IsSimpleMode = settings.Data.IsSimpleMode;
         _scheduler.SchedulerError += OnSchedulerError;
         LoadDrives();
 
@@ -168,12 +166,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     partial void OnStartMinimizedChanged(bool value)
     {
         _settings.StartMinimized = value;
-    }
-
-    partial void OnIsSimpleModeChanged(bool value)
-    {
-        _settings.Data.IsSimpleMode = value;
-        _settings.Save();
     }
 
     // --- Update commands ---

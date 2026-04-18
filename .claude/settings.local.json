@@ -68,7 +68,26 @@
       "mcp__mempalace__mempalace_find_tunnels",
       "Bash(python:*)",
       "mcp__mempalace__mempalace_add_drawer",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet --list-runtimes)",
+      "Bash(git:*)",
+      "Bash(where dotnet:*)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" --version)",
+      "Bash(\"C:\\\\Program Files\\\\dotnet\\\\dotnet.exe\" --list-sdks)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio//**)",
+      "Read(//c/Program Files/**)",
+      "Bash(where msbuild:*)",
+      "Bash(where vswhere:*)",
+      "Bash(ls:*)",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft Visual Studio/18/BuildTools/MSBuild/Current/Bin/MSBuild.exe\" --version)",
+      "Read(//c/Program Files \\(x86\\)/dotnet/**)",
+      "Bash(find '/c/Program Files \\(x86\\)/Microsoft Visual Studio/18/' -name Microsoft.WindowsDesktop.App.props)",
+      "Bash(find '/c/Program Files \\(x86\\)/Microsoft Visual Studio/18/' -name *.props)",
+      "Skill(update-config)",
+      "Bash(taskkill //F //IM BeetsBackup.exe)"
     ]
-  }
+  },
+  "model": "claude-opus-4-6"
 }

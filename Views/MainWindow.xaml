@@ -365,9 +365,8 @@
 
                 <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"/>
 
-                <!-- Transfer controls (advanced only) -->
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
-                            Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                <!-- Transfer controls -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Margin="0,0,2,0"
                             Command="{Binding PauseResumeTransferCommand}"
                             IsEnabled="{Binding IsTransferring}">
@@ -388,10 +387,9 @@
                             IsEnabled="{Binding IsTransferring}"/>
                 </StackPanel>
 
-                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"
-                           Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"/>
 
-                <!-- Navigation tools (both modes) -->
+                <!-- Navigation tools -->
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="&#x25A4;" ToolTip="Toggle split pane view"
                             Style="{StaticResource IconButton}"
@@ -401,78 +399,55 @@
                             Command="{Binding RefreshDrivesCommand}"/>
                 </StackPanel>
 
-                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"
-                           Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"/>
 
-                <!-- Feature buttons (advanced only) -->
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
-                            Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                <!-- Feature buttons -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="&#xFF0B; Schedule" Margin="0,0,4,0"
                             Style="{StaticResource AccentButton}"
                             Command="{Binding OpenScheduleDialogCommand}"/>
+                    <Button Margin="0,0,4,0" Cursor="Hand"
+                            Click="BackupWizard_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+                                <Setter Property="Background" Value="#1A9B30FF"/>
+                                <Setter Property="BorderBrush" Value="#9B30FF"/>
+                                <Setter Property="Padding" Value="8,3"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="4"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#339B30FF"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Background" Value="#4D9B30FF"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                        <TextBlock Text="BACKUP WIZARD" FontSize="12" FontWeight="Bold"
+                                   Foreground="#9B30FF"/>
+                    </Button>
                     <Button Content="Jobs" Margin="0,0,4,0"
                             Style="{StaticResource ToolbarButton}"
                             Command="{Binding OpenJobsDialogCommand}"/>
-                    <Button Content="Archive Now" Margin="0,0,4,0"
-                            Style="{StaticResource ToolbarButton}"
-                            ToolTip="Compress the selected items (or current folder) into a .zip archive"
-                            Command="{Binding ArchiveNowCommand}"
-                            CommandParameter="{Binding SelectedItems, ElementName=TopPaneList}"/>
                     <Button Content="Log" Margin="0,0,4,0"
                             Style="{StaticResource ToolbarButton}"
                             Command="{Binding OpenLogDialogCommand}"/>
-                    <Button x:Name="OptionsButton" Content="Options" Margin="0,0,4,0"
+                    <Button x:Name="OptionsButton" Content="Options &#x25BE;" Margin="0,0,4,0"
                             Style="{StaticResource ToolbarButton}"
-                            Click="OptionsButton_Click">
-                        <Button.ContextMenu>
-                            <ContextMenu x:Name="OptionsMenu">
-                                <MenuItem IsCheckable="True"
-                                          Header="Launch at Startup"
-                                          IsChecked="{Binding LaunchAtStartup}"/>
-                                <MenuItem IsCheckable="True"
-                                          Header="Start Minimized to Tray"
-                                          IsChecked="{Binding StartMinimized}"
-                                          ToolTip="When enabled, launching via the Windows Startup shortcut opens to the tray without showing the window."/>
-                                <Separator/>
-                                <MenuItem Header="Check for Updates"
-                                          Command="{Binding CheckForUpdatesCommand}"/>
-                                <MenuItem Header="Export Diagnostics for Support…"
-                                          Command="{Binding ExportDiagnosticsCommand}"
-                                          ToolTip="Save a zip of logs, settings, and system info to your Desktop so you can email it to support."/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
-                </StackPanel>
-
-                <!-- Backup Wizard button (simple mode only) -->
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0"
-                            Visibility="{Binding IsSimpleMode, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <Rectangle Style="{StaticResource CmdDivider}"/>
-                    <Border Background="#1A9B30FF" BorderBrush="#9B30FF" BorderThickness="1"
-                            CornerRadius="4" Padding="8,3" Margin="4,0,0,0" Cursor="Hand"
-                            MouseLeftButtonUp="BackupWizard_Click">
-                        <TextBlock Text="BACKUP WIZARD" FontSize="12" FontWeight="Bold"
-                                   Foreground="#9B30FF"/>
-                    </Border>
-                </StackPanel>
-
-                <!-- Right side: Simple/Advanced toggle -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0">
-                    <ToggleButton IsChecked="{Binding IsSimpleMode}" Style="{StaticResource ToggleSwitch}"
-                                  VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <TextBlock FontSize="13" VerticalAlignment="Center"
-                               Foreground="{DynamicResource SecondaryTextBrush}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="Simple"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsSimpleMode}" Value="False">
-                                        <Setter Property="Text" Value="Advanced"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                            Click="OptionsButton_Click"
+                            MouseLeave="OptionsButton_MouseLeave"/>
                 </StackPanel>
 
                 <Rectangle DockPanel.Dock="Right" Style="{StaticResource CmdDivider}"/>
@@ -527,41 +502,101 @@
                     </StackPanel>
                 </Button>
 
-                <Rectangle DockPanel.Dock="Right" Style="{StaticResource CmdDivider}"
-                           Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
-
-                <!-- Toggle switches (advanced only) -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,4,0"
-                            Visibility="{Binding IsSimpleMode, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                    <!-- Remove Permissions toggle -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
-                        <ToggleButton IsChecked="{Binding RemovePermissions}" Style="{StaticResource ToggleSwitch}"
-                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock Text="Permissions" FontSize="13" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
-                    </StackPanel>
-                    <!-- Verify Checksums toggle -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
-                        <ToggleButton IsChecked="{Binding VerifyChecksums}" Style="{StaticResource ToggleSwitch}"
-                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock Text="Checksums" FontSize="13" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
-                    </StackPanel>
-                    <!-- Limit Speed toggle -->
-                    <StackPanel Orientation="Horizontal"
-                                ToolTip="Limit transfer speed to 10 MB/s">
-                        <ToggleButton IsChecked="{Binding ThrottleTransfer}" Style="{StaticResource ToggleSwitch}"
-                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock Text="Throttle" FontSize="13" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
-                    </StackPanel>
-                </StackPanel>
-
                 <!-- Spacer absorbs remaining width -->
                 <Border/>
 
             </DockPanel>
         </Border>
+
+        <!-- Options Popup (stays open until mouse leaves) -->
+        <Popup x:Name="OptionsPopup" Grid.Row="1"
+               PlacementTarget="{Binding ElementName=OptionsButton}"
+               Placement="Bottom"
+               StaysOpen="True"
+               AllowsTransparency="True"
+               PopupAnimation="Fade">
+            <Border Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="4,6"
+                    MouseLeave="OptionsPopup_MouseLeave"
+                    PreviewKeyDown="OptionsPopup_KeyDown">
+                <StackPanel MinWidth="220">
+                    <!-- Permissions toggle -->
+                    <DockPanel Margin="10,4">
+                        <ToggleButton DockPanel.Dock="Right"
+                                      IsChecked="{Binding RemovePermissions}"
+                                      Style="{StaticResource ToggleSwitch}"
+                                      VerticalAlignment="Center"/>
+                        <TextBlock Text="Remove Permissions" FontSize="13"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <!-- Checksum toggle -->
+                    <DockPanel Margin="10,4">
+                        <ToggleButton DockPanel.Dock="Right"
+                                      IsChecked="{Binding VerifyChecksums}"
+                                      Style="{StaticResource ToggleSwitch}"
+                                      VerticalAlignment="Center"/>
+                        <TextBlock Text="Verify Checksums" FontSize="13"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <!-- Throttle toggle -->
+                    <DockPanel Margin="10,4"
+                               ToolTip="Limit transfer speed to 10 MB/s">
+                        <ToggleButton DockPanel.Dock="Right"
+                                      IsChecked="{Binding ThrottleTransfer}"
+                                      Style="{StaticResource ToggleSwitch}"
+                                      VerticalAlignment="Center"/>
+                        <TextBlock Text="Throttle (10 MB/s)" FontSize="13"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <Separator Margin="6,6"/>
+                    <!-- Archive Now -->
+                    <Button Content="Archive Now"
+                            Style="{StaticResource ToolbarButton}"
+                            Margin="6,2"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding ArchiveNowCommand}"/>
+                    <Separator Margin="6,6"/>
+                    <!-- Existing options -->
+                    <DockPanel Margin="10,4">
+                        <ToggleButton DockPanel.Dock="Right"
+                                      IsChecked="{Binding LaunchAtStartup}"
+                                      Style="{StaticResource ToggleSwitch}"
+                                      VerticalAlignment="Center"/>
+                        <TextBlock Text="Launch at Startup" FontSize="13"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <DockPanel Margin="10,4"
+                               ToolTip="When enabled, launching via the Windows Startup shortcut opens to the tray without showing the window.">
+                        <ToggleButton DockPanel.Dock="Right"
+                                      IsChecked="{Binding StartMinimized}"
+                                      Style="{StaticResource ToggleSwitch}"
+                                      VerticalAlignment="Center"/>
+                        <TextBlock Text="Start Minimized to Tray" FontSize="13"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <Separator Margin="6,6"/>
+                    <Button Content="Check for Updates"
+                            Style="{StaticResource ToolbarButton}"
+                            Margin="6,2"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding CheckForUpdatesCommand}"/>
+                    <Button Content="Export Diagnostics for Support..."
+                            Style="{StaticResource ToolbarButton}"
+                            Margin="6,2"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding ExportDiagnosticsCommand}"
+                            ToolTip="Save a zip of logs, settings, and system info to your Desktop so you can email it to support."/>
+                </StackPanel>
+            </Border>
+        </Popup>
 
         <!-- ================================================================
              MAIN AREA

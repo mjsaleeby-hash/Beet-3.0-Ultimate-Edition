@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace BeetsBackup.Services;
 
 /// <summary>
-/// Persisted application settings (theme, startup preference, simple mode, skipped update version).
+/// Persisted application settings (theme, startup preference, skipped update version).
 /// </summary>
 public sealed class SettingsData
 {
@@ -14,9 +14,6 @@ public sealed class SettingsData
 
     /// <summary>Whether the application should launch at Windows startup.</summary>
     public bool LaunchAtStartup { get; set; }
-
-    /// <summary>Whether the simplified toolbar mode is enabled.</summary>
-    public bool IsSimpleMode { get; set; }
 
     /// <summary>
     /// When <c>true</c>, the app starts silently in the system tray when launched with the

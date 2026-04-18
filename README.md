@@ -75,8 +75,9 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 ### UI / UX
 
 - **Dark and light theme** toggle
-- **Simple / Advanced toolbar mode** — a persistent toggle switch on the toolbar switches between two toolbar layouts; Simple mode surfaces five buttons (Visual, Theme, Split Pane, Refresh, Backup Wizard) for a clean, uncluttered interface; Advanced mode shows the full toolbar with schedule, jobs, log, options, pause/stop, and the permissions/checksums/throttle toggles; the selected mode is persisted in settings across restarts
-- **Backup Wizard** — visible in Simple toolbar mode only; styled with an electric purple "blacklight" badge (matching the SOURCE/DESTINATION label design); placeholder for a guided backup setup flow (full implementation planned)
+- **Unified toolbar** — all controls are always visible; no mode toggle; the toolbar contains Visual, Theme, Split Pane, Refresh, Backup Wizard, Schedule, Jobs, Log, Options, and Pause/Stop
+- **Options dropdown** — a popup menu that stays open; contains Remove Permissions, Verify Checksums, Limit Speed (throttle), Archive Now, Launch at Startup, theme toggle, and Check for Updates; accessible from the toolbar at all times
+- **Backup Wizard** — always present in the command bar next to the Schedule button; styled with an electric purple "blacklight" badge (matching the SOURCE/DESTINATION label design); placeholder for a guided backup setup flow (full implementation planned)
 - **Update checker** — `UpdateService` queries the GitHub Releases API on startup; if a newer version is found, an accent-colored banner appears in the status bar with **Download** and **Dismiss** buttons; "Check for Updates" is also available in the Options menu; skipped versions are persisted to settings so dismissed releases are not surfaced again
 - **Launch at Startup** — Options menu toggle that creates or removes a Windows startup folder shortcut (with the `--startup` flag); when the shortcut fires at login the app hides directly to the system tray unless missed backups require attention, in which case the window opens at normal size
 - **Data Distribution Visual Mode** — toolbar button toggles between List view and a donut pie chart of the top 10 largest items in the current folder; color-coded with 10 distinct colors plus a muted "Other" slice; legend shows item name, icon, size, and percentage; hovering a slice highlights the matching legend entry and vice versa; chart auto-rebuilds atomically when folder size calculations complete; works in both single-pane and split-pane modes
@@ -129,7 +130,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 5. **Search recursively** by typing a term in the search box on the top nav bar and pressing Enter or clicking the magnifying glass. A **Path** column appears automatically in results showing each file's parent directory. Use the "X" button to cancel and return to the folder view. Right-click any result and choose **"Open in Explorer"** to jump directly to its location. The filter textbox applies a secondary live filter on top of any search results.
 6. **Transfer files** between panes using toolbar buttons, the right-click context menu, or drag-and-drop.
 7. **Choose a transfer mode** (Skip Existing, Keep Both, Replace, or Mirror) before starting a transfer. Mirror mode will delete destination files not in the source — confirm the warning before proceeding.
-8. **Enable checksum verification** or **permission stripping** via the toolbar checkboxes as needed (visible in Advanced toolbar mode).
+8. **Enable checksum verification** or **permission stripping** via the **Options** dropdown on the toolbar.
 9. **Monitor progress** in the status bar, and use pause, resume, or stop controls during transfers. Enable the **"Limit Speed"** toolbar toggle to cap bandwidth at 10 MB/s when transfers should not saturate the drive. Locked files are handled automatically via a VSS Shadow Copy fallback — no action required; the transfer summary reports how many files required it.
 10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, permission options, checksum verification, exclusion filters, versioning, and compression. Use "Estimate Size" to preview how much data will be transferred and see the disk space forecast before committing.
 11. **Review backup history** in the log dialog to see past and active operations. Use **"View Errors"** on any entry with failures to see which files failed and why. Use **"Open Log Folder"** for direct access to all log files. Export to CSV if needed.
@@ -163,7 +164,7 @@ Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and t
 │   ├── ToastNotifier               Windows balloon-tip notifications (Success / Warning / Error)
 │   ├── BackupLogService            JSON-based backup history with debounced saves
 │   ├── FileLogger                  Operational log + crash dump writer (LogDirectory: %LocalAppData%\Beet's Backup\)
-│   ├── SettingsService             User preferences, dark/light mode flag, toolbar mode, Launch at Startup
+│   ├── SettingsService             User preferences, dark/light mode flag, Launch at Startup
 │   │                               shortcut management, skip-version persistence
 │   ├── UpdateService               GitHub Releases API update checker with banner notification and skip-version support
 │   └── ThemeService                Light/dark mode (Light.xaml & Dark.xaml; dedicated brush keys)

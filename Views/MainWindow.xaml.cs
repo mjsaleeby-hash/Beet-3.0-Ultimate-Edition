@@ -383,7 +383,7 @@ public partial class MainWindow : Window
     }
 
     // -- Backup Wizard --
-    private void BackupWizard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private void BackupWizard_Click(object sender, RoutedEventArgs e)
     {
         var scheduler = App.Services.GetRequiredService<BeetsBackup.Services.SchedulerService>();
         var vm = new BeetsBackup.ViewModels.BackupWizardViewModel(scheduler);
@@ -405,14 +405,36 @@ public partial class MainWindow : Window
         }
     }
 
-    // -- Options dropdown --
+    // -- Options popup --
     private void OptionsButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.ContextMenu != null)
+        OptionsPopup.IsOpen = !OptionsPopup.IsOpen;
+    }
+
+    private void OptionsPopup_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (!OptionsButton.IsMouseOver)
+            OptionsPopup.IsOpen = false;
+    }
+
+    private void OptionsButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        // Close popup when mouse leaves button without entering the popup
+        if (OptionsPopup.IsOpen && !OptionsPopup.IsMouseOver)
         {
-            btn.ContextMenu.PlacementTarget = btn;
-            btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            btn.ContextMenu.IsOpen = true;
+            // Check the popup's child (Border) since Popup.IsMouseOver is unreliable
+            if (OptionsPopup.Child is FrameworkElement child && !child.IsMouseOver)
+                OptionsPopup.IsOpen = false;
+        }
+    }
+
+    private void OptionsPopup_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            OptionsPopup.IsOpen = false;
+            OptionsButton.Focus();
+            e.Handled = true;
         }
     }
 

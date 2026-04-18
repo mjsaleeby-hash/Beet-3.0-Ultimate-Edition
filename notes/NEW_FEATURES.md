@@ -10,15 +10,15 @@
 - Transfer summary shows "X via shadow copy" count
 - `VssService.cs` — new service; `TransferResult.ShadowCopyCount` — new property
 
-### Simple / Advanced Toolbar Mode
+### Unified Toolbar with Options Popup
 
-- Persistent toggle switch on the toolbar; mode saved in `SettingsService.ToolbarMode`
-- Simple mode: Visual, Theme, Split Pane, Refresh, Backup Wizard
-- Advanced mode: full existing toolbar (schedule, jobs, log, options, pause/stop, toggles)
+- Simple/Advanced toggle removed; all controls are always visible in a single toolbar layout
+- **Options dropdown** is a popup that stays open; contains: Remove Permissions, Verify Checksums, Limit Speed (throttle), Archive Now, Launch at Startup, theme toggle, Check for Updates
+- Permissions, Checksums, Throttle, and Archive Now moved out of inline toolbar checkboxes and into the Options popup
 
-### Backup Wizard Button (Placeholder)
+### Backup Wizard Button
 
-- Visible in Simple mode only
+- Always visible in the command bar, placed next to the Schedule button
 - Electric purple "blacklight" badge styling (same language as SOURCE/DESTINATION labels)
 - Placeholder — full wizard implementation is future work
 
