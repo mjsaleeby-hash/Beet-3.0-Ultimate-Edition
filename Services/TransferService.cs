@@ -92,6 +92,7 @@ public sealed class TransferService
             using var _awake = PowerManagement.KeepSystemAwake();
             // Create a per-session VSS scope — snapshots are cached per volume and cleaned up at the end
             using var vssSession = new VssSnapshotService();
+
             CheckFreeSpace(sourceList, destinationDir);
             var excludeSet = exclusions != null && exclusions.Count > 0 ? exclusions : null;
             result.TotalFiles = sourceList.Sum(s => CountFiles(s, excludeSet));
@@ -131,7 +132,7 @@ public sealed class TransferService
                     }
                 }
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         return result;
     }
@@ -212,7 +213,7 @@ public sealed class TransferService
                     progress?.Report($"ERROR: {Path.GetFileName(source)} — {ex.Message}");
                 }
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         return result;
     }
@@ -427,7 +428,7 @@ public sealed class TransferService
 
                 ReportPercent(result, progressPercent);
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         return result;
     }
@@ -475,7 +476,7 @@ public sealed class TransferService
                     progress?.Report($"Error: {Path.GetFileName(source)} — {ex.Message}");
                 }
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
 
         return result;
     }

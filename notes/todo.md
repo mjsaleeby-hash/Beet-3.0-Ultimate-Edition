@@ -24,9 +24,9 @@ Performance work is organized in phases from the 2026-04-18 Windows practices au
 
 ### Phase 4 — Hygiene (low risk, sweeping)
 
-- [ ] **`ConfigureAwait(false)` sweep** — Add to every `await` inside `Services/*.cs`. Eliminates the dispatcher-context deadlock class that caused the zombie process bug. The single highest-value correctness change remaining.
+- [x] **`ConfigureAwait(false)` sweep** — Added to every `await` in `TransferService.cs` (4), `SchedulerService.cs` (6), and `UpdateService.cs` (1). Eliminates the dispatcher-context deadlock class that caused the zombie process bug.
 - [ ] **Lazy DI in `App.OnStartup`** — Move `SchedulerService.LoadJobs()` off the constructor; make `UpdateService` lazy (only needed 3 seconds post-launch). Reduces cold-start time on the UI thread.
-- [ ] **`\\?\` long-path prefix** — Paths longer than 260 characters currently fail with a generic `FilesFailed` count. Add an `app.manifest` with `<ws2:longPathAware>true</ws2:longPathAware>` or normalize long paths with the `\\?\` prefix.
+- [x] **Long-path support** — Added `app.manifest` with `longPathAware` and Windows 10/11 compatibility. Paths >260 characters now work without `\\?\` prefix normalization.
 - [ ] **`CopyFileEx` PInvoke** — Replace the hand-rolled buffered copy with the Win32 `CopyFileEx` API. Handles sparse files, alternate data streams, and provides a kernel-level progress callback.
 
 ---

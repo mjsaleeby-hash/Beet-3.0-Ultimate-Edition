@@ -179,7 +179,7 @@ public sealed class SchedulerService : IDisposable
         }
 
         var snapshot = SnapshotJob(job);
-        await ExecuteJobAsync(snapshot, job);
+        await ExecuteJobAsync(snapshot, job).ConfigureAwait(false);
 
         // Advance timing so Task Scheduler and the in-process timer agree about the next run.
         lock (_jobsLock)
@@ -205,7 +205,7 @@ public sealed class SchedulerService : IDisposable
 
     private async Task RunAsync(CancellationToken ct)
     {
-        while (await _ticker.WaitForNextTickAsync(ct))
+        while (await _ticker.WaitForNextTickAsync(ct).ConfigureAwait(false))
         {
             try
             {
@@ -271,7 +271,7 @@ public sealed class SchedulerService : IDisposable
         {
             var exclusions = snapshot.ExclusionFilters.Count > 0 ? snapshot.ExclusionFilters : null;
 
-            var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(snapshot.SourcePaths, exclusions));
+            var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(snapshot.SourcePaths, exclusions)).ConfigureAwait(false);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Running, $"Transfer in progress — {FormatBytes(estimatedSize)} estimated");
             FileLogger.Info($"Estimated size for '{snapshot.Name}': {FormatBytes(estimatedSize)}");
 
@@ -291,7 +291,7 @@ public sealed class SchedulerService : IDisposable
                     archiveName: BuildArchiveName(snapshot.Name),
                     exclusions: exclusions,
                     pauseToken: pauseGate,
-                    progressPercent: percentProgress);
+                    progressPercent: percentProgress).ConfigureAwait(false);
             }
             else
             {
@@ -305,7 +305,7 @@ public sealed class SchedulerService : IDisposable
                     verifyChecksums: snapshot.VerifyChecksums,
                     exclusions: exclusions,
                     throttleBytesPerSec: snapshot.ThrottleMBps > 0 ? (long)snapshot.ThrottleMBps * 1024 * 1024 : 0,
-                    versioning: versioning);
+                    versioning: versioning).ConfigureAwait(false);
             }
 
             var totalFailed = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
@@ -440,7 +440,7 @@ public sealed class SchedulerService : IDisposable
                 logEntry.DestinationPath,
                 logEntry.StripPermissions,
                 logEntry.TransferMode,
-                progressPercent: percentProgress);
+                progressPercent: percentProgress).ConfigureAwait(false);
 
             var totalFailed = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete,

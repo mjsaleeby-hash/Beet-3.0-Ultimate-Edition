@@ -56,7 +56,7 @@ public sealed class UpdateService
             // Skip if user dismissed this version
             var skipped = _settings.Data.SkippedVersion;
 
-            var json = await Http.GetStringAsync(ApiUrl);
+            var json = await Http.GetStringAsync(ApiUrl).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
