@@ -32,20 +32,29 @@ internal static class PowerManagement
     /// when the returned <see cref="IDisposable"/> is disposed (typically at the end of a
     /// <c>using</c> block around the whole backup operation).
     /// </summary>
+    /// <returns>A disposable scope that clears the power hint on disposal.</returns>
     public static IDisposable KeepSystemAwake()
     {
+        // Continuous keeps the flag active until explicitly cleared; SystemRequired prevents
+        // the idle-sleep timer from firing. We intentionally omit DisplayRequired — the
+        // display can turn off during unattended backups without affecting the transfer.
         SetThreadExecutionState(ExecutionState.Continuous | ExecutionState.SystemRequired);
-        return new ReleaseScope();
+        return new AwakeScope();
     }
 
-    private sealed class ReleaseScope : IDisposable
+    /// <summary>
+    /// Disposable scope that resets the execution state to <see cref="ExecutionState.Continuous"/>
+    /// (clearing the SystemRequired hint) on disposal.
+    /// </summary>
+    private sealed class AwakeScope : IDisposable
     {
-        private bool _released;
+        private bool _disposed;
 
         public void Dispose()
         {
-            if (_released) return;
-            _released = true;
+            if (_disposed) return;
+            _disposed = true;
+            // Continuous alone clears all prior requirement flags
             SetThreadExecutionState(ExecutionState.Continuous);
         }
     }

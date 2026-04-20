@@ -18,9 +18,17 @@ public sealed class BackupLogService
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Beet's Backup", "backup_log.json");
 
+    /// <summary>Whether a deferred save is already queued on the dispatcher.</summary>
     private bool _savePending;
+
+    /// <summary>UTC timestamp of the last completed disk write.</summary>
     private DateTime _lastSave = DateTime.MinValue;
-    private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Minimum interval between disk writes for non-terminal status updates (Running, Scheduled).
+    /// Terminal statuses (Complete, Failed, Cancelled) bypass debounce via <see cref="SaveNow"/>.
+    /// </summary>
+    private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(5);
 
     /// <summary>Observable collection of log entries, bound to the Log dialog's list view.</summary>
     public ObservableCollection<BackupLogEntry> Entries { get; } = new();
@@ -59,7 +67,10 @@ public sealed class BackupLogService
 
             if (anyStale) Save();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("Failed to load backup log", ex);
+        }
     }
 
     /// <summary>
@@ -87,7 +98,10 @@ public sealed class BackupLogService
             entry.Status = status;
             entry.Message = message;
             entry.Timestamp = DateTime.Now;
-            Save();
+            if (status is BackupStatus.Running or BackupStatus.Scheduled)
+                Save();
+            else
+                SaveNow();
         });
     }
 
@@ -121,15 +135,18 @@ public sealed class BackupLogService
             if (fileErrors != null && fileErrors.Count > 0)
                 entry.FileErrors = fileErrors;
             entry.Timestamp = DateTime.Now;
-            Save();
+            SaveNow();
         });
     }
 
     /// <summary>Removes all entries from the log and persists the empty state.</summary>
     public void Clear()
     {
-        Entries.Clear();
-        Save();
+        RunOnUiThread(() =>
+        {
+            Entries.Clear();
+            SaveNow();
+        });
     }
 
     /// <summary>Dispatches an action to the UI thread, executing synchronously if already on it.</summary>
@@ -144,20 +161,22 @@ public sealed class BackupLogService
     }
 
     /// <summary>
-    /// Debounced save: avoids excessive I/O when multiple updates arrive in quick succession.
-    /// If called within the debounce window, schedules a single deferred save.
+    /// Debounced save: avoids excessive disk I/O when rapid-fire progress updates arrive.
+    /// If called within the debounce window, queues a single deferred save at Background
+    /// dispatcher priority. All callers run on the UI thread (via <see cref="RunOnUiThread"/>),
+    /// so <see cref="_savePending"/> does not need synchronization.
     /// </summary>
     private void Save()
     {
         var now = DateTime.UtcNow;
         if (now - _lastSave < SaveDebounce)
         {
-            // Schedule a deferred save if one isn't already pending
+            // Coalesce: schedule one deferred save that will capture the latest state
             if (!_savePending)
             {
                 _savePending = true;
                 var dispatcher = Application.Current?.Dispatcher;
-                dispatcher?.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+                dispatcher?.BeginInvoke(DispatcherPriority.Background, () =>
                 {
                     _savePending = false;
                     SaveNow();
@@ -168,7 +187,11 @@ public sealed class BackupLogService
         SaveNow();
     }
 
-    /// <summary>Performs the actual atomic write (temp file + replace) to disk.</summary>
+    /// <summary>
+    /// Performs the actual atomic write (temp file + replace) to disk immediately.
+    /// Called directly for terminal statuses (Complete, Failed, Cancelled) to ensure
+    /// final results are never lost to debounce coalescing.
+    /// </summary>
     private void SaveNow()
     {
         _lastSave = DateTime.UtcNow;
@@ -177,6 +200,8 @@ public sealed class BackupLogService
             var dir = Path.GetDirectoryName(LogPath)!;
             Directory.CreateDirectory(dir);
             var json = JsonSerializer.Serialize(Entries.ToList());
+            // Atomic write: write to temp, then replace. Prevents corruption if the app
+            // crashes mid-write (the old file or its .bak copy survives).
             var tmpPath = LogPath + ".tmp";
             File.WriteAllText(tmpPath, json);
             if (File.Exists(LogPath))
@@ -184,6 +209,9 @@ public sealed class BackupLogService
             else
                 File.Move(tmpPath, LogPath);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("Failed to persist backup log", ex);
+        }
     }
 }

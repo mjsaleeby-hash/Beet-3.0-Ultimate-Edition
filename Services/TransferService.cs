@@ -1,4 +1,5 @@
 using BeetsBackup.Models;
+using System.Buffers;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -719,6 +720,10 @@ public sealed class TransferService
         }
     }
 
+    /// <summary>
+    /// Performs the actual file copy for a single file, choosing the appropriate strategy
+    /// based on throttling and checksum verification settings.
+    /// </summary>
     private void ExecuteCopy(string source, string dest, bool stripPermissions,
         bool verifyChecksums, TransferResult result, IProgress<string>? progress,
         long throttleBytesPerSec, ManualResetEventSlim? pauseToken, CancellationToken ct)
@@ -727,7 +732,7 @@ public sealed class TransferService
 
         if (throttleBytesPerSec > 0)
         {
-            var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec, verifyChecksums, pauseToken, ct);
+            var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec, computeHash: verifyChecksums, pauseToken, ct);
             result.FilesCopied++;
             result.BytesTransferred += fileSize;
 
@@ -769,6 +774,14 @@ public sealed class TransferService
     /// Optionally computes SHA-256 of source data during the copy (single pass).
     /// Supports pause/cancel between chunks for responsive UI control.
     /// </summary>
+    /// <param name="source">Full path of the source file.</param>
+    /// <param name="dest">Full path of the destination file (created or overwritten).</param>
+    /// <param name="stripPermissions">When <c>true</c>, resets NTFS ACLs to inherit from parent.</param>
+    /// <param name="bytesPerSec">Maximum throughput in bytes per second.</param>
+    /// <param name="computeHash">When <c>true</c>, computes SHA-256 of the source bytes during copy.</param>
+    /// <param name="pauseToken">Optional pause gate checked between chunks.</param>
+    /// <param name="ct">Cancellation token; also used to break throttle sleeps immediately.</param>
+    /// <returns>The SHA-256 hash if <paramref name="computeHash"/> is <c>true</c>; otherwise <c>null</c>.</returns>
     private static byte[]? ThrottledCopy(string source, string dest, bool stripPermissions,
         long bytesPerSec, bool computeHash, ManualResetEventSlim? pauseToken = null,
         CancellationToken ct = default)
@@ -779,13 +792,13 @@ public sealed class TransferService
 
         // 1 MB buffer rented from the shared pool. Larger chunks mean fewer syscalls and
         // fewer throttle-sleep cycles; pooling avoids per-file heap churn under heavy loads.
-        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(1024 * 1024);
+        const int BufferSize = 1024 * 1024;
+        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
         try
         {
-            using var srcStream = File.OpenRead(source);
-            using var destStream = File.Create(dest);
-            System.Security.Cryptography.SHA256? sha = computeHash
-                ? System.Security.Cryptography.SHA256.Create() : null;
+            using var srcStream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, FileOptions.SequentialScan);
+            using var destStream = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, FileOptions.SequentialScan);
+            SHA256? sha = computeHash ? SHA256.Create() : null;
             try
             {
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -813,11 +826,13 @@ public sealed class TransferService
                     }
                 }
 
-                if (sha != null)
+                if (sha is not null)
                 {
-                    sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                    sha.TransformFinalBlock([], 0, 0);
                     hash = sha.Hash;
                 }
+                // Flush to the physical disk so the data is durable before we report success.
+                destStream.Flush(flushToDisk: true);
             }
             finally
             {
@@ -826,7 +841,7 @@ public sealed class TransferService
         }
         finally
         {
-            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+            ArrayPool<byte>.Shared.Return(buffer);
         }
 
         // Preserve timestamps
@@ -910,9 +925,14 @@ public sealed class TransferService
         }
     }
 
+    /// <summary>
+    /// Computes the SHA-256 hash of a file using a 1 MB internal buffer and sequential-scan hint
+    /// to maximize read-ahead throughput.
+    /// </summary>
     private static byte[] ComputeSha256(string filePath)
     {
-        using var stream = File.OpenRead(filePath);
+        const int BufferSize = 1024 * 1024;
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, FileOptions.SequentialScan);
         return SHA256.HashData(stream);
     }
 

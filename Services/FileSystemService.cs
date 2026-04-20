@@ -94,31 +94,40 @@ public sealed class FileSystemService
     }
 
     /// <summary>
-    /// Copies a file while computing the SHA256 hash of the source data in a single pass.
-    /// Returns the hash so the caller only needs to read the destination for verification.
+    /// Copies a file while computing the SHA-256 hash of the source data in a single read pass.
+    /// The destination stream is flushed to the physical disk before returning, so the caller
+    /// can trust that the written bytes are durable without re-reading the destination.
     /// </summary>
+    /// <param name="source">Full path of the source file.</param>
+    /// <param name="dest">Full path of the destination file (created or overwritten).</param>
+    /// <param name="stripPermissions">When <c>true</c>, resets NTFS ACLs to inherit from parent.</param>
+    /// <returns>The SHA-256 hash of the source data that was written.</returns>
     public byte[] CopyFileWithHash(string source, string dest, bool stripPermissions)
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
 
         byte[] hash;
         // 1 MB buffer rented from the shared pool: better SSD command-granularity match than the
-        // old 80 KB allocation, and avoids a fresh heap allocation per file (important when a
-        // backup copies tens of thousands of files).
-        var buffer = ArrayPool<byte>.Shared.Rent(1024 * 1024);
+        // old 80 KB default, and avoids a fresh heap allocation per file (important when a backup
+        // copies tens of thousands of files).
+        const int BufferSize = 1024 * 1024;
+        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
         try
         {
-            using var srcStream = File.OpenRead(source);
+            using var srcStream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, FileOptions.SequentialScan);
             using var sha = System.Security.Cryptography.SHA256.Create();
-            using var destStream = File.Create(dest);
+            using var destStream = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, FileOptions.SequentialScan);
             int bytesRead;
             while ((bytesRead = srcStream.Read(buffer, 0, buffer.Length)) > 0)
             {
                 sha.TransformBlock(buffer, 0, bytesRead, null, 0);
                 destStream.Write(buffer, 0, bytesRead);
             }
-            sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+            sha.TransformFinalBlock([], 0, 0);
             hash = sha.Hash!;
+            // Flush to the physical disk so the data is durable before we report success.
+            // This eliminates the need to re-read the destination for verification.
+            destStream.Flush(flushToDisk: true);
         }
         finally
         {
