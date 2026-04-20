@@ -225,10 +225,13 @@ public partial class MainWindow : Window
     {
         if (sender is not ListView list) return;
 
-        // Hit-test to find the item under the cursor
         var hit = e.OriginalSource as DependencyObject;
         while (hit != null && hit is not System.Windows.Controls.ListViewItem)
-            hit = System.Windows.Media.VisualTreeHelper.GetParent(hit);
+        {
+            hit = hit is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                ? System.Windows.Media.VisualTreeHelper.GetParent(hit)
+                : System.Windows.LogicalTreeHelper.GetParent(hit);
+        }
 
         if (hit is System.Windows.Controls.ListViewItem item && item.IsSelected)
         {
