@@ -86,6 +86,9 @@ public sealed class TransferService
 
         await Task.Run(() =>
         {
+            // Keep Windows awake for the duration of the backup — without this hint, an idle sleep
+            // timeout can suspend the machine mid-copy and the transfer fails on resume.
+            using var _awake = PowerManagement.KeepSystemAwake();
             // Create a per-session VSS scope — snapshots are cached per volume and cleaned up at the end
             using var vssSession = new VssSnapshotService();
             CheckFreeSpace(sourceList, destinationDir);
@@ -158,6 +161,7 @@ public sealed class TransferService
 
         await Task.Run(() =>
         {
+            using var _awake = PowerManagement.KeepSystemAwake();
             Directory.CreateDirectory(destinationDir);
 
             // Disambiguate if a prior archive with this exact name already exists — never silently
@@ -332,6 +336,7 @@ public sealed class TransferService
 
         await Task.Run(() =>
         {
+            using var _awake = PowerManagement.KeepSystemAwake();
             Directory.CreateDirectory(destinationDir);
             // Canonicalize once so every zip-slip check compares apples to apples.
             var destRootFull = Path.GetFullPath(destinationDir)
@@ -445,6 +450,7 @@ public sealed class TransferService
 
         await Task.Run(() =>
         {
+            using var _awake = PowerManagement.KeepSystemAwake();
             using var vssSession = new VssSnapshotService();
             CheckFreeSpace(sourceList, destinationDir);
             result.TotalFiles = sourceList.Sum(s => CountFiles(s));
@@ -769,17 +775,19 @@ public sealed class TransferService
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
 
-        const int bufferSize = 65536; // 64 KB chunks
         byte[]? hash = null;
 
-        using (var srcStream = File.OpenRead(source))
-        using (var destStream = File.Create(dest))
+        // 1 MB buffer rented from the shared pool. Larger chunks mean fewer syscalls and
+        // fewer throttle-sleep cycles; pooling avoids per-file heap churn under heavy loads.
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(1024 * 1024);
+        try
         {
+            using var srcStream = File.OpenRead(source);
+            using var destStream = File.Create(dest);
             System.Security.Cryptography.SHA256? sha = computeHash
                 ? System.Security.Cryptography.SHA256.Create() : null;
             try
             {
-                var buffer = new byte[bufferSize];
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
                 long totalBytesWritten = 0;
                 int bytesRead;
@@ -793,11 +801,16 @@ public sealed class TransferService
                     destStream.Write(buffer, 0, bytesRead);
                     totalBytesWritten += bytesRead;
 
-                    // Throttle: if we've written more bytes than the rate allows, sleep
+                    // Throttle: if we've written more bytes than the rate allows, wait on the
+                    // cancel token's wait handle so a Cancel() request breaks the delay
+                    // immediately instead of blocking up to `expectedMs - elapsedMs` ms.
                     var elapsedMs = stopwatch.ElapsedMilliseconds;
                     var expectedMs = (long)(totalBytesWritten * 1000.0 / bytesPerSec);
                     if (expectedMs > elapsedMs)
-                        Thread.Sleep((int)(expectedMs - elapsedMs));
+                    {
+                        if (ct.WaitHandle.WaitOne((int)(expectedMs - elapsedMs)))
+                            ct.ThrowIfCancellationRequested();
+                    }
                 }
 
                 if (sha != null)
@@ -810,6 +823,10 @@ public sealed class TransferService
             {
                 sha?.Dispose();
             }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
         }
 
         // Preserve timestamps

@@ -1,3 +1,29 @@
+## 2026-04-18 — Session Notes
+
+### Background
+Earlier sessions built the standalone `PerformanceMonitor` console tool, ran a Windows best-practices audit (output: `PerformanceMonitor/audit/windows-practices-audit-2026-04-18.md`), and triaged 13 findings into 4 phases. Today executed Phase 1 and fixed the zombie process bug.
+
+### Phase 1 Performance Work — Completed
+Six improvements applied to the main app. See `notes/decisions.md` for rationale on each.
+1. Server GC enabled in `BeetsBackup.csproj`
+2. `PowerManagement.cs` (new) — `SetThreadExecutionState` PInvoke to prevent sleep during transfers
+3. `ArrayPool<byte>` buffers (1 MB pooled) in `CopyFileWithHash` and `ThrottledCopy`
+4. Cancellation-responsive throttle: `ct.WaitHandle.WaitOne(delay)` replaces `Thread.Sleep`
+5. `ThreadPool.RegisterWaitForSingleObject` replaces the 1-second polling loop in `StartShowSignalListener`
+6. `PerformanceMonitor\**` excluded from main build via `DefaultItemExcludes`
+
+### Zombie Process Bug — Fixed
+Sync-over-async deadlock on WPF dispatcher. Full root cause and fix in `notes/bugs.md`.
+
+### Build
+- Release build: 0 warnings, 0 errors
+- PerformanceMonitor builds independently (`PerformanceMonitor/BeetsBackup.PerfMon.csproj`)
+
+### What Remains
+- Phase 2 (I/O tuning), Phase 3 (parallel copy engine), Phase 4 (hygiene sweep) — tracked in `notes/todo.md`
+
+---
+
 ## 2026-04-01 — Session Notes
 
 ### Reliability / Correctness Work Completed

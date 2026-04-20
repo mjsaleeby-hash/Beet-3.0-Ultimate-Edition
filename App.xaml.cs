@@ -29,7 +29,9 @@ public partial class App : Application
 
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _showSignal;
-    private CancellationTokenSource? _showSignalCts;
+    // RegisteredWaitHandle fires an OS callback when _showSignal is set, instead of a
+    // polling Task.Run that wakes every second. Disposed in OnExit via Unregister.
+    private RegisteredWaitHandle? _showSignalRegistration;
 
     /// <summary>
     /// Initializes the application: enforces single-instance, registers services,
@@ -66,7 +68,6 @@ public partial class App : Application
 
         // Create the signal that a second instance can use to wake us
         _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "BeetsBackup_ShowWindow_Signal");
-        _showSignalCts = new CancellationTokenSource();
         StartShowSignalListener();
 
         // Global exception handlers
@@ -153,6 +154,12 @@ public partial class App : Application
     /// </summary>
     private void RunHeadlessJob(Guid jobId)
     {
+        // Final failsafe: if anything in this method hangs (async deadlock, stuck finalizer,
+        // abandoned background task), the watchdog kills the process so we never leave a zombie.
+        // The original bug: RunJobByIdAsync was awaited on the UI thread via GetAwaiter().GetResult(),
+        // which deadlocked when an async continuation tried to resume on the blocked WPF dispatcher.
+        ArmShutdownWatchdog(TimeSpan.FromSeconds(30), "RunHeadlessJob");
+
         try
         {
             FileLogger.Info($"=== Headless run: job {jobId} ===");
@@ -165,7 +172,11 @@ public partial class App : Application
             Services.GetRequiredService<BackupLogService>().Load();
 
             var scheduler = Services.GetRequiredService<SchedulerService>();
-            var ran = scheduler.RunJobByIdAsync(jobId).GetAwaiter().GetResult();
+            // Run the async work on a thread-pool thread rather than blocking the WPF dispatcher
+            // directly. Without the outer Task.Run, any await inside RunJobByIdAsync that captured
+            // the dispatcher SynchronizationContext would deadlock when it tried to resume — the
+            // dispatcher thread is sitting in GetResult() and can't drain its queue.
+            var ran = Task.Run(() => scheduler.RunJobByIdAsync(jobId)).GetAwaiter().GetResult();
 
             FileLogger.Info($"=== Headless run complete: {(ran ? "ran" : "job not found")} ===");
             Environment.ExitCode = ran ? 0 : 2;
@@ -177,7 +188,14 @@ public partial class App : Application
         }
         finally
         {
-            try { (Services as IDisposable)?.Dispose(); } catch { /* best effort */ }
+            // Bounded dispose: if a service hangs, don't hold the process open waiting forever.
+            try
+            {
+                var disposeTask = Task.Run(() => (Services as IDisposable)?.Dispose());
+                if (!disposeTask.Wait(TimeSpan.FromSeconds(5)))
+                    FileLogger.Warn("Headless service disposal timed out after 5 seconds");
+            }
+            catch (Exception ex) { FileLogger.LogException("Error disposing services (headless)", ex); }
             DiagnosticsService.MarkExitedCleanly();
             // Environment.Exit hard-kills the process. In the headless path there is no UI,
             // so WPF's Shutdown() (which posts to the dispatcher) can leave a zombie if the
@@ -187,12 +205,39 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Arms a background thread that force-kills the process after <paramref name="timeout"/>.
+    /// This is a belt-and-suspenders failsafe: if <see cref="Environment.Exit"/> itself hangs
+    /// (stuck finalizer, blocked COM RCW release, etc.), the watchdog guarantees termination so
+    /// the user is never left with an invisible zombie Beet process.
+    /// </summary>
+    private static void ArmShutdownWatchdog(TimeSpan timeout, string caller)
+    {
+        var t = new Thread(() =>
+        {
+            Thread.Sleep(timeout);
+            try { FileLogger.Warn($"Shutdown watchdog firing ({caller}) — force-killing process after {timeout.TotalSeconds:0}s"); }
+            catch { /* logging may itself be broken during shutdown */ }
+            try { System.Diagnostics.Process.GetCurrentProcess().Kill(); }
+            catch { /* last resort — nothing more to do */ }
+        })
+        {
+            IsBackground = true,
+            Name = "Beet-ShutdownWatchdog"
+        };
+        t.Start();
+    }
+
+    /// <summary>
     /// Disposes services with a 5-second timeout, releases the single-instance mutex,
     /// and cleans up the inter-process show signal.
     /// </summary>
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
         FileLogger.Info("═══ Application shutting down ═══");
+        // Arm the watchdog before we start disposing anything. If Environment.Exit hangs at the
+        // bottom of this method (stuck finalizer, COM RCW release blocking), the watchdog kills
+        // the process so the user never sees an invisible zombie Beet in Task Manager.
+        ArmShutdownWatchdog(TimeSpan.FromSeconds(15), "OnExit");
         // Dispose services on a background thread with a timeout to avoid
         // deadlocking the UI thread if a scheduler job is in progress
         try
@@ -202,9 +247,11 @@ public partial class App : Application
                 FileLogger.Warn("Service disposal timed out after 5 seconds");
         }
         catch (Exception ex) { FileLogger.LogException("Error disposing services", ex); }
-        _showSignalCts?.Cancel();
+        // Unregister before disposing the event: a callback in flight after disposal
+        // would hit an ObjectDisposedException. Passing the handle makes Unregister block
+        // until any in-flight callback completes.
+        _showSignalRegistration?.Unregister(_showSignal);
         _showSignal?.Dispose();
-        _showSignalCts?.Dispose();
         try { _singleInstanceMutex?.ReleaseMutex(); }
         catch (ApplicationException) { /* Mutex not owned — second instance path */ }
         _singleInstanceMutex?.Dispose();
@@ -237,36 +284,33 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Polls a named <see cref="EventWaitHandle"/> so a second app instance
-    /// can signal us to bring our window to the foreground.
+    /// Registers an OS-level wait on the named show-signal so a second app instance
+    /// can bring our window to the foreground. The callback fires on a thread-pool
+    /// thread only when the event is set — no polling loop or dedicated thread.
     /// </summary>
     private void StartShowSignalListener()
     {
-        var cts = _showSignalCts!;
         var signal = _showSignal!;
-        Task.Run(() =>
-        {
-            while (!cts.IsCancellationRequested)
+        _showSignalRegistration = ThreadPool.RegisterWaitForSingleObject(
+            signal,
+            static (state, timedOut) =>
             {
-                try
+                if (timedOut) return;
+                var app = (App)state!;
+                app.Dispatcher.BeginInvoke(() =>
                 {
-                    bool signaled = signal.WaitOne(1000);
-                    if (cts.IsCancellationRequested) break;
-                    if (!signaled) continue; // timeout, not a signal
-                    Dispatcher.BeginInvoke(() =>
+                    var mainWindow = app.Windows.OfType<MainWindow>().FirstOrDefault();
+                    if (mainWindow != null)
                     {
-                        var mainWindow = Windows.OfType<MainWindow>().FirstOrDefault();
-                        if (mainWindow != null)
-                        {
-                            mainWindow.Show();
-                            mainWindow.WindowState = System.Windows.WindowState.Normal;
-                            mainWindow.Activate();
-                        }
-                    });
-                }
-                catch (ObjectDisposedException) { break; }
-            }
-        });
+                        mainWindow.Show();
+                        mainWindow.WindowState = System.Windows.WindowState.Normal;
+                        mainWindow.Activate();
+                    }
+                });
+            },
+            state: this,
+            millisecondsTimeOutInterval: Timeout.Infinite,
+            executeOnlyOnce: false);
     }
 
     /// <summary>Waits briefly for the UI to load, then triggers a background update check.</summary>

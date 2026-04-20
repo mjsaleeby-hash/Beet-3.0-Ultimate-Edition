@@ -25,10 +25,14 @@
     <Copyright>Copyright © 2026 Beet Software. All rights reserved.</Copyright>
     <Description>A lightweight dual-pane file manager and backup tool for Windows.</Description>
     <NeutralLanguage>en-US</NeutralLanguage>
+    <!-- Server GC: multiple heaps (one per logical core, up to 8) with parallel collection.
+         Roughly halves pause time for allocation-heavy workloads like the copy buffer pipeline. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**;PerformanceMonitor\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

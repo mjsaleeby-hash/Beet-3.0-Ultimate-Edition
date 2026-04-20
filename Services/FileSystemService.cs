@@ -1,5 +1,6 @@
 using BeetsBackup.Models;
 using Microsoft.VisualBasic.FileIO;
+using System.Buffers;
 using System.IO;
 using System.Security.AccessControl;
 using System.Runtime.Versioning;
@@ -101,11 +102,15 @@ public sealed class FileSystemService
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
 
         byte[] hash;
-        using (var srcStream = File.OpenRead(source))
-        using (var sha = System.Security.Cryptography.SHA256.Create())
-        using (var destStream = File.Create(dest))
+        // 1 MB buffer rented from the shared pool: better SSD command-granularity match than the
+        // old 80 KB allocation, and avoids a fresh heap allocation per file (important when a
+        // backup copies tens of thousands of files).
+        var buffer = ArrayPool<byte>.Shared.Rent(1024 * 1024);
+        try
         {
-            var buffer = new byte[81920]; // 80KB buffer
+            using var srcStream = File.OpenRead(source);
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using var destStream = File.Create(dest);
             int bytesRead;
             while ((bytesRead = srcStream.Read(buffer, 0, buffer.Length)) > 0)
             {
@@ -114,6 +119,10 @@ public sealed class FileSystemService
             }
             sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
             hash = sha.Hash!;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
 
         // Preserve timestamps
