@@ -33,16 +33,26 @@ Performance work is organized in phases from the 2026-04-18 Windows practices au
 
 ### Other open items (pre-existing, from 2026-04-01 assessment)
 
-- [ ] Move data-loss: source delete on partial failure
-- [ ] Atomic JSON saves
-- [ ] Single-instance mutex
-- [ ] Professional error messages (remove "dummy!" text)
-- [ ] Items 7–12 from 2026-03-24 viability assessment
+- [x] Move data-loss: source delete on partial failure — Fixed: per-item failure tracking, source preserved on any error
+- [x] Atomic JSON saves — Fixed: all three services use write-to-tmp + File.Replace pattern
+- [x] Single-instance mutex — Fixed: named Mutex in App.OnStartup, second instance signals first to show
+- [x] Professional error messages (remove "dummy!" text) — Fixed: all user-facing messages are professional
+- [x] Items 7–12 from 2026-03-24 viability assessment — all resolved (recycle bin deletes, timestamp comparison, async tree, search batching, stale log entries, log cap at 500)
 - [x] Backup wizard (fully implemented — 7-step wizard with stepper UI, disk-space preflight, wizard validates source/destination)
 - [ ] Dry run / preview mode
 - [ ] Encryption
 - [ ] Pre/post backup scripts
 - [ ] Delta / block-level copying
+
+---
+
+### Medium/low viability items still open (from 2026-03-24 assessment)
+
+- [ ] **#14 Locked file counter** — Catch locked-file `IOException` (HResult `0x80070020`), track `FilesLocked` counter in `TransferResult`, show in completion message
+- [ ] **#15 Crash logger** — Add `DispatcherUnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` handlers; write to `crash_log.txt`
+- [ ] **#17 SettingsService self-serialization** — Extract `SettingsData` POCO; currently serializes `this` which is fragile
+- [ ] **#21 Navigate UI thread blocking** — `_fs.GetChildren(path)` on UI thread; wrap in `Task.Run` + dispatcher populate
+- [ ] **#22 TransferService directory failure count** — Directory failures increment `FilesFailed` but skew the failure %; track separately
 
 ---
 

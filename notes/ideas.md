@@ -38,12 +38,12 @@ This session was focused entirely on stability and correctness rather than new u
 
 ### Remaining Viability Gaps (from 2026-03-24 assessment, still open)
 
-- Item 1: Move data-loss (source delete on partial failure) — still Open
-- Item 2: Atomic JSON saves — still Open
-- Item 5: Single-instance mutex — still Open
-- Item 6: Professional error messages ("dummy!" text) — still Open
-- Items 7–12: High priority items from assessment — still Open
-- Items 14–22: Medium/low priority items — still Open
+- Item 1: Move data-loss (source delete on partial failure) — RESOLVED
+- Item 2: Atomic JSON saves — RESOLVED
+- Item 5: Single-instance mutex — RESOLVED
+- Item 6: Professional error messages ("dummy!" text) — RESOLVED
+- Items 7–12: High priority items from assessment — RESOLVED
+- Items 14–22: Medium/low priority items — partially resolved (13, 16, 18, 20 done; 14, 15, 17, 19, 21, 22 open)
 
 Test count is now **132 passing**.
 

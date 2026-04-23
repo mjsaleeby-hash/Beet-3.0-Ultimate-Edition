@@ -15,14 +15,14 @@
 - **Problem:** Deletes the source directory after copy regardless of whether individual files succeeded. 3 of 500 files fail = those 3 are permanently lost.
 - **Fix:** Track which top-level source items completed with zero failures; only delete those. Alternatively, move the delete inside `CopyAndVerify` after verified success.
 - **Effort:** 1 afternoon
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — per-item failure tracking added; source only deleted when `failedDuring == 0`; partial failures preserve source and report to user
 
 ### 2. Atomic JSON Saves
 - **Files:** `BackupLogService.Save`, `SettingsService.Save`, `SchedulerService.SaveJobs`
 - **Problem:** All use `File.WriteAllText` directly. Power loss mid-write = truncated/corrupted file. User loses entire log history and scheduled jobs.
 - **Fix:** Write to `.tmp` first, then `File.Replace(tmpPath, targetPath, backupPath)`. Atomic on NTFS.
 - **Effort:** 30 minutes
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — all three services write to `.tmp` then use `File.Replace` with `.bak` backup
 
 ### 3. Scheduler Race Condition
 - **File:** `SchedulerService.cs`
@@ -42,13 +42,13 @@
 - **Problem:** No mutex check on startup. Two instances can run simultaneously, both running schedulers and racing on JSON files.
 - **Fix:** Add named `Mutex` in `App.OnStartup`. Show "Already running" message if owned, then exit.
 - **Effort:** 20 minutes
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — named Mutex in `App.OnStartup`; second instance signals first to show window via `EventWaitHandle`, then exits
 
 ### 6. Professional Error Messages
 - **Problem:** Placeholder text in user-facing messages: "Not enough space on destination dummy!", "Can't do that dummy!"
 - **Fix:** Replace with professional messages including relevant data (e.g., required vs. available space).
 - **Effort:** 15 minutes
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — all user-facing messages replaced with professional text
 
 ---
 
@@ -58,37 +58,37 @@
 - **File:** `MainViewModel.cs` `DeleteItemCommand`, `MainWindow.xaml.cs` `Delete_Click`
 - **Problem:** `Directory.Delete(path, true)` is permanent and unrecoverable. Confirmation only in code-behind, not ViewModel.
 - **Fix:** Use `Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile` with `RecycleOption.SendToRecycleBin`. Move confirmation logic into ViewModel.
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — `FileSystemService.DeleteItem` uses `FileSystem.DeleteFile/DeleteDirectory` with `RecycleOption.SendToRecycleBin`; confirmation dialog in `MainWindow.Delete_Click`
 
 ### 8. SkipExisting Size-Only Comparison
 - **File:** `TransferService.cs`, lines 180-192
 - **Problem:** Only compares file size. A same-size corrupted file is silently skipped.
 - **Fix:** Add timestamp comparison (`FileInfo.LastWriteTime` is already loaded — zero cost).
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — compares both `Length` and `LastWriteTimeUtc`
 
 ### 9. Async Tree Expansion
 - **File:** `FolderTreeItem.cs`, lines 97-111
 - **Problem:** `IsExpanded` setter calls `LoadChildren()` synchronously. Network drives cause multi-second UI freezes.
 - **Fix:** Convert to async; use `Task.Run` for `Directory.EnumerateDirectories`, populate via dispatcher.
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — `LoadChildrenAsync()` uses `Task.Run` for enumeration
 
 ### 10. Deep Search UI Thread Hammering
 - **File:** `MainViewModel.cs`, `SearchDirectoryRecursive`, line 426
 - **Problem:** Each matched file does a synchronous `Dispatcher.Invoke`. 5,000 results = 5,000 cross-thread round-trips.
 - **Fix:** Buffer results into a `List<T>`, dispatch in batches of 50-100 using `BeginInvoke`.
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — batched `BeginInvoke` dispatch with flush at end
 
 ### 11. Stale "Running" Log Entries
 - **File:** `BackupLogService.cs`
 - **Problem:** A crash during transfer leaves the log entry permanently at "Running" status.
 - **Fix:** On `Load`, find entries with `Status == Running`, rewrite as `Failed` with message "Interrupted (app was closed)".
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — `Load()` marks stale Running entries as Failed with "Interrupted" message, then saves
 
 ### 12. Unbounded Log Growth
 - **File:** `BackupLogService.cs`
 - **Problem:** No max entry count. Daily backups for 2 years = 730+ entries, all re-serialized on every save.
 - **Fix:** Cap at 500 entries, drop oldest on overflow.
-- **Status:** Open
+- **Status:** RESOLVED (2026-03-24) — `Add()` caps at 500 entries, drops oldest on overflow
 
 ### 13. Disk-Full Mid-Transfer
 - **File:** `TransferService.cs`
