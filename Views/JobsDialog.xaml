@@ -26,7 +26,22 @@
                   Background="{DynamicResource SurfaceBrush}"
                   BorderBrush="{DynamicResource BorderBrush}"
                   BorderThickness="1"
-                  Foreground="{DynamicResource PrimaryTextBrush}">
+                  Foreground="{DynamicResource PrimaryTextBrush}"
+                  MouseDoubleClick="JobsList_MouseDoubleClick">
+            <!-- Override the default selection style so the row text stays readable on the accent highlight.
+                 Without this, WPF's default ListViewItem keeps the unselected Foreground, which can
+                 wash out against the selection background. -->
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </ListView.ItemContainerStyle>
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="Name" Width="140" DisplayMemberBinding="{Binding Name}"/>
@@ -40,6 +55,12 @@
 
         <!-- Buttons -->
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Edit Selected"
+                    Background="{DynamicResource PanelBrush}"
+                    Foreground="{DynamicResource PrimaryTextBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    Padding="16,8" Margin="0,0,12,0" Cursor="Hand"
+                    Click="Edit_Click"/>
             <Button Content="Delete Selected"
                     Background="{DynamicResource PanelBrush}"
                     Foreground="{DynamicResource PrimaryTextBrush}"

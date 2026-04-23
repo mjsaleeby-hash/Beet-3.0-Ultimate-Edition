@@ -38,8 +38,37 @@ Performance work is organized in phases from the 2026-04-18 Windows practices au
 - [ ] Single-instance mutex
 - [ ] Professional error messages (remove "dummy!" text)
 - [ ] Items 7–12 from 2026-03-24 viability assessment
-- [ ] Backup wizard (full implementation; placeholder exists)
+- [x] Backup wizard (fully implemented — 7-step wizard with stepper UI, disk-space preflight, wizard validates source/destination)
 - [ ] Dry run / preview mode
 - [ ] Encryption
 - [ ] Pre/post backup scripts
 - [ ] Delta / block-level copying
+
+---
+
+## Future Fixes / Additions
+
+### VSS — Remove elevation requirement (2026-04-21)
+
+Currently `VssSnapshotService` requires the app to be running as Administrator because Windows
+only allows elevated processes (or Backup Operators group members) to create VSS snapshots.
+This is an OS-level restriction — `CreateVssBackupComponents` checks the caller's token and
+returns `E_ACCESSDENIED` for non-elevated processes.
+
+Three options, in preference order:
+
+**Option A — Elevated helper subprocess (recommended)**
+Keep the main app non-elevated. When a locked file is hit during transfer, spawn a small
+separate helper exe via `ShellExecute("runas")`. The helper does only the VSS snapshot,
+writes the resulting shadow path back to the main process via a named pipe or temp file,
+then exits. Result: one UAC prompt, only when the user actually hits a locked file.
+
+**Option B — Detect and offer restart-as-admin**
+Run normally. If VSS fails with `E_ACCESSDENIED`, catch it and show a one-time prompt:
+"Some files are locked. Restart Beet's Backup as Administrator to copy them?" Then relaunch
+with `ShellExecute("runas")`. Quick to implement; UX is slightly clunky (full app restarts).
+
+**Option C — Require administrator at launch (simplest, most intrusive)**
+Add `requestedExecutionLevel level="requireAdministrator"` to the app manifest. UAC prompts
+every time the app starts regardless of whether VSS is needed. Approach used by Macrium,
+Veeam, etc. Acceptable for a dedicated backup tool; annoying for casual users.

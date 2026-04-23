@@ -13,6 +13,12 @@ namespace BeetsBackup.ViewModels;
 /// </summary>
 public partial class ScheduleDialogViewModel : ObservableObject
 {
+    /// <summary>
+    /// When set, <see cref="BuildJob"/> preserves this Id instead of minting a new one — signals
+    /// the dialog is editing an existing job rather than creating a fresh one.
+    /// </summary>
+    public Guid? EditingJobId { get; set; }
+
     [ObservableProperty] private string _jobName = "My Backup";
 
     /// <summary>User-selected source folder paths for the backup job.</summary>
@@ -269,6 +275,8 @@ public partial class ScheduleDialogViewModel : ObservableObject
 
         return new ScheduledJob
         {
+            // Preserve the original Id when editing so SchedulerService.UpdateJob matches the existing entry.
+            Id = EditingJobId ?? Guid.NewGuid(),
             Name = JobName,
             SourcePaths = SourcePaths.ToList(),
             DestinationPath = DestinationPath,
@@ -318,4 +326,57 @@ public partial class ScheduleDialogViewModel : ObservableObject
         SourcePaths.Count > 0 &&
         !string.IsNullOrWhiteSpace(DestinationPath) &&
         !string.IsNullOrWhiteSpace(JobName);
+
+    /// <summary>
+    /// Populates every editable field from an existing <see cref="ScheduledJob"/> so the dialog
+    /// opens in edit mode with the user's prior selections intact. Also records <see cref="EditingJobId"/>
+    /// so <see cref="BuildJob"/> preserves the original Id.
+    /// </summary>
+    public void LoadFromJob(ScheduledJob job)
+    {
+        EditingJobId = job.Id;
+        JobName = job.Name;
+
+        SourcePaths.Clear();
+        foreach (var src in job.SourcePaths) SourcePaths.Add(src);
+
+        DestinationPath = job.DestinationPath;
+        StripPermissions = job.StripPermissions;
+        VerifyChecksums = job.VerifyChecksums;
+        SelectedTransferMode = job.TransferMode;
+
+        ExclusionFilters.Clear();
+        foreach (var pat in job.ExclusionFilters) ExclusionFilters.Add(pat);
+
+        EnableThrottle = job.ThrottleMBps > 0;
+        if (EnableThrottle)
+        {
+            // Round to the nearest offered option so the combo selection is a real list entry.
+            var label = $"{job.ThrottleMBps} MB/s";
+            SelectedThrottleSpeed = ThrottleSpeedOptions.Contains(label) ? label : "10 MB/s";
+        }
+
+        EnableVersioning = job.EnableVersioning;
+        MaxVersions = job.MaxVersions;
+        EnableCompression = job.EnableCompression;
+
+        IsRecurring = job.IsRecurring;
+        if (job.RecurInterval.HasValue)
+        {
+            SelectedInterval = job.RecurInterval.Value switch
+            {
+                var t when t == TimeSpan.FromDays(1)   => "Daily",
+                var t when t == TimeSpan.FromDays(7)   => "Weekly",
+                var t when t == TimeSpan.FromHours(6)  => "Every 6 Hours",
+                var t when t == TimeSpan.FromHours(12) => "Every 12 Hours",
+                _ => "Daily"
+            };
+        }
+
+        // Decompose NextRun into the dialog's date + 12-hour / AM-PM / minute fields.
+        ScheduledDate = job.NextRun.Date;
+        ScheduledHour = ToTwelveHour(job.NextRun.Hour);
+        ScheduledMinute = job.NextRun.Minute - (job.NextRun.Minute % 15);
+        SelectedAmPm = job.NextRun.Hour >= 12 ? "PM" : "AM";
+    }
 }

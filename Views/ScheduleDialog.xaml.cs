@@ -20,6 +20,16 @@ public partial class ScheduleDialog : Window
         DataContext = _vm;
     }
 
+    /// <summary>
+    /// Opens the dialog in edit mode, pre-populated from the given job. On save, the VM keeps the
+    /// original Id so the caller can route the result through <c>SchedulerService.UpdateJob</c>.
+    /// </summary>
+    public ScheduleDialog(ScheduledJob existing) : this()
+    {
+        _vm.LoadFromJob(existing);
+        Title = "Edit Backup";
+    }
+
     // async void is correct for WPF event handlers — exceptions propagate to the dispatcher.
     private async void Schedule_Click(object sender, RoutedEventArgs e)
     {

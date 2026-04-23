@@ -316,7 +316,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- Crash recovery banner (collapses when not shown) -->
-            <RowDefinition Height="48"/>  <!-- Command bar -->
+            <RowDefinition Height="96"/>  <!-- Command bar (tall enough for 84px logo) -->
             <RowDefinition Height="*"/>   <!-- Main area -->
             <RowDefinition Height="32"/>  <!-- Status bar -->
         </Grid.RowDefinitions>
@@ -355,12 +355,18 @@
 
                 <!-- Left: Logo + App Name (compact) -->
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                    <Image Source="/Assets/logo.png" Width="28" Height="28"
-                           Margin="0,0,8,0" RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <Image Source="/Assets/beetle_wizard_circle.png" Width="84" Height="84"
+                           Margin="0,0,12,0" RenderOptions.BitmapScalingMode="HighQuality"/>
                     <TextBlock Text="Beet's Backup"
-                               FontSize="16" FontWeight="SemiBold"
-                               Foreground="{DynamicResource PrimaryTextBrush}"
-                               VerticalAlignment="Center"/>
+                               FontSize="32" FontWeight="Bold"
+                               Foreground="#104FB6"
+                               VerticalAlignment="Center">
+                        <!-- ShadowDepth=0 turns a drop shadow into a centered glow.
+                             Color is the app's accent blue, one step lighter than the title fill. -->
+                        <TextBlock.Effect>
+                            <DropShadowEffect Color="#5BA3F0" BlurRadius="22" ShadowDepth="0" Opacity="1.0"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
                 </StackPanel>
 
                 <Rectangle DockPanel.Dock="Left" Style="{StaticResource CmdDivider}"/>

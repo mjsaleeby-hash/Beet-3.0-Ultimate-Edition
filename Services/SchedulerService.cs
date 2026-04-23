@@ -163,6 +163,36 @@ public sealed class SchedulerService : IDisposable
     }
 
     /// <summary>
+    /// Replaces an existing job in-place by matching on <see cref="ScheduledJob.Id"/>.
+    /// The <paramref name="updated"/> job must carry the same Id as the job being replaced.
+    /// Re-registers the Windows scheduled task so the OS-level trigger reflects the edits.
+    /// </summary>
+    public void UpdateJob(ScheduledJob updated)
+    {
+        lock (_jobsLock)
+        {
+            var idx = _jobs.FindIndex(j => j.Id == updated.Id);
+            if (idx < 0)
+            {
+                // Fall through to AddJob semantics so a stale edit doesn't silently drop.
+                _jobs.Add(updated);
+            }
+            else
+            {
+                _jobs[idx] = updated;
+            }
+            SaveJobs();
+        }
+
+        // Refresh the OS-level task so new timing / command-line args take effect.
+        WindowsTaskSchedulerService.Unregister(updated.Id);
+        if (updated.IsEnabled)
+            WindowsTaskSchedulerService.Register(updated);
+
+        JobsChanged?.Invoke();
+    }
+
+    /// <summary>
     /// Headless run entry-point used by the <c>--run-job {id}</c> CLI path. Locates the
     /// persisted job, runs it synchronously, updates LastRun/NextRun, and returns.
     /// </summary>

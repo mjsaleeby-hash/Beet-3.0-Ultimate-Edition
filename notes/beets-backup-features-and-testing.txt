@@ -1,5 +1,5 @@
 Beets Backup — Feature List, Known Limitations, and Critical Testing Areas
-Last updated: 2026-04-03
+Last updated: 2026-04-21
 
 ================================================================================
 SECTION 1: COMPLETE FEATURE LIST
@@ -54,7 +54,7 @@ TRANSFER PROGRESS
 - Pause/Resume active transfers (fresh ManualResetEventSlim per transfer)
 - Stop (cancel) active transfers
 - Disk-full detection with specific error reporting
-- Locked-file detection with specific error reporting
+- Locked-file detection with specific error reporting; VSS fallback for locked files (requires elevation)
 - Directory failure tracking (separate from file failures)
 - Per-file error tracking: path + reason recorded for every failed file (capped at 200 per job)
 
@@ -62,6 +62,32 @@ BANDWIDTH THROTTLING
 - "Limit Speed" checkbox in main toolbar (fixed 10 MB/s cap)
 - Per-job speed picker in scheduler dialog (1–100 MB/s options)
 - Chunked streaming with stopwatch-based rate limiting in TransferService
+
+VOLUME SHADOW COPY (VSS)
+- VssSnapshotService: creates on-demand VSS snapshots via COM P/Invoke to vssapi.dll
+- Snapshot cache: one snapshot per volume per session (avoids duplicate VSS overhead)
+- Translates normal file paths to shadow-copy device paths for copying locked files
+- E.g. C:\Users\foo\bar.db → \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Users\foo\bar.db
+- Snapshots cleaned up on Dispose (DeleteSnapshots call removes shadow copies from disk)
+- Requires elevation; throws InvalidOperationException with a helpful message if VSS fails
+- Locked-file handling in TransferService has a VSS fallback path
+
+FILE VERSIONING
+- Optional per-job versioning: before overwriting a destination file, the existing copy is moved
+  to a hidden .versions/ subfolder at the destination root
+- Archive naming format: {name}__{yyyy-MM-dd_HH-mm-ss}{ext} (counter suffix for sub-second duplicates)
+- Configurable retention: MaxVersions prunes the oldest archived copies beyond the limit
+- .versions folder is marked Hidden so it doesn't appear in normal file browsing
+- Versioning and compression are mutually exclusive (enforced in wizard UI and at job build time)
+- "Previous Versions…" context menu item opens PreviousVersionsDialog for any file in a versioned destination
+- Previous Versions dialog: lists archived versions newest-first, with Restore and Delete commands
+- Restore is reversible: the current live copy is archived before being overwritten
+- VersioningService.FindVersionsRoot() auto-discovers the destination root by walking up the directory tree
+
+COMPRESSION
+- Optional per-job compression: backs up sources as a single .zip archive at the destination
+- Replaces direct file copy — the entire source tree is zipped into one archive file
+- Mutually exclusive with file versioning
 
 SCHEDULED BACKUP JOBS
 - Scheduled backup jobs with custom names
@@ -73,6 +99,8 @@ SCHEDULED BACKUP JOBS
 - Per-job checksum verification option
 - Per-job exclusion filters (by extension pattern and exact name)
 - Per-job speed limit option
+- Per-job file versioning option (MaxVersions configurable)
+- Per-job compression option (mutually exclusive with versioning)
 - Backup size estimation with "Estimate Size" button (respects exclusion filters)
 - Scheduled Jobs dialog to view/manage/delete jobs
 - Background scheduler with 1-minute resolution
@@ -80,6 +108,38 @@ SCHEDULED BACKUP JOBS
 - Scheduler errors surfaced in main window status bar via SchedulerError event
 - Missed backup detection on startup with Run All Now / Skip All dialog
 - LastRun tracking per job for accurate missed-backup detection
+
+BACKUP WIZARD
+- Multi-step Backup Wizard dialog with 7 steps and a stepper-dot progress indicator
+- Step 1 – Backup Type: choose One-time now, Scheduled (one-time), or Recurring
+- Step 2 – When (skipped for "One-time now"): date/time picker + recurrence interval selection
+- Step 3 – Source: multi-folder picker or full-drive selection
+- Step 4 – Destination: folder picker with same-source-drive detection warning
+- Step 5 – Mode: transfer mode selection with plain-English descriptions of each mode
+- Step 6 – Options: checksum verify, strip permissions, throttle, file versioning (MaxVersions),
+  compression to .zip, and exclusion filters (all optional; all default off)
+- Step 7 – Review: human-readable summary of all choices + async disk-space estimate
+- "One-time now" path runs the job immediately; finish button label is "Start Backup Now"
+- Scheduled/Recurring path adds the job to the scheduler; finish button label is "Schedule Backup"
+- Pre-flight disk-space gate: if estimated size exceeds free space, a warning MessageBox fires
+  before finalizing; user can cancel or proceed
+- Wizard validates source and destination before allowing Next navigation
+
+WINDOWS TASK SCHEDULER INTEGRATION
+- WindowsTaskSchedulerService: registers Beet's Backup jobs with Windows Task Scheduler via schtasks.exe
+- Registered tasks fire even when the app is closed or after a reboot (--run-job {id} argument)
+- Task naming convention: BeetsBackup_{jobId} (GUID, no dashes) — easy to identify in Task Scheduler
+- Runs as the interactive user (LIMITED privilege level — no elevation required)
+- Supports all four recurrences: ONCE, DAILY, WEEKLY, HOURLY /MO N
+- ReconcileAll() on startup re-registers any tasks removed from Task Scheduler
+- Unregister() deletes the Windows task when a job is deleted in Beet's Backup
+
+TOAST NOTIFICATIONS
+- ToastNotifier: Windows balloon/toast notifications via the system tray NotifyIcon
+- Three severity levels: Success (Info icon), Warning (Warning icon), Error (Error icon)
+- Fires on backup job completion: success, partial errors, or outright failure/cancellation
+- Uses WinForms NotifyIcon.ShowBalloonTip — renders as native Win10/11 toast; no AppUserModelId
+  or manifest requirements
 
 BACKUP LOG
 - Backup log with detailed history (timestamp, job, status, source, stats, details)
@@ -105,6 +165,15 @@ DATA VISUALIZATION
 - Works in single-pane and split-pane modes
 - Pure WPF implementation — no third-party charting library
 
+DIAGNOSTICS
+- Options > Export Diagnostics bundles logs and config into a zip on the Desktop
+- Zip includes: operational.log, crash_dump.log, settings.json, backup_log.json, system_info.txt
+- system_info.txt records: app version, OS, .NET version, machine name, uptime, RAM, CPU count,
+  monitor list, and drive inventory
+- Zip written to a temp file first and moved atomically — no partial zip left on failure
+- Unclean-shutdown sentinel: MarkRunning() writes running.lock on startup;
+  MarkExitedCleanly() removes it on clean exit; ConsumeUncleanShutdown() detects crash-restarts
+
 APPLICATION
 - Dark and Light theme support with runtime toggle
 - Theme preference persisted to settings
@@ -128,7 +197,12 @@ APPLICATION
 SECTION 2: KNOWN LIMITATIONS
 ================================================================================
 
-- No Volume Shadow Copy (VSS) — locked files are detected and reported but not backed up
+- VSS requires elevation — if the app is not running as Administrator, the locked-file VSS
+  fallback is unavailable; locked files will be detected and reported but not backed up
+- Compression creates a single .zip archive — individual file timestamps and attributes are
+  not preserved inside the zip
+- Windows Task Scheduler integration fires even without the app running, but the app must be
+  installed at a stable path (task registration uses the current exe path)
 - No cloud backup support (local/USB/network drives only)
 - No bidirectional sync (one-way copy/move only)
 - No incremental/differential backup (always full comparison)
@@ -138,10 +212,9 @@ SECTION 2: KNOWN LIMITATIONS
 - Recycle Bin delete called from thread pool — COM dialog could fail on non-STA thread (rare edge case)
 - BackupLogEntry.Id is get-only — deserialized entries get new GUIDs (doesn't affect current functionality)
 - No file filtering by date range or size range
-- No compression/encryption for backups
-- No backup verification/restore workflow
-- No email/toast notification on backup completion or failure
-- Scheduler requires app to be running (no Windows Service mode)
+- No backup verification/restore workflow beyond per-file versioning
+- Scheduler requires app to be running for in-process scheduling; Windows Task Scheduler integration
+  handles the "app closed" case but is not a full Windows Service
 - Windows only (WPF, .NET 8)
 
 ================================================================================
@@ -209,6 +282,57 @@ COPY OPTIONS
 BANDWIDTH THROTTLING
 - Throttle: Enable 1 MB/s limit, copy a large file, verify transfer rate stays near the cap
 - Throttle: Set per-job speed in scheduler, verify rate respected during scheduled run
+
+BACKUP WIZARD
+- Open wizard, choose "One-time now" — verify Schedule step is skipped; finish button says "Start Backup Now"
+- Open wizard, choose "Recurring" — verify Schedule step appears; finish button says "Schedule Backup"
+- Leave Source empty and click Next — verify validation blocks progress with no crash
+- Enter a destination on the same drive as the source — verify same-drive warning appears
+- Reach Review step — verify summary populates correctly and size estimate runs asynchronously
+- Complete wizard with a destination that has insufficient free space — verify warning dialog appears;
+  user can cancel (no job created) or proceed (job created despite warning)
+- Complete wizard with "One-time now" — verify job runs immediately and does not appear in Scheduled Jobs list
+- Complete wizard with "Recurring" — verify job appears in Scheduled Jobs list with correct next-run time
+
+FILE VERSIONING
+- Enable versioning on a job, run it twice — verify .versions folder appears at destination and
+  contains one archived copy of the first run's output
+- Verify .versions folder has the Windows Hidden attribute set
+- Run with MaxVersions=2, trigger 4 transfers to the same destination — verify only 2 archived
+  copies remain for each file (oldest pruned automatically)
+- Open "Previous Versions…" from the context menu for a versioned file — verify dialog lists
+  versions newest-first with correct timestamps and file sizes
+- Restore a version — verify the live file is replaced and the pre-restore copy is itself archived
+  (restore is reversible; a new version entry appears in the dialog)
+- Delete an archived version from the dialog — verify the version file is removed from .versions/
+  and disappears from the list
+- Enable versioning and compression simultaneously in the wizard — verify the UI prevents it
+  (enabling one disables the other)
+
+VOLUME SHADOW COPY (VSS)
+- Copy a folder containing a file locked by another process with VSS enabled (app elevated) —
+  verify the file is copied successfully via the shadow path
+- Run the same test without elevation — verify the error is surfaced cleanly in "View Errors"
+  (not a crash); VSS fallback gracefully degrades to the regular locked-file error
+
+TOAST NOTIFICATIONS
+- Complete a scheduled backup successfully — verify a Success toast (Info icon) appears above the tray
+- Complete a backup with per-file errors — verify a Warning toast appears
+- Cancel a running backup — verify an Error toast appears
+
+DIAGNOSTICS
+- Options > Export Diagnostics — verify a BeetsBackup-Diagnostics-{stamp}.zip appears on the Desktop
+  and contains operational.log, crash_dump.log, settings.json, backup_log.json, system_info.txt
+- Open system_info.txt inside the zip — verify app version, OS, drives, and monitor info are present
+- Force-kill the app via Task Manager, then relaunch — verify unclean-shutdown is detected
+  (running.lock was not deleted; ConsumeUncleanShutdown returns the crash timestamp)
+
+WINDOWS TASK SCHEDULER
+- Create a scheduled job via the wizard — verify a task named BeetsBackup_{id} appears in
+  Windows Task Scheduler with the correct trigger time and recurrence
+- Delete the job from Beet's Backup — verify the corresponding task is removed from Task Scheduler
+- Manually delete a task from Task Scheduler, then relaunch the app — verify ReconcileAll()
+  re-registers the missing task
 
 LOG
 - Log cap: Generate 600+ log entries, verify oldest are dropped at 500
