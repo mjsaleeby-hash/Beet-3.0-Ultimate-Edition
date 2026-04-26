@@ -12,10 +12,10 @@
     <Color x:Key="PrimaryTextColor">#111111</Color>         <!-- #3: darkened for sidebar drive names -->
     <Color x:Key="SecondaryTextColor">#555555</Color>       <!-- #3: darkened for storage figures -->
     <Color x:Key="TertiaryTextColor">#888898</Color>        <!-- DRIVES label visible -->
-    <Color x:Key="AccentColor">#4A9EFF</Color>
-    <Color x:Key="AccentHoverColor">#2A8AEF</Color>
-    <Color x:Key="AccentDimColor">#E8F0FC</Color>
-    <Color x:Key="SelectionColor">#D6ECFB</Color>          <!-- #3: teal-blue selection highlight -->
+    <Color x:Key="AccentColor">#7C5CFF</Color>             <!-- v3: violet accent (was #4A9EFF blue) -->
+    <Color x:Key="AccentHoverColor">#5B3EE0</Color>        <!-- deeper violet on hover -->
+    <Color x:Key="AccentDimColor">#EDE8FC</Color>          <!-- violet-tinted dim -->
+    <Color x:Key="SelectionColor">#E0D7FA</Color>          <!-- violet-tinted selection highlight -->
     <Color x:Key="HoverColor">#D0DEF0</Color>
     <Color x:Key="ToolbarColor">#F4F4F9</Color>
     <Color x:Key="SuccessColor">#148C3E</Color>             <!-- #7: deepened green for 4.5:1 contrast on white -->
@@ -25,8 +25,8 @@
     <Color x:Key="ProgressTrackColor">#CCCCCC</Color>       <!-- ring track + progress bar visible on light panels -->
 
     <!-- SRC / DST pane accent colors -->
-    <Color x:Key="PaneSrcBorderColor">#90BFFF</Color>
-    <Color x:Key="PaneSrcBgColor">#F0F5FF</Color>
+    <Color x:Key="PaneSrcBorderColor">#A094F0</Color>      <!-- violet family -->
+    <Color x:Key="PaneSrcBgColor">#F3F0FF</Color>
     <Color x:Key="PaneDstBorderColor">#4DB878</Color>       <!-- #7: deeper green border for contrast -->
     <Color x:Key="PaneDstBgColor">#EEFBF2</Color>
 

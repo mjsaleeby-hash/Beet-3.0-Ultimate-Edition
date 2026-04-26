@@ -84,12 +84,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    // --- Deep search ---
+    // --- Deep search (top pane) ---
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private string _deepSearchQuery = string.Empty;
     [ObservableProperty] private bool _hasSearchResults;
     [ObservableProperty] private bool _showNoResults;
     private CancellationTokenSource? _searchCts;
+
+    // --- Deep search (bottom pane) ---
+    [ObservableProperty] private bool _isBottomSearching;
+    [ObservableProperty] private string _bottomDeepSearchQuery = string.Empty;
+    [ObservableProperty] private bool _hasBottomSearchResults;
+    [ObservableProperty] private bool _showBottomNoResults;
+    private CancellationTokenSource? _bottomSearchCts;
 
     // --- Navigation history (top) ---
     private readonly List<string> _topHistory = new();
@@ -113,6 +120,138 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     // --- Status ---
     [ObservableProperty] private string _statusMessage = "Ready";
+
+    /// <summary>
+    /// True when the most recent *terminal* backup completed cleanly (no failed files).
+    /// Skips Running/Scheduled entries so an in-progress job never briefly shows "At Risk".
+    /// </summary>
+    public bool IsProtected
+    {
+        get
+        {
+            var last = TerminalEntries.OrderByDescending(e => e.Timestamp).FirstOrDefault();
+            return last?.Status == BackupStatus.Complete;
+        }
+    }
+
+    private IEnumerable<BackupLogEntry> TerminalEntries =>
+        _log.Entries.Where(e => e.Status is BackupStatus.Complete or BackupStatus.Failed or BackupStatus.Skipped);
+
+    // --- Dashboard computed properties ---
+
+    public string LastBackupDisplay
+    {
+        get
+        {
+            var last = TerminalEntries.OrderByDescending(e => e.Timestamp).FirstOrDefault();
+            return last == null ? "Never" : FormatRelativeDate(last.Timestamp);
+        }
+    }
+
+    public string NextBackupDisplay
+    {
+        get
+        {
+            var next = _scheduler.Jobs.Where(j => j.IsEnabled).OrderBy(j => j.NextRun).FirstOrDefault();
+            return next == null ? "Not scheduled" : FormatRelativeDate(next.NextRun);
+        }
+    }
+
+    public string TotalFilesCopiedDisplay
+    {
+        get
+        {
+            long total = _log.Entries.Where(e => e.Status == BackupStatus.Complete).Sum(e => (long)e.FilesCopied);
+            if (total >= 1_000_000) return $"{total / 1_000_000.0:0.##}M";
+            if (total >= 1_000) return $"{total / 1_000.0:0.##}K";
+            return total == 0 ? "—" : total.ToString();
+        }
+    }
+
+    public string TotalBytesTransferredDisplay
+    {
+        get
+        {
+            long total = _log.Entries.Where(e => e.Status == BackupStatus.Complete).Sum(e => e.BytesTransferred);
+            return total == 0 ? "—" : FileSystemItem.FormatBytes(total);
+        }
+    }
+
+    public string BackupsRunDisplay
+    {
+        get
+        {
+            int n = _log.Entries.Count(e => e.Status == BackupStatus.Complete);
+            return n == 0 ? "—" : n.ToString();
+        }
+    }
+
+    public string ScheduleTimeDisplay
+    {
+        get
+        {
+            var job = _scheduler.Jobs.Where(j => j.IsEnabled).OrderBy(j => j.NextRun).FirstOrDefault();
+            if (job == null) return "No schedule configured";
+            var timeStr = job.NextRun.ToString("h:mm tt");
+            if (job.IsRecurring && job.RecurInterval.HasValue)
+            {
+                var d = job.RecurInterval.Value.TotalDays;
+                if (d >= 7) return $"Every week at {timeStr}";
+                if (d >= 1) return $"Every day at {timeStr}";
+                return $"Every {(int)job.RecurInterval.Value.TotalHours}h at {timeStr}";
+            }
+            return $"Next: {FormatRelativeDate(job.NextRun)}";
+        }
+    }
+
+    public bool IsScheduleEnabled => _scheduler.Jobs.Any(j => j.IsEnabled);
+
+    public IReadOnlyList<BackupLogEntry> RecentBackups =>
+        TerminalEntries.OrderByDescending(e => e.Timestamp).Take(4).ToList();
+
+    public bool HasRecentBackups => TerminalEntries.Any();
+
+    public string TotalCapacityDisplay => FileSystemItem.FormatBytes(Drives.Sum(d => d.TotalSize));
+    public string TotalUsedDisplay => FileSystemItem.FormatBytes(Drives.Sum(d => d.UsedSpace));
+    public string TotalFreeDisplay => FileSystemItem.FormatBytes(Drives.Sum(d => d.FreeSpace));
+
+    public double TotalUsagePercent
+    {
+        get
+        {
+            long total = Drives.Sum(d => d.TotalSize);
+            return total > 0 ? (double)Drives.Sum(d => d.UsedSpace) / total * 100.0 : 0;
+        }
+    }
+
+    public IReadOnlyList<SourcePathItem> BackupSourcePaths
+    {
+        get
+        {
+            var result = new List<SourcePathItem>();
+            foreach (var job in _scheduler.Jobs.Where(j => j.IsEnabled))
+            {
+                foreach (var path in job.SourcePaths)
+                {
+                    var name = System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
+                    if (string.IsNullOrEmpty(name)) name = path.TrimEnd('\\', '/');
+                    result.Add(new SourcePathItem(name, job.Name, path));
+                }
+            }
+            return result;
+        }
+    }
+
+    private static string FormatRelativeDate(DateTime dt)
+    {
+        var today = DateTime.Today;
+        if (dt.Date == today) return $"Today, {dt:h:mm tt}";
+        if (dt.Date == today.AddDays(-1)) return $"Yesterday, {dt:h:mm tt}";
+        if (dt.Date == today.AddDays(1)) return $"Tomorrow, {dt:h:mm tt}";
+        return dt.Year == today.Year
+            ? $"{dt:MMM d, h:mm tt}"
+            : $"{dt:MMM d yyyy, h:mm tt}";
+    }
 
     // --- Transfer controls ---
     [ObservableProperty] private bool _isTransferring;
@@ -149,13 +288,76 @@ public partial class MainViewModel : ObservableObject, IDisposable
         LaunchAtStartup = settings.LaunchAtStartup;
         StartMinimized = settings.StartMinimized;
         _scheduler.SchedulerError += OnSchedulerError;
+        _scheduler.JobsChanged += OnSchedulerJobsChanged;
         LoadDrives();
+        Drives.CollectionChanged += (_, _) => NotifyCapacityPropertiesChanged();
+
+        // Keep IsProtected and dashboard stats reactive.
+        _log.Entries.CollectionChanged += LogEntries_CollectionChanged;
+        foreach (var entry in _log.Entries)
+            entry.PropertyChanged += LogEntry_PropertyChanged;
 
         if (App.PreviousUncleanShutdownAt is { } whenStarted)
         {
             IsCrashBannerVisible = true;
             CrashBannerMessage = $"Previous session ended unexpectedly (started {whenStarted:MMM d, h:mm tt}). Export diagnostics to send to support.";
         }
+    }
+
+    private void LogEntries_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems != null)
+            foreach (BackupLogEntry entry in e.NewItems)
+                entry.PropertyChanged += LogEntry_PropertyChanged;
+        if (e.OldItems != null)
+            foreach (BackupLogEntry entry in e.OldItems)
+                entry.PropertyChanged -= LogEntry_PropertyChanged;
+        OnPropertyChanged(nameof(IsProtected));
+        NotifyLogPropertiesChanged();
+    }
+
+    private void LogEntry_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BackupLogEntry.Status))
+        {
+            OnPropertyChanged(nameof(IsProtected));
+            NotifyLogPropertiesChanged();
+        }
+    }
+
+    private void NotifyLogPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(LastBackupDisplay));
+        OnPropertyChanged(nameof(TotalFilesCopiedDisplay));
+        OnPropertyChanged(nameof(TotalBytesTransferredDisplay));
+        OnPropertyChanged(nameof(BackupsRunDisplay));
+        OnPropertyChanged(nameof(RecentBackups));
+        OnPropertyChanged(nameof(HasRecentBackups));
+    }
+
+    private void OnSchedulerJobsChanged()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+            dispatcher.BeginInvoke(NotifySchedulePropertiesChanged);
+        else
+            NotifySchedulePropertiesChanged();
+    }
+
+    private void NotifySchedulePropertiesChanged()
+    {
+        OnPropertyChanged(nameof(NextBackupDisplay));
+        OnPropertyChanged(nameof(ScheduleTimeDisplay));
+        OnPropertyChanged(nameof(IsScheduleEnabled));
+        OnPropertyChanged(nameof(BackupSourcePaths));
+    }
+
+    private void NotifyCapacityPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(TotalCapacityDisplay));
+        OnPropertyChanged(nameof(TotalUsedDisplay));
+        OnPropertyChanged(nameof(TotalFreeDisplay));
+        OnPropertyChanged(nameof(TotalUsagePercent));
     }
 
     partial void OnLaunchAtStartupChanged(bool value)
@@ -334,6 +536,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _scheduler.SchedulerError -= OnSchedulerError;
+        _scheduler.JobsChanged -= OnSchedulerJobsChanged;
         _pauseGate.Dispose();
         _transferCts?.Dispose();
         _topSizeCts?.Cancel(); _topSizeCts?.Dispose();
@@ -341,6 +544,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _topNavCts?.Cancel(); _topNavCts?.Dispose();
         _bottomNavCts?.Cancel(); _bottomNavCts?.Dispose();
         _searchCts?.Cancel(); _searchCts?.Dispose();
+        _bottomSearchCts?.Cancel(); _bottomSearchCts?.Dispose();
     }
 
     private void OnSchedulerError(string message)
@@ -434,6 +638,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task NavigateBottom(string path)
     {
+        // Cancel any in-progress bottom search so results don't interleave with new folder contents.
+        _bottomSearchCts?.Cancel();
+        HasBottomSearchResults = false;
+        IsBottomSearching = false;
+
         // Cancel any previous in-flight navigation to prevent duplicate entries.
         _bottomNavCts?.Cancel(); _bottomNavCts?.Dispose();
         var navCts = new CancellationTokenSource();
@@ -760,6 +969,161 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ShowNoResults = false;
         if (!string.IsNullOrEmpty(TopCurrentPath))
             await NavigateTop(TopCurrentPath);
+    }
+
+    /// <summary>Recursively searches the current bottom pane directory.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task ExecuteBottomDeepSearchAsync()
+    {
+        _bottomSearchCts?.Cancel();
+        _bottomSearchCts?.Dispose();
+        _bottomSearchCts = null;
+
+        if (string.IsNullOrWhiteSpace(BottomDeepSearchQuery))
+        {
+            HasBottomSearchResults = false;
+            IsBottomSearching = false;
+            if (!string.IsNullOrEmpty(BottomCurrentPath))
+                await NavigateBottom(BottomCurrentPath);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(BottomCurrentPath))
+        {
+            StatusMessage = "Select a drive or navigate to a folder first, then search.";
+            return;
+        }
+
+        _bottomSearchCts = new CancellationTokenSource();
+        var token = _bottomSearchCts.Token;
+        IsBottomSearching = true;
+        HasBottomSearchResults = true;
+        ShowBottomNoResults = false;
+        StatusMessage = $"Searching \"{BottomCurrentPath}\" for \"{BottomDeepSearchQuery.Trim()}\"...";
+
+        var query = BottomDeepSearchQuery.Trim();
+        bool isExtensionSearch = query.StartsWith('.');
+
+        BottomPaneItems.Clear();
+        _filteredBottomView?.Refresh();
+
+        var searchRoot = BottomCurrentPath;
+        var dispatcher = System.Windows.Application.Current.Dispatcher;
+
+        await Task.Run(() =>
+        {
+            if (token.IsCancellationRequested) return;
+            SearchDirectoryRecursiveBottom(searchRoot, query, isExtensionSearch, token, dispatcher);
+        }, token).ContinueWith(_ => { }, TaskScheduler.Default);
+
+        IsBottomSearching = false;
+        if (token.IsCancellationRequested) return;
+        ShowBottomNoResults = BottomPaneItems.Count == 0;
+        StatusMessage = BottomPaneItems.Count > 0
+            ? $"Found {BottomPaneItems.Count} result{(BottomPaneItems.Count != 1 ? "s" : "")} for \"{query}\""
+            : $"No results for \"{query}\"";
+    }
+
+    private void SearchDirectoryRecursiveBottom(string directory, string query, bool isExtensionSearch, CancellationToken token, System.Windows.Threading.Dispatcher dispatcher)
+    {
+        if (token.IsCancellationRequested) return;
+
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                AttributesToSkip = FileAttributes.None,
+                IgnoreInaccessible = true,
+                RecurseSubdirectories = false
+            };
+
+            var batch = new List<FileSystemItem>();
+
+            foreach (var filePath in Directory.EnumerateFiles(directory, "*", options))
+            {
+                if (token.IsCancellationRequested) return;
+                var fileName = Path.GetFileName(filePath);
+                bool matches = isExtensionSearch
+                    ? Path.GetExtension(fileName).Equals(query, StringComparison.OrdinalIgnoreCase)
+                    : fileName.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+                if (matches)
+                {
+                    batch.Add(new FileSystemItem(new FileInfo(filePath)));
+                    if (batch.Count >= 50)
+                    {
+                        var items = batch.ToList();
+                        batch.Clear();
+                        dispatcher.BeginInvoke(() =>
+                        {
+                            foreach (var item in items)
+                                BottomPaneItems.Add(item);
+                        });
+                    }
+                }
+            }
+
+            foreach (var dirPath in Directory.EnumerateDirectories(directory, "*", options))
+            {
+                if (token.IsCancellationRequested) return;
+
+                try
+                {
+                    var dirAttr = File.GetAttributes(dirPath);
+                    if (dirAttr.HasFlag(FileAttributes.ReparsePoint))
+                        continue;
+                }
+                catch { continue; }
+
+                if (!isExtensionSearch)
+                {
+                    var dirName = Path.GetFileName(dirPath);
+                    if (dirName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        batch.Add(new FileSystemItem(new DirectoryInfo(dirPath)));
+                        if (batch.Count >= 50)
+                        {
+                            var items = batch.ToList();
+                            batch.Clear();
+                            dispatcher.BeginInvoke(() =>
+                            {
+                                foreach (var item in items)
+                                    BottomPaneItems.Add(item);
+                            });
+                        }
+                    }
+                }
+
+                SearchDirectoryRecursiveBottom(dirPath, query, isExtensionSearch, token, dispatcher);
+            }
+
+            if (batch.Count > 0)
+            {
+                var remaining = batch.ToList();
+                dispatcher.BeginInvoke(() =>
+                {
+                    foreach (var item in remaining)
+                        BottomPaneItems.Add(item);
+                });
+            }
+        }
+        catch (UnauthorizedAccessException) { }
+        catch (IOException) { }
+    }
+
+    /// <summary>Cancels any active bottom search and restores the normal folder view.</summary>
+    [RelayCommand]
+    private async Task ClearBottomSearch()
+    {
+        _bottomSearchCts?.Cancel();
+        _bottomSearchCts?.Dispose();
+        _bottomSearchCts = null;
+        BottomDeepSearchQuery = string.Empty;
+        HasBottomSearchResults = false;
+        IsBottomSearching = false;
+        ShowBottomNoResults = false;
+        if (!string.IsNullOrEmpty(BottomCurrentPath))
+            await NavigateBottom(BottomCurrentPath);
     }
 
     [RelayCommand]
@@ -1124,12 +1488,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Executes a backup job created by the wizard, with progress tracking and throttle support.</summary>
-    public async Task RunWizardBackupAsync(ScheduledJob job)
+    /// <summary>
+    /// Executes a single <see cref="ScheduledJob"/> end-to-end with progress tracking, throttling,
+    /// exclusions, and versioning per the job's settings. Used by both the wizard "Run now" path
+    /// and the "Back up now" command when running all enabled scheduled jobs sequentially.
+    /// </summary>
+    /// <returns><c>true</c> if the job ran to completion; <c>false</c> if the user cancelled or
+    /// the run aborted due to insufficient disk space.</returns>
+    public async Task<bool> RunWizardBackupAsync(ScheduledJob job)
     {
         BeginTransfer();
-        StatusMessage = $"Wizard backup: {job.Name}...";
-        FileLogger.Info($"Wizard backup started: {job.Name} — {job.SourcePaths.Count} source(s) → {job.DestinationPath} (mode={job.TransferMode})");
+        StatusMessage = $"Backup: {job.Name}...";
+        FileLogger.Info($"Backup started: {job.Name} — {job.SourcePaths.Count} source(s) → {job.DestinationPath} (mode={job.TransferMode})");
         var progress = new Progress<string>(OnTransferProgress);
         var progressPercent = new Progress<int>(OnTransferPercent);
         long throttle = job.ThrottleMBps * 1024L * 1024L;
@@ -1162,22 +1532,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     versioning: versioning);
             }
             var summary = FormatTransferResult(result);
-            FileLogger.Info($"Wizard backup completed: {summary}");
+            FileLogger.Info($"Backup completed: {summary}");
             EndTransfer(summary);
             NotifyTransferCompletion($"Backup complete: {job.Name}", result);
+            return true;
         }
         catch (OperationCanceledException)
         {
-            FileLogger.Warn("Wizard backup cancelled by user");
+            FileLogger.Warn($"Backup cancelled: {job.Name}");
             EndTransfer("Transfer stopped.");
             ToastNotifier.Notify($"Backup stopped: {job.Name}", "Transfer was cancelled.", ToastKind.Warning);
+            return false;
         }
         catch (InsufficientSpaceException ex)
         {
-            FileLogger.Error($"Wizard backup failed — insufficient space: {ex.Message}");
+            FileLogger.Error($"Backup failed — insufficient space: {ex.Message}");
             EndTransfer("Transfer aborted — not enough space.");
             ToastNotifier.Notify($"Backup failed: {job.Name}", "Not enough disk space on the destination drive.", ToastKind.Error);
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return false;
         }
     }
 
@@ -1265,6 +1638,34 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Owner = System.Windows.Application.Current.MainWindow
         };
         dialog.ShowDialog();
+    }
+
+    /// <summary>
+    /// "Back up now" — runs all enabled scheduled jobs in order, stopping the sequence
+    /// if any job is cancelled or aborted. Opens the wizard when no enabled jobs exist.
+    /// </summary>
+    [RelayCommand]
+    private async Task StartBackup()
+    {
+        var enabledJobs = _scheduler.Jobs.Where(j => j.IsEnabled).ToList();
+        if (enabledJobs.Count > 0)
+        {
+            FileLogger.Info($"Backup Now: running {enabledJobs.Count} job(s) sequentially");
+            foreach (var job in enabledJobs)
+            {
+                if (!await RunWizardBackupAsync(job)) break; // stop chain on cancel or abort
+            }
+            return;
+        }
+
+        // No enabled jobs — open the wizard so the user can create one.
+        var vm = new BackupWizardViewModel(_scheduler);
+        var dialog = new Views.BackupWizardDialog(vm)
+        {
+            Owner = System.Windows.Application.Current.MainWindow
+        };
+        if (dialog.ShowDialog() == true && dialog.Result != null && dialog.RunNow)
+            await RunWizardBackupAsync(dialog.Result);
     }
 
     /// <summary>Strips invalid filename characters from a job name so it can be embedded in an archive filename.</summary>
@@ -1426,3 +1827,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
             BuildPieSlices(BottomPaneItems, false);
     }
 }
+
+/// <summary>A source path entry used by the What's Included card.</summary>
+public record SourcePathItem(string DisplayName, string JobName, string FullPath);

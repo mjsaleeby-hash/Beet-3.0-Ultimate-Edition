@@ -127,15 +127,27 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainViewModel.HasSearchResults))
         {
-            var width = Vm.HasSearchResults ? 240.0 : 0.0;
-            TopPathColumn.Width = width;
-            SplitTopPathColumn.Width = width;
-            SplitBottomPathColumn.Width = width;
+            TopPathColumn.Width = Vm.HasSearchResults ? 240.0 : 0.0;
         }
         else if (e.PropertyName == nameof(MainViewModel.IsTransferring) && Vm.IsTransferring)
         {
             ShowTransferProgressDialog();
         }
+    }
+
+    // -- Split pane popup --
+    private SplitPaneWindow? _splitPaneWindow;
+
+    private void OpenSplitPane_Click(object sender, RoutedEventArgs e)
+    {
+        if (_splitPaneWindow != null && _splitPaneWindow.IsLoaded)
+        {
+            _splitPaneWindow.Activate();
+            return;
+        }
+        _splitPaneWindow = new SplitPaneWindow(Vm) { Owner = this };
+        _splitPaneWindow.Closed += (_, _) => _splitPaneWindow = null;
+        _splitPaneWindow.Show();
     }
 
     /// <summary>

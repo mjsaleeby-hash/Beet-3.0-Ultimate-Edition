@@ -163,7 +163,7 @@ public sealed class FolderTreeItem : INotifyPropertyChanged
                 catch (UnauthorizedAccessException) { }
                 catch (IOException) { }
                 return result;
-            }).ConfigureAwait(false);
+            });
 
             foreach (var dir in dirs)
                 Children.Add(new FolderTreeItem(dir));

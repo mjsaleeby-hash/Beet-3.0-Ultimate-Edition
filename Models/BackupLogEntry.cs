@@ -37,6 +37,7 @@ public partial class BackupLogEntry : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusDisplay))]
     [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    [NotifyPropertyChangedFor(nameof(SizeOrStatusDisplay))]
     private BackupStatus _status;
 
     [ObservableProperty] private string _message = string.Empty;
@@ -89,6 +90,14 @@ public partial class BackupLogEntry : ObservableObject
     public string StatsDisplay => Status == BackupStatus.Complete
         ? $"{FilesCopied} copied, {FilesSkipped} skipped{(FilesFailed > 0 ? $", {FilesFailed} failed" : "")}, {FormatBytes(BytesTransferred)}"
         : string.Empty;
+
+    /// <summary>Human-readable bytes transferred (e.g. "7.41 GB").</summary>
+    public string BytesTransferredDisplay => FormatBytes(BytesTransferred);
+
+    /// <summary>Shows transferred bytes for complete entries, status text otherwise — used by the Recent Backups card.</summary>
+    public string SizeOrStatusDisplay => Status == BackupStatus.Complete
+        ? FormatBytes(BytesTransferred)
+        : Status.ToString();
 
     /// <summary>
     /// Formats a byte count into a human-readable string with appropriate unit suffix.

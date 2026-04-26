@@ -40,14 +40,28 @@ public sealed class ThemeService
         _settings.IsDarkMode = dark;
         _settings.Save();
 
-        var dict = new ResourceDictionary
+        var newTheme = new ResourceDictionary
         {
             Source = new Uri(dark ? "Themes/Dark.xaml" : "Themes/Light.xaml", UriKind.Relative)
         };
 
+        // Replace only the palette dictionary (Dark.xaml / Light.xaml).
+        // Leave Controls.xaml and any other merged dictionaries untouched so
+        // button/card styles keyed against DynamicResource brushes keep working.
         var merged = Application.Current.Resources.MergedDictionaries;
-        merged.Clear();
-        merged.Add(dict);
+        for (int i = 0; i < merged.Count; i++)
+        {
+            var src = merged[i].Source?.OriginalString;
+            if (src != null && (src.EndsWith("Dark.xaml", StringComparison.OrdinalIgnoreCase)
+                             || src.EndsWith("Light.xaml", StringComparison.OrdinalIgnoreCase)))
+            {
+                merged[i] = newTheme;
+                return;
+            }
+        }
+
+        // No palette dict found (e.g. first-time startup mis-wired): fall back to adding one.
+        merged.Insert(0, newTheme);
     }
 
     /// <summary>

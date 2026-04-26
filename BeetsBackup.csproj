@@ -33,7 +33,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**;PerformanceMonitor\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**;PerformanceMonitor\**;Test UI\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,6 +45,10 @@
   <ItemGroup>
     <Resource Include="Assets\Beets Backup IMG.ico"/>
     <Resource Include="Assets\beetle_wizard_circle.png"/>
+    <Resource Include="Assets\Icons\Toolbar\backup_now_button.png"/>
+    <Resource Include="Assets\Icons\Toolbar\backup_wizard_button.png"/>
+    <Resource Include="Assets\Icons\Toolbar\split pane.png"/>
+    <Resource Include="Assets\Icons\Toolbar\toolbar_controls_sprite.png"/>
   </ItemGroup>
 
   <ItemGroup>
