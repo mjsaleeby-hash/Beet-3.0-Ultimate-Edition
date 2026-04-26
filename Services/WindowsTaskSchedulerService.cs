@@ -49,9 +49,10 @@ public static class WindowsTaskSchedulerService
                 "/F" // force overwrite if a task with this name already exists
             };
 
-            // Run as the interactive user — no admin elevation required, and the app runs
-            // in the user's session where NotifyIcon and file access behave normally.
-            args.Add("/RL"); args.Add("LIMITED");
+            // Run with highest available privileges. The manifest requires administrator, so
+            // the headless job also needs elevation for VSS. Scheduled tasks run non-interactively
+            // so no UAC prompt appears — Windows uses the stored elevated token directly.
+            args.Add("/RL"); args.Add("HIGHEST");
 
             args.AddRange(BuildScheduleArgs(job, DateTime.Now));
 

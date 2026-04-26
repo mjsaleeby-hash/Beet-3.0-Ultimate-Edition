@@ -122,7 +122,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _statusMessage = "Ready";
 
     /// <summary>
-    /// True when the most recent *terminal* backup completed cleanly (no failed files).
+    /// True when the most recent terminal backup completed successfully within the last 7 days.
     /// Skips Running/Scheduled entries so an in-progress job never briefly shows "At Risk".
     /// </summary>
     public bool IsProtected
@@ -130,7 +130,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         get
         {
             var last = TerminalEntries.OrderByDescending(e => e.Timestamp).FirstOrDefault();
-            return last?.Status == BackupStatus.Complete;
+            return last?.Status == BackupStatus.Complete
+                && (DateTime.Now - last.Timestamp).TotalDays <= 7;
         }
     }
 

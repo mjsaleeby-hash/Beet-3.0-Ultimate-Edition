@@ -2,6 +2,17 @@
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
   <assemblyIdentity version="1.0.0.0" name="BeetsBackup"/>
 
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <!-- VSS (shadow copies for locked-file backup) requires administrator elevation.
+             Requesting it here means Windows prompts once at launch via UAC rather than
+             silently failing when VssSnapshotService makes its first COM call. -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <!-- Enable long path support (>260 characters) on Windows 10 1607+ -->
