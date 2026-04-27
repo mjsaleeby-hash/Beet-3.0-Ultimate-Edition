@@ -958,7 +958,8 @@
                             <Border Grid.Column="2" CornerRadius="6" Padding="12,7"
                                     Background="Transparent"
                                     BorderBrush="#3A5249" BorderThickness="1"
-                                    VerticalAlignment="Center" Cursor="Hand">
+                                    VerticalAlignment="Center" Cursor="Hand"
+                                    MouseLeftButtonUp="ViewDetails_Click">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="View details" Foreground="White" FontSize="11.5" FontWeight="Medium"
                                                VerticalAlignment="Center" Margin="0,0,6,0"/>

@@ -397,6 +397,9 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void ViewDetails_Click(object sender, MouseButtonEventArgs e)
+        => Vm.OpenLogDialogCommand.Execute(null);
+
     // -- Backup Wizard --
     private void BackupWizard_Click(object sender, RoutedEventArgs e)
     {
