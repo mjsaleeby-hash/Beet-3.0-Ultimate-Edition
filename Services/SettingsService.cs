@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -56,7 +55,8 @@ public sealed class SettingsService
 
     /// <summary>
     /// Whether the app should launch at Windows startup.
-    /// Setting this property creates or removes the startup shortcut.
+    /// Setting this property registers or removes the ONLOGON scheduled task — not a Startup
+    /// folder shortcut, which would trigger a UAC prompt on every boot with requireAdministrator.
     /// </summary>
     public bool LaunchAtStartup
     {
@@ -64,90 +64,23 @@ public sealed class SettingsService
         set
         {
             Data.LaunchAtStartup = value;
-            ApplyStartupShortcut(value);
+            if (value)
+                WindowsTaskSchedulerService.RegisterStartupTask();
+            else
+                WindowsTaskSchedulerService.UnregisterStartupTask();
             Save();
         }
     }
 
-    private static readonly string StartupFolder =
-        Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-
-    private static readonly string ShortcutPath =
-        Path.Combine(StartupFolder, "Beet's Backup.lnk");
-
-    /// <summary>Whether a startup shortcut currently exists on disk.</summary>
-    public bool StartupShortcutExists => File.Exists(ShortcutPath);
-
-    /// <summary>
-    /// Creates or removes the Windows Startup folder shortcut.
-    /// </summary>
-    private static void ApplyStartupShortcut(bool enable)
-    {
-        try
-        {
-            if (enable)
-            {
-                if (File.Exists(ShortcutPath)) return; // already exists
-                var exePath = Process.GetCurrentProcess().MainModule?.FileName;
-                if (string.IsNullOrEmpty(exePath)) return;
-                CreateShortcut(ShortcutPath, exePath);
-            }
-            else
-            {
-                if (File.Exists(ShortcutPath))
-                    File.Delete(ShortcutPath);
-            }
-        }
-        catch (Exception ex)
-        {
-            FileLogger.LogException("Failed to manage startup shortcut", ex);
-        }
-    }
-
-    /// <summary>
-    /// Creates a .lnk shortcut file using WScript.Shell COM interop.
-    /// Avoids PowerShell injection risks that would come from shelling out.
-    /// </summary>
-    private static void CreateShortcut(string shortcutPath, string targetPath)
-    {
-        // Use COM interop to create .lnk — avoids PowerShell injection risks
-        var shellType = Type.GetTypeFromProgID("WScript.Shell");
-        if (shellType == null)
-        {
-            FileLogger.Warn("WScript.Shell COM object not available — cannot create startup shortcut");
-            return;
-        }
-
-        object? shell = null;
-        object? shortcut = null;
-        try
-        {
-            shell = Activator.CreateInstance(shellType);
-            shortcut = shellType.InvokeMember("CreateShortcut",
-                System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
-            if (shortcut == null) return;
-
-            var scType = shortcut.GetType();
-            scType.InvokeMember("TargetPath",
-                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { targetPath });
-            scType.InvokeMember("Arguments",
-                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "--startup" });
-            scType.InvokeMember("WorkingDirectory",
-                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(targetPath)! });
-            scType.InvokeMember("Description",
-                System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "Beet's Backup" });
-            scType.InvokeMember("Save",
-                System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
-        }
-        finally
-        {
-            if (shortcut != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(shortcut);
-            if (shell != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
-        }
-    }
+    // Legacy Startup-folder shortcut path — used only for one-time migration.
+    private static readonly string _legacyShortcutPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+        "Beet's Backup.lnk");
 
     /// <summary>
     /// Loads settings from disk. Falls back to defaults if the file is missing or corrupt.
+    /// Also migrates any legacy Startup-folder shortcut to the ONLOGON scheduled task so the
+    /// UAC consent prompt no longer appears on every boot.
     /// </summary>
     public void Load()
     {
@@ -162,6 +95,14 @@ public sealed class SettingsService
             }
         }
         catch { /* use defaults if file is corrupt */ }
+
+        // One-time migration: delete the old .lnk and create the task in its place.
+        if (File.Exists(_legacyShortcutPath))
+        {
+            try { File.Delete(_legacyShortcutPath); } catch { }
+            if (Data.LaunchAtStartup)
+                WindowsTaskSchedulerService.RegisterStartupTask();
+        }
     }
 
     /// <summary>

@@ -81,6 +81,51 @@ public static class WindowsTaskSchedulerService
     }
 
     /// <summary>
+    /// Registers (or replaces) a per-user ONLOGON scheduled task so the app auto-starts at
+    /// login with full elevation — no UAC prompt, unlike a Startup-folder shortcut which
+    /// triggers a consent dialog every boot when the manifest requires administrator.
+    /// </summary>
+    public static bool RegisterStartupTask()
+    {
+        try
+        {
+            var command = $"\"{AppExePath}\" --startup";
+            var args = new List<string>
+            {
+                "/Create",
+                "/TN", StartupTaskName,
+                "/TR", command,
+                "/SC", "ONLOGON",
+                "/RL", "HIGHEST",
+                "/F"
+            };
+            return RunSchtasks(args);
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("Failed to register startup task", ex);
+            return false;
+        }
+    }
+
+    /// <summary>Removes the auto-start ONLOGON task.</summary>
+    public static bool UnregisterStartupTask()
+    {
+        try
+        {
+            return RunSchtasks(new List<string> { "/Delete", "/TN", StartupTaskName, "/F" });
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("Failed to unregister startup task", ex);
+            return false;
+        }
+    }
+
+    /// <summary>Task name used for the per-user login auto-start entry.</summary>
+    public const string StartupTaskName = "BeetsBackup_Startup";
+
+    /// <summary>
     /// Re-registers all jobs passed in. Called on app startup so that tasks removed by the user
     /// in Task Scheduler (or lost through a Windows reinstall) are put back.
     /// </summary>
