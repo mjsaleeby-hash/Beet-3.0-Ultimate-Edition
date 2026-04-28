@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>BeetsBackupLauncher</AssemblyName>
+    <RootNamespace>BeetsBackupLauncher</RootNamespace>
+    <ApplicationIcon>..\Assets\Beets Backup IMG.ico</ApplicationIcon>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <AssemblyVersion>3.0.0.0</AssemblyVersion>
+    <FileVersion>3.0.0.0</FileVersion>
+    <Version>3.0.0</Version>
+    <Product>Beet's Backup</Product>
+    <AssemblyTitle>Beet's Backup</AssemblyTitle>
+    <Company>Beet Software</Company>
+    <Copyright>Copyright © 2026 Beet Software. All rights reserved.</Copyright>
+    <Description>Launcher stub for Beet's Backup. Signals the running tray instance instead of triggering UAC.</Description>
+    <NeutralLanguage>en-US</NeutralLanguage>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <!-- After publish, copy the launcher exe two levels up — out of the project folder and out
+       of the repo root — so it lands in C:\Users\Owner\Documents\ next to BeetsBackup.exe,
+       which the main app's CopyExeToRoot target also writes to ("$(MSBuildProjectDirectory)\.."
+       evaluated from the repo-root .csproj). -->
+  <Target Name="CopyLauncherToRoot" AfterTargets="Publish">
+    <Copy SourceFiles="$(PublishDir)BeetsBackupLauncher.exe"
+          DestinationFolder="$(MSBuildProjectDirectory)\..\.."
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

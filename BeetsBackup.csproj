@@ -33,13 +33,21 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**;PerformanceMonitor\**;Test UI\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**;BeetsBackupLauncher\**;PerformanceMonitor\**;Test UI\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>BeetsBackup.Tests</_Parameter1>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="FAQ\beetsbackup_user_guide.pdf">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <TargetPath>beetsbackup_user_guide.pdf</TargetPath>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -57,9 +65,12 @@
     <PackageReference Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
   </ItemGroup>
 
-  <!-- After publish, copy the single-file exe to the parent folder -->
+  <!-- After publish, copy the single-file exe and user guide PDF to the parent folder -->
   <Target Name="CopyExeToRoot" AfterTargets="Publish">
     <Copy SourceFiles="$(PublishDir)BeetsBackup.exe"
+          DestinationFolder="$(MSBuildProjectDirectory)\.."
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(PublishDir)beetsbackup_user_guide.pdf"
           DestinationFolder="$(MSBuildProjectDirectory)\.."
           SkipUnchangedFiles="true" />
   </Target>

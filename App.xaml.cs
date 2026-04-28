@@ -3,6 +3,7 @@ using BeetsBackup.Services;
 using BeetsBackup.ViewModels;
 using BeetsBackup.Views;
 using Microsoft.Extensions.DependencyInjection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Threading;
 using Application = System.Windows.Application;
@@ -34,12 +35,25 @@ public partial class App : Application
     private RegisteredWaitHandle? _showSignalRegistration;
 
     /// <summary>
+    /// Shared AppUserModelID. Both this elevated process and the non-elevated launcher stub
+    /// (BeetsBackupLauncher.exe) tag themselves with this so Windows groups them in a single
+    /// taskbar slot — the pinned launcher icon picks up the running-app indicator from the
+    /// main window.
+    /// </summary>
+    private const string AppUserModelId = "BeetSoftware.BeetsBackup";
+
+    /// <summary>
     /// Initializes the application: enforces single-instance, registers services,
     /// loads settings, handles missed backups, and starts the scheduler.
     /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Tag the process with the shared AUMID before any window is shown, so the taskbar
+        // entry the WPF window registers itself under matches the launcher stub's icon.
+        try { SetCurrentProcessExplicitAppUserModelID(AppUserModelId); }
+        catch { /* AUMID grouping is cosmetic; never fail startup over it */ }
 
         // Headless path: Windows Task Scheduler launches `BeetsBackup.exe --run-job <guid>`
         // at the scheduled time. Skip the single-instance dance, skip the UI entirely,
@@ -68,6 +82,10 @@ public partial class App : Application
 
         // Create the signal that a second instance can use to wake us
         _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "BeetsBackup_ShowWindow_Signal");
+        // Lower the event's mandatory integrity label so the non-elevated launcher stub
+        // (Medium IL) can Set() it from outside this elevated process. Without this the
+        // default no-write-up policy blocks the launcher's signal silently.
+        TryLowerMandatoryLabel(_showSignal.SafeWaitHandle);
         StartShowSignalListener();
 
         // Global exception handlers
@@ -328,6 +346,89 @@ public partial class App : Application
         {
             FileLogger.Info($"Background update check failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Replaces the show-window event's mandatory integrity SACL with a Low label so the
+    /// non-elevated <c>BeetsBackupLauncher.exe</c> stub (Medium IL) can <c>Set()</c> the event
+    /// from across the integrity boundary. Failures are logged and swallowed — if this can't
+    /// be applied, the launcher falls back to starting a new BeetsBackup.exe instance.
+    /// </summary>
+    private static void TryLowerMandatoryLabel(SafeHandle eventHandle)
+    {
+        // SDDL: low mandatory label, no-write-up flag set. Effect — any process at Low IL
+        // or above can write (Set/Reset) the event; nothing below Low (which is essentially
+        // nothing in normal user sessions) is locked out.
+        const string sddl = "S:(ML;;NW;;;LW)";
+        IntPtr sdPtr = IntPtr.Zero;
+
+        try
+        {
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptor(sddl, 1, out sdPtr, out _))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            if (!GetSecurityDescriptorSacl(sdPtr, out _, out var saclPtr, out _))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            uint result = SetSecurityInfo(
+                eventHandle.DangerousGetHandle(),
+                SE_OBJECT_TYPE.SE_KERNEL_OBJECT,
+                SECURITY_INFORMATION.LABEL_SECURITY_INFORMATION,
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, saclPtr);
+
+            if (result != 0)
+                throw new System.ComponentModel.Win32Exception((int)result);
+        }
+        catch (Exception ex)
+        {
+            FileLogger.Warn($"Could not lower mandatory label on show-window event: {ex.Message}");
+        }
+        finally
+        {
+            if (sdPtr != IntPtr.Zero) LocalFree(sdPtr);
+        }
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true, PreserveSig = false)]
+    private static extern void SetCurrentProcessExplicitAppUserModelID(
+        [MarshalAs(UnmanagedType.LPWStr)] string appId);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
+        string stringSecurityDescriptor,
+        int stringSdRevision,
+        out IntPtr securityDescriptor,
+        out uint securityDescriptorSize);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool GetSecurityDescriptorSacl(
+        IntPtr securityDescriptor,
+        [MarshalAs(UnmanagedType.Bool)] out bool saclPresent,
+        out IntPtr sacl,
+        [MarshalAs(UnmanagedType.Bool)] out bool saclDefaulted);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint SetSecurityInfo(
+        IntPtr handle,
+        SE_OBJECT_TYPE objectType,
+        SECURITY_INFORMATION securityInfo,
+        IntPtr sidOwner,
+        IntPtr sidGroup,
+        IntPtr dacl,
+        IntPtr sacl);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr mem);
+
+    private enum SE_OBJECT_TYPE
+    {
+        SE_KERNEL_OBJECT = 6,
+    }
+
+    [Flags]
+    private enum SECURITY_INFORMATION : uint
+    {
+        LABEL_SECURITY_INFORMATION = 0x00000010,
     }
 
     /// <summary>Registers all services, view models, and views in the DI container.</summary>
