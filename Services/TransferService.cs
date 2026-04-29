@@ -50,16 +50,21 @@ public sealed class TransferService
 {
     private readonly FileSystemService _fs;
 
+    // Skip junction points and symlinks during enumeration. Without this, backing up C:\Users
+    // follows the All Users junction and copies ~21 GB of C:\ProgramData into the backup, plus
+    // the per-profile legacy junctions (Application Data, Local Settings, My Documents, ...) cause
+    // AppData paths to be copied multiple times under different names. Skipping ReparsePoint here
+    // applies to count, size-estimate, copy, archive, and mirror-cleanup paths in one place.
     private static readonly EnumerationOptions EnumOptions = new()
     {
-        AttributesToSkip = FileAttributes.None,
+        AttributesToSkip = FileAttributes.ReparsePoint,
         IgnoreInaccessible = true,
         RecurseSubdirectories = true
     };
 
     private static readonly EnumerationOptions ShallowEnumOptions = new()
     {
-        AttributesToSkip = FileAttributes.None,
+        AttributesToSkip = FileAttributes.ReparsePoint,
         IgnoreInaccessible = true,
         RecurseSubdirectories = false
     };
@@ -207,7 +212,7 @@ public sealed class TransferService
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    result.FilesFailed++;
+                    result.IncrementFilesFailed();
                     result.AddFileError(source, ex.Message);
                     FileLogger.LogException($"Compress failed: {source}", ex);
                     progress?.Report($"ERROR: {Path.GetFileName(source)} — {ex.Message}");
@@ -238,7 +243,7 @@ public sealed class TransferService
         var name = Path.GetFileName(sourcePath);
         if (!isTopLevel && exclusions != null && IsExcluded(name, exclusions))
         {
-            result.FilesSkipped++;
+            result.IncrementFilesSkipped();
             // Still advance the percent bar so users with heavy exclusion lists (e.g. huge
             // node_modules trees filtered out) don't see progress appear to stall.
             if (result.TotalFiles > 0)
@@ -265,7 +270,7 @@ public sealed class TransferService
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    result.FilesFailed++;
+                    result.IncrementFilesFailed();
                     result.AddFileError(file, ex.Message);
                     FileLogger.LogException($"Compress file failed: {file}", ex);
                 }
@@ -276,7 +281,7 @@ public sealed class TransferService
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    result.DirectoriesFailed++;
+                    result.IncrementDirectoriesFailed();
                     result.AddFileError(dir, ex.Message);
                     FileLogger.LogException($"Compress directory failed: {dir}", ex);
                 }
@@ -292,13 +297,13 @@ public sealed class TransferService
             try
             {
                 var entry = zip.CreateEntryFromFile(sourcePath, entryName, CompressionLevel.Optimal);
-                result.FilesCopied++;
-                result.BytesTransferred += new FileInfo(sourcePath).Length;
+                result.IncrementFilesCopied();
+                result.AddBytesTransferred(new FileInfo(sourcePath).Length);
                 progress?.Report($"Compressed: {name}");
             }
             catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
             {
-                result.FilesLocked++;
+                result.IncrementFilesLocked();
                 result.AddFileError(sourcePath, "File is in use");
                 FileLogger.Warn($"File locked during compression: {sourcePath}");
             }
@@ -365,7 +370,7 @@ public sealed class TransferService
                 var normalized = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
                 if (Path.IsPathRooted(normalized))
                 {
-                    result.FilesFailed++;
+                    result.IncrementFilesFailed();
                     result.AddFileError(entry.FullName, "Rejected: absolute path in archive entry.");
                     FileLogger.Warn($"Extract: refused rooted entry: {entry.FullName}");
                     ReportPercent(result, progressPercent);
@@ -379,7 +384,7 @@ public sealed class TransferService
                 }
                 catch (Exception ex)
                 {
-                    result.FilesFailed++;
+                    result.IncrementFilesFailed();
                     result.AddFileError(entry.FullName, $"Unresolvable path: {ex.Message}");
                     ReportPercent(result, progressPercent);
                     continue;
@@ -388,7 +393,7 @@ public sealed class TransferService
                 if (!targetPath.StartsWith(destRootFull, StringComparison.OrdinalIgnoreCase))
                 {
                     // Zip-slip: entry tried to escape the destination tree (e.g. "..\..\windows\evil").
-                    result.FilesFailed++;
+                    result.IncrementFilesFailed();
                     result.AddFileError(entry.FullName, "Rejected: entry escapes destination folder.");
                     FileLogger.Warn($"Extract: zip-slip blocked — {entry.FullName} → {targetPath}");
                     ReportPercent(result, progressPercent);
@@ -402,26 +407,26 @@ public sealed class TransferService
 
                     if (File.Exists(targetPath) && !overwriteExisting)
                     {
-                        result.FilesSkipped++;
+                        result.IncrementFilesSkipped();
                         progress?.Report($"Skipped (exists): {entry.Name}");
                         ReportPercent(result, progressPercent);
                         continue;
                     }
 
                     entry.ExtractToFile(targetPath, overwrite: overwriteExisting);
-                    result.FilesCopied++;
-                    result.BytesTransferred += entry.Length;
+                    result.IncrementFilesCopied();
+                    result.AddBytesTransferred(entry.Length);
                     progress?.Report($"Extracted: {entry.Name}");
                 }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
                 {
-                    result.FilesLocked++;
+                    result.IncrementFilesLocked();
                     result.AddFileError(targetPath, "File is in use");
                     FileLogger.Warn($"Extract locked: {targetPath}");
                 }
                 catch (Exception ex)
                 {
-                    result.FilesFailed++;
+                    result.IncrementFilesFailed();
                     result.AddFileError(entry.FullName, ex.Message);
                     FileLogger.LogException($"Extract failed: {entry.FullName}", ex);
                 }
@@ -498,7 +503,7 @@ public sealed class TransferService
         if (exclusions != null && IsExcluded(name, exclusions))
         {
             if (!isDirectory)
-                result.FilesSkipped++;
+                result.IncrementFilesSkipped();
             return;
         }
 
@@ -532,21 +537,21 @@ public sealed class TransferService
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
                 {
-                    result.DiskFullErrors++;
+                    result.IncrementDiskFullErrors();
                     result.AddFileError(file, "Disk full");
                     FileLogger.Error($"Disk full: {file}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(file)} — not enough space");
                 }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
                 {
-                    result.FilesLocked++;
+                    result.IncrementFilesLocked();
                     result.AddFileError(file, "File is in use");
                     FileLogger.Warn($"File locked (retries + VSS exhausted): {file}");
                     progress?.Report($"LOCKED: {Path.GetFileName(file)} — file is in use");
                 }
                 catch (Exception ex)
                 {
-                    result.FilesFailed++;
+                    result.IncrementFilesFailed();
                     result.AddFileError(file, ex.Message);
                     FileLogger.LogException($"File copy failed: {file}", ex);
                     progress?.Report($"ERROR: {Path.GetFileName(file)} — {ex.Message}");
@@ -562,21 +567,21 @@ public sealed class TransferService
                 catch (OperationCanceledException) { throw; }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
                 {
-                    result.DiskFullErrors++;
+                    result.IncrementDiskFullErrors();
                     result.AddFileError(dir, "Disk full");
                     FileLogger.Error($"Disk full: {dir}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(dir)} — not enough space");
                 }
                 catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
                 {
-                    result.FilesLocked++;
+                    result.IncrementFilesLocked();
                     result.AddFileError(dir, "Directory is in use");
                     FileLogger.Warn($"Directory locked: {dir}");
                     progress?.Report($"LOCKED: {Path.GetFileName(dir)} — file is in use");
                 }
                 catch (Exception ex)
                 {
-                    result.DirectoriesFailed++;
+                    result.IncrementDirectoriesFailed();
                     result.AddFileError(dir, ex.Message);
                     FileLogger.LogException($"Directory copy failed: {dir}", ex);
                     progress?.Report($"ERROR: {Path.GetFileName(dir)} — {ex.Message}");
@@ -601,7 +606,7 @@ public sealed class TransferService
                             // destination — the user asked us to protect it. Record a failure and skip.
                             if (!VersioningService.ArchiveBeforeOverwrite(destFile, versioning))
                             {
-                                result.FilesFailed++;
+                                result.IncrementFilesFailed();
                                 result.AddFileError(destFile, "Could not archive existing version; destination left untouched.");
                                 progress?.Report($"ERROR: {name} — version archive failed, keeping existing");
                                 break;
@@ -612,7 +617,7 @@ public sealed class TransferService
                         }
                         else
                         {
-                            result.FilesSkipped++;
+                            result.IncrementFilesSkipped();
                             progress?.Report($"Skipped (identical): {name}");
                         }
                         break;
@@ -626,7 +631,7 @@ public sealed class TransferService
                     case TransferMode.Replace:
                         if (!VersioningService.ArchiveBeforeOverwrite(destFile, versioning))
                         {
-                            result.FilesFailed++;
+                            result.IncrementFilesFailed();
                             result.AddFileError(destFile, "Could not archive existing version; destination left untouched.");
                             progress?.Report($"ERROR: {name} — version archive failed, keeping existing");
                             break;
@@ -669,7 +674,7 @@ public sealed class TransferService
                 ExecuteCopy(activeSrc, dest, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
 
                 if (usedVss)
-                    result.FilesCopiedViaVss++;
+                    result.IncrementFilesCopiedViaVss();
 
                 return; // success
             }
@@ -717,7 +722,7 @@ public sealed class TransferService
         if (usedVss)
         {
             ExecuteCopy(activeSrc, dest, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct);
-            result.FilesCopiedViaVss++;
+            result.IncrementFilesCopiedViaVss();
         }
     }
 
@@ -734,15 +739,15 @@ public sealed class TransferService
         if (throttleBytesPerSec > 0)
         {
             var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec, computeHash: verifyChecksums, pauseToken, ct);
-            result.FilesCopied++;
-            result.BytesTransferred += fileSize;
+            result.IncrementFilesCopied();
+            result.AddBytesTransferred(fileSize);
 
             if (verifyChecksums && sourceHash != null)
             {
                 var destHash = ComputeSha256(dest);
                 if (!sourceHash.SequenceEqual(destHash))
                 {
-                    result.ChecksumMismatches++;
+                    result.IncrementChecksumMismatches();
                     result.AddFileError(dest, "Checksum mismatch after copy");
                     progress?.Report($"CHECKSUM MISMATCH: {Path.GetFileName(dest)}");
                 }
@@ -751,13 +756,13 @@ public sealed class TransferService
         else if (verifyChecksums)
         {
             var sourceHash = _fs.CopyFileWithHash(source, dest, stripPermissions);
-            result.FilesCopied++;
-            result.BytesTransferred += fileSize;
+            result.IncrementFilesCopied();
+            result.AddBytesTransferred(fileSize);
 
             var destHash = ComputeSha256(dest);
             if (!sourceHash.SequenceEqual(destHash))
             {
-                result.ChecksumMismatches++;
+                result.IncrementChecksumMismatches();
                 result.AddFileError(dest, "Checksum mismatch after copy");
                 progress?.Report($"CHECKSUM MISMATCH: {Path.GetFileName(dest)}");
             }
@@ -765,8 +770,8 @@ public sealed class TransferService
         else
         {
             _fs.CopyFile(source, dest, stripPermissions);
-            result.FilesCopied++;
-            result.BytesTransferred += fileSize;
+            result.IncrementFilesCopied();
+            result.AddBytesTransferred(fileSize);
         }
     }
 
@@ -883,7 +888,7 @@ public sealed class TransferService
                 try
                 {
                     FileSystem.DeleteFile(destFile, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-                    result.FilesDeleted++;
+                    result.IncrementFilesDeleted();
                     progress?.Report($"Mirror deleted: {name}");
                 }
                 catch (Exception ex)
@@ -914,7 +919,7 @@ public sealed class TransferService
                 try
                 {
                     FileSystem.DeleteDirectory(destSub, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-                    result.DirectoriesDeleted++;
+                    result.IncrementDirectoriesDeleted();
                     progress?.Report($"Mirror deleted folder: {name}\\");
                 }
                 catch (Exception ex)

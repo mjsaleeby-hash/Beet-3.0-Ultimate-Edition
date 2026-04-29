@@ -118,7 +118,7 @@ public sealed class BackupLogService
     }
 
     /// <summary>Updates the final transfer statistics for a completed backup entry.</summary>
-    public void UpdateStats(Guid id, BackupStatus status, int filesCopied, int filesSkipped, long bytesTransferred, int totalFiles = 0, int filesFailed = 0, List<FileError>? fileErrors = null)
+    public void UpdateStats(Guid id, BackupStatus status, int filesCopied, int filesSkipped, long bytesTransferred, int totalFiles = 0, int filesFailed = 0, IReadOnlyList<FileError>? fileErrors = null)
     {
         RunOnUiThread(() =>
         {
@@ -133,7 +133,7 @@ public sealed class BackupLogService
             entry.ProgressPercent = 100;
             entry.Message = filesFailed > 0 ? $"Complete with {filesFailed} error(s)" : "Complete";
             if (fileErrors != null && fileErrors.Count > 0)
-                entry.FileErrors = fileErrors;
+                entry.FileErrors = fileErrors.ToList();
             entry.Timestamp = DateTime.Now;
             SaveNow();
         });

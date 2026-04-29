@@ -98,9 +98,14 @@ public sealed class FileSystemItem : INotifyPropertyChanged
     {
         try
         {
+            // Skip reparse points so junctions/symlinks aren't followed and double-counted.
+            // C:\Users\All Users → C:\ProgramData alone inflates Users by ~20 GB; per-profile
+            // legacy junctions (Application Data, Local Settings, etc.) recount AppData multiple times.
+            // This matches Windows Explorer's Properties dialog behavior and the rest of this codebase
+            // (FileSystemService, FolderTreeItem, MainViewModel all skip reparse points).
             var options = new EnumerationOptions
             {
-                AttributesToSkip = FileAttributes.None,
+                AttributesToSkip = FileAttributes.ReparsePoint,
                 IgnoreInaccessible = true,
                 RecurseSubdirectories = true
             };
