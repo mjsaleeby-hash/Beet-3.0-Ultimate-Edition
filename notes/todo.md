@@ -14,11 +14,11 @@ Performance work is organized in phases from the 2026-04-18 Windows practices au
 
 ### Phase 3 — Parallel Copy Engine (~half day, medium risk)
 
-- [ ] **`Parallel.ForEachAsync` with drive-type-aware concurrency** — Fan out file copies across workers. SSD-to-SSD: 4–8 workers (2–5× throughput gain). HDD source or dest: 1 worker (seek overhead makes parallelism counter-productive). Detect drive type via `System.Management` or `IOCTL_STORAGE_QUERY_PROPERTY`.
-- [ ] **Thread-safe counters** — Replace mutable shared state with `Interlocked` operations on `long` counters once parallelism is introduced.
-- [ ] **Ordered directory creation** — Parallel enumeration must pre-create destination directories before workers start copying into them.
-- [ ] **Thread-safe mirror cleanup** — Mirror mode's deletion sets must be protected (concurrent writes from multiple workers).
-- [ ] **Regression test all paths** — Mirror, VSS, file permissions, hidden attributes, versioning, compression, cancellation mid-run.
+- [x] **`Parallel.ForEachAsync` with drive-type-aware concurrency** — Stage 4 (`0bbd938`). Workers gated by `DriveTypeService.GetWorkerCount`: SSD↔SSD = `min(8, ProcessorCount)`; any HDD/removable in pair = 1; network = 4; unknown = 2.
+- [x] **Thread-safe counters** — Stage 1 (`6492b24`). `TransferResult` counters use `Interlocked.Increment`/`Add`; `AddFileError` is locked. `TryAdvanceReportedPercent` enforces monotonic percent reports under parallelism.
+- [x] **Ordered directory creation** — Stage 3b (`168b730`). Phase 2 of `CopyAsync` pre-creates all `DirectoryWorkItem` paths sorted by depth before any file workers start. `EnumerateWorkItems` produces the frozen plan.
+- [x] **Thread-safe mirror cleanup** — Mirror cleanup is still sequential (runs after `Parallel.ForEachAsync` completes). Intentional: destruction logic deserves audit-friendly serial code, and mirror cleanup is a small fraction of total wall time. `VssSnapshotService.GetOrCreateSnapshotRoot` was made thread-safe in Stage 4 for the parallel copy phase itself.
+- [ ] **Regression sweep on real hardware** — Stage 5. Automated test suite is 169 green; remaining items need a real backup run: SSD→HDD perf check, VSS fallback path on a locked file, mirror with non-empty destination, large-volume checksum verify, mid-run cancellation, pause/resume.
 
 ---
 
