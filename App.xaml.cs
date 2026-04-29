@@ -4,6 +4,8 @@ using BeetsBackup.ViewModels;
 using BeetsBackup.Views;
 using Microsoft.Extensions.DependencyInjection;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Threading;
 using System.Windows.Threading;
 using Application = System.Windows.Application;
@@ -80,12 +82,16 @@ public partial class App : Application
             return;
         }
 
-        // Create the signal that a second instance can use to wake us
-        _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "BeetsBackup_ShowWindow_Signal");
-        // Lower the event's mandatory integrity label so the non-elevated launcher stub
-        // (Medium IL) can Set() it from outside this elevated process. Without this the
-        // default no-write-up policy blocks the launcher's signal silently.
-        TryLowerMandatoryLabel(_showSignal.SafeWaitHandle);
+        // Create the signal that a second instance can use to wake us. Two cross-IL hurdles
+        // need clearing so the non-elevated launcher (BeetsBackupLauncher.exe, Medium IL) can
+        // Set() this event from outside our elevated (High IL) process:
+        //   1. DACL — the default DACL on a kernel object created by an elevated process
+        //      grants access only to the elevated owner (Administrators). The medium-IL
+        //      caller is the same user but has Administrators as a deny-only SID, so it
+        //      gets UnauthorizedAccessException without an explicit grant.
+        //   2. Mandatory label — Windows' no-write-up policy blocks Medium IL from writing
+        //      to a High IL object regardless of DACL. We lower the label to Low IL.
+        _showSignal = CreateShowSignalCrossIL("BeetsBackup_ShowWindow_Signal");
         StartShowSignalListener();
 
         // Global exception handlers
@@ -345,6 +351,43 @@ public partial class App : Application
         catch (Exception ex)
         {
             FileLogger.Info($"Background update check failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Creates the named auto-reset event used by <c>BeetsBackupLauncher.exe</c> to surface
+    /// the running tray window. Applies an explicit DACL (Authenticated Users → Modify+Synchronize)
+    /// so a non-elevated caller can open it, and lowers the mandatory integrity label to Low so
+    /// no-write-up doesn't block the cross-IL Set(). On any failure, falls back to a plain event;
+    /// the launcher then takes its cold-start path (UAC fires once).
+    /// </summary>
+    private static EventWaitHandle CreateShowSignalCrossIL(string name)
+    {
+        try
+        {
+            var rule = new EventWaitHandleAccessRule(
+                new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+                EventWaitHandleRights.Modify | EventWaitHandleRights.Synchronize,
+                AccessControlType.Allow);
+            var sec = new EventWaitHandleSecurity();
+            sec.AddAccessRule(rule);
+
+            var handle = EventWaitHandleAcl.Create(
+                initialState: false,
+                mode: EventResetMode.AutoReset,
+                name: name,
+                createdNew: out _,
+                eventSecurity: sec);
+
+            TryLowerMandatoryLabel(handle.SafeWaitHandle);
+            return handle;
+        }
+        catch (Exception ex)
+        {
+            FileLogger.Warn($"Cross-IL show-signal create failed, falling back to default DACL: {ex.Message}");
+            var fallback = new EventWaitHandle(false, EventResetMode.AutoReset, name);
+            TryLowerMandatoryLabel(fallback.SafeWaitHandle);
+            return fallback;
         }
     }
 

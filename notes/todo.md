@@ -82,3 +82,42 @@ with `ShellExecute("runas")`. Quick to implement; UX is slightly clunky (full ap
 Add `requestedExecutionLevel level="requireAdministrator"` to the app manifest. UAC prompts
 every time the app starts regardless of whether VSS is needed. Approach used by Macrium,
 Veeam, etc. Acceptable for a dedicated backup tool; annoying for casual users.
+
+---
+
+### Launcher / main-exe rename for shipping (2026-04-29)
+
+The current dual-exe layout works but is dev-only — `BeetsBackup.exe` is `requireAdministrator`
+(VSS) and `BeetsBackupLauncher.exe` is the `asInvoker` stub the user pins to skip UAC on every
+taskbar click. End users would be confused by two exes; the pinned one (launcher) doesn't match
+the obvious "main app" name.
+
+**Plan for final build (preferred — Option 1):**
+
+- Rename `BeetsBackupLauncher.exe` → `BeetsBackup.exe`. This is the user-facing exe, the one
+  pinned, the one in Start Menu, the one in installer shortcuts.
+- Rename current `BeetsBackup.exe` (the elevated WPF app) → `BeetsBackup.Core.exe` (or similar
+  internal name). Implementation detail; users never click it directly.
+- Update the launcher's `Process.Start` target to the new core exe name.
+- Update `WindowsTaskSchedulerService` (the headless `--run-job` path, commit `d993311`) to
+  point at the renamed core exe. Headless still needs elevation; runs without UAC because it's
+  invoked by Task Scheduler.
+- Update the ONLOGON scheduled task target (commit `4676bb8`) to point at the launcher (so
+  Beet starts at logon without UAC).
+- Re-skin the launcher's `.csproj` `Description`/`Product` so file properties read sensibly.
+- Update build artifacts / `CopyExeToRoot` targets accordingly.
+
+**Fallback (Option 2 — if rename is too disruptive):**
+
+Leave the dual-exe names. The installer creates a single Start Menu shortcut "Beet's Backup"
+whose Target is `BeetsBackupLauncher.exe`. End users only ever see "Beet's Backup" in Start
+Menu and can right-click → Pin from there. The dual-exe layout is hidden unless someone
+browses the install folder.
+
+**Files known to reference the exe names:**
+- `BeetsBackupLauncher/Program.cs` — `BeetsBackup.exe` constant in `Path.Combine`
+- `BeetsBackupLauncher/BeetsBackupLauncher.csproj` — assembly name + `CopyLauncherToRoot` target
+- `BeetsBackup.csproj` — assembly name + `CopyExeToRoot` target
+- `Services/WindowsTaskSchedulerService.cs` — schtasks `/TR` argument (BeetsBackup.exe path)
+- `Services/StartupService.cs` (or wherever ONLOGON task creation lives) — task target path
+- Anywhere `Environment.ProcessPath` is consumed and compared against a hardcoded name
