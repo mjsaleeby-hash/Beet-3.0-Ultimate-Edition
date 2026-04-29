@@ -125,14 +125,18 @@ public static class DriveTypeService
                 case DriveType.CDRom: return DriveKind.Removable;
                 case DriveType.Ram: return DriveKind.SSD; // RAM disks behave like SSDs to our scheduler
                 case DriveType.Fixed:
-                    return ProbeSeekPenalty(root);
+                    var kind = ProbeSeekPenalty(root);
+                    FileLogger.Info($"DriveTypeService: {root} (Fixed) → {kind}");
+                    return kind;
                 default:
+                    FileLogger.Info($"DriveTypeService: {root} → Unknown (DriveType={info.DriveType})");
                     return DriveKind.Unknown;
             }
         }
-        catch
+        catch (Exception ex)
         {
             // Any unexpected failure (denied access, malformed root, etc.) — conservative default.
+            FileLogger.Warn($"DriveTypeService: probe failed for {root}: {ex.GetType().Name}: {ex.Message}");
             return DriveKind.Unknown;
         }
     }
@@ -147,12 +151,20 @@ public static class DriveTypeService
         // Convert "C:\" → "\\.\C:" — the kernel object name for a volume handle. Trailing
         // backslash and longer paths don't open as a volume; only the drive-letter form works.
         var letter = root.Length >= 2 && root[1] == ':' ? root.Substring(0, 2) : null;
-        if (letter == null) return DriveKind.Unknown;
+        if (letter == null)
+        {
+            FileLogger.Warn($"DriveTypeService: ProbeSeekPenalty bad root {root} (no drive letter)");
+            return DriveKind.Unknown;
+        }
 
         var volumePath = @"\\.\" + letter;
         IntPtr handle = CreateFileW(volumePath, 0, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open, 0, IntPtr.Zero);
         if (handle == new IntPtr(-1))
+        {
+            int err = Marshal.GetLastWin32Error();
+            FileLogger.Warn($"DriveTypeService: CreateFile({volumePath}) failed, Win32Error={err}");
             return DriveKind.Unknown;
+        }
 
         try
         {
@@ -170,9 +182,15 @@ public static class DriveTypeService
                 IOCTL_STORAGE_QUERY_PROPERTY,
                 ref query, querySize,
                 ref result, resultSize,
-                out _, IntPtr.Zero);
+                out uint bytesReturned, IntPtr.Zero);
 
-            if (!ok) return DriveKind.Unknown;
+            if (!ok)
+            {
+                int err = Marshal.GetLastWin32Error();
+                FileLogger.Warn($"DriveTypeService: DeviceIoControl({volumePath}) failed, Win32Error={err}");
+                return DriveKind.Unknown;
+            }
+            FileLogger.Info($"DriveTypeService: {volumePath} IOCTL ok, IncursSeekPenalty={result.IncursSeekPenalty} (bytesReturned={bytesReturned})");
             return result.IncursSeekPenalty ? DriveKind.HDD : DriveKind.SSD;
         }
         finally
