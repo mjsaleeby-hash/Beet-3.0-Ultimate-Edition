@@ -14,11 +14,18 @@ public sealed class VssSnapshotService : IDisposable
     private readonly Dictionary<string, string> _snapshotRoots = new();
     // Track snapshot set IDs for cleanup
     private readonly List<(IVssBackupComponents components, Guid snapshotSetId, Guid snapshotId)> _snapshots = new();
+    // Serializes snapshot creation across parallel copy workers. Without this two workers hitting
+    // locked files on the same volume could race in CreateSnapshot, double-create snapshots, and
+    // leak COM handles. Granularity is per-volume in spirit (ConcurrentDictionary<volume, Lazy<>>
+    // would express that better) but a single lock is fine here — VSS create is rare, slow when
+    // it does happen, and we don't want to create two on the same volume in parallel anyway.
+    private readonly object _snapshotLock = new();
     private bool _disposed;
 
     /// <summary>
     /// Gets the shadow copy device path for the volume containing the given file.
     /// Creates a new VSS snapshot if one doesn't already exist for that volume.
+    /// Thread-safe: parallel copy workers can call this concurrently.
     /// </summary>
     /// <param name="filePath">Full path to the locked file (e.g. C:\Users\foo\bar.db)</param>
     /// <returns>Shadow device root (e.g. \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3)</returns>
@@ -30,29 +37,32 @@ public sealed class VssSnapshotService : IDisposable
         var volumeRoot = Path.GetPathRoot(filePath)
             ?? throw new ArgumentException($"Cannot determine volume root for: {filePath}");
 
-        // Return cached snapshot if we already have one for this volume
-        if (_snapshotRoots.TryGetValue(volumeRoot, out var cached))
-            return cached;
+        lock (_snapshotLock)
+        {
+            // Return cached snapshot if we already have one for this volume.
+            if (_snapshotRoots.TryGetValue(volumeRoot, out var cached))
+                return cached;
 
-        FileLogger.Info($"Creating VSS snapshot for volume {volumeRoot}");
+            FileLogger.Info($"Creating VSS snapshot for volume {volumeRoot}");
 
-        try
-        {
-            var snapshotDevicePath = CreateSnapshot(volumeRoot);
-            _snapshotRoots[volumeRoot] = snapshotDevicePath;
-            FileLogger.Info($"VSS snapshot created: {volumeRoot} → {snapshotDevicePath}");
-            return snapshotDevicePath;
-        }
-        catch (COMException ex)
-        {
-            FileLogger.Error($"VSS failed for {volumeRoot}: 0x{ex.HResult:X8} — {ex.Message}");
-            throw new InvalidOperationException(
-                $"VSS snapshot failed for {volumeRoot}. The application may need to run as Administrator.", ex);
-        }
-        catch (Exception ex)
-        {
-            FileLogger.Error($"VSS failed for {volumeRoot}: {ex.Message}");
-            throw new InvalidOperationException($"VSS snapshot failed for {volumeRoot}: {ex.Message}", ex);
+            try
+            {
+                var snapshotDevicePath = CreateSnapshot(volumeRoot);
+                _snapshotRoots[volumeRoot] = snapshotDevicePath;
+                FileLogger.Info($"VSS snapshot created: {volumeRoot} → {snapshotDevicePath}");
+                return snapshotDevicePath;
+            }
+            catch (COMException ex)
+            {
+                FileLogger.Error($"VSS failed for {volumeRoot}: 0x{ex.HResult:X8} — {ex.Message}");
+                throw new InvalidOperationException(
+                    $"VSS snapshot failed for {volumeRoot}. The application may need to run as Administrator.", ex);
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Error($"VSS failed for {volumeRoot}: {ex.Message}");
+                throw new InvalidOperationException($"VSS snapshot failed for {volumeRoot}: {ex.Message}", ex);
+            }
         }
     }
 

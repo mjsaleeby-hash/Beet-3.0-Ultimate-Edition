@@ -79,6 +79,27 @@ public sealed class TransferResult
     /// <summary>Atomically increments <see cref="DirectoriesDeleted"/>.</summary>
     public void IncrementDirectoriesDeleted() => Interlocked.Increment(ref _directoriesDeleted);
 
+    private int _lastReportedPercent = -1;
+    /// <summary>
+    /// Atomically advances the percent-progress high-water mark. Returns <c>true</c> if
+    /// <paramref name="candidate"/> was greater than the prior maximum (i.e. the caller should
+    /// emit the report); <c>false</c> if a sibling worker already reported a higher percent.
+    /// Without this, parallel workers that race past each other can produce out-of-order reports
+    /// (e.g. file 50 completing before file 1 emits "50%" then "1%"), violating the consumer's
+    /// reasonable expectation of monotonicity.
+    /// </summary>
+    public bool TryAdvanceReportedPercent(int candidate)
+    {
+        var prev = Volatile.Read(ref _lastReportedPercent);
+        while (candidate > prev)
+        {
+            var swapped = Interlocked.CompareExchange(ref _lastReportedPercent, candidate, prev);
+            if (swapped == prev) return true;
+            prev = swapped;
+        }
+        return false;
+    }
+
     private const int MaxFileErrors = 200;
     private readonly object _errorLock = new();
     private readonly List<FileError> _fileErrors = new();

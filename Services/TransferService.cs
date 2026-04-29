@@ -90,7 +90,13 @@ public sealed class TransferService
         if (versioning != null && versioning.Enabled)
             versioning.DestinationRoot = destinationDir;
 
-        await Task.Run(() =>
+        // Outer Task.Run keeps the planning and parallel-copy work off the UI dispatcher.
+        // Inside, the file phase uses Parallel.ForEachAsync with concurrency picked by drive type.
+        var firstSource = sourceList.FirstOrDefault() ?? destinationDir;
+        var workerCount = DriveTypeService.GetWorkerCount(firstSource, destinationDir);
+        FileLogger.Info($"Transfer concurrency: {workerCount} worker(s) — source kind={DriveTypeService.GetDriveKind(firstSource)}, dest kind={DriveTypeService.GetDriveKind(destinationDir)}");
+
+        await Task.Run(async () =>
         {
             // Keep Windows awake for the duration of the backup — without this hint, an idle sleep
             // timeout can suspend the machine mid-copy and the transfer fails on resume.
@@ -112,8 +118,8 @@ public sealed class TransferService
 
             // Phase 2 — pre-create destination directories, parents before children. Sorting by
             // separator-count (depth proxy) is enough because a child's path is always longer than
-            // its parent's. Done sequentially even in the parallel build to keep the create-parent
-            // invariant trivial; CreateDirectory is cheap relative to file copies.
+            // its parent's. Done sequentially so workers in the next phase never race to create
+            // the same parent — CreateDirectory is cheap relative to file copies anyway.
             foreach (var dir in plan.Directories.OrderBy(d => DepthOf(d.DestPath)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -134,14 +140,21 @@ public sealed class TransferService
                 }
             }
 
-            // Phase 3 — process each file. Sequential foreach today; Stage 4 swaps this for a
-            // Parallel.ForEachAsync gated by DriveTypeService.GetWorkerCount.
-            foreach (var item in plan.Files)
+            // Phase 3 — copy files in parallel, bounded by drive-type-aware concurrency. Workers
+            // consume the frozen plan independently; counter mutators on TransferResult are
+            // atomic (Stage 1) and VSS snapshot creation is locked (parallelism-safety patch
+            // applied to VssSnapshotService for this stage).
+            var parallelOpts = new ParallelOptions
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                MaxDegreeOfParallelism = workerCount,
+                CancellationToken = cancellationToken,
+            };
+            await Parallel.ForEachAsync(plan.Files, parallelOpts, (item, ct) =>
+            {
                 ProcessFileWorkItem(item, stripPermissions, verifyChecksums, throttleBytesPerSec,
-                    vssSession, versioning, progress, progressPercent, result, pauseToken, cancellationToken);
-            }
+                    vssSession, versioning, progress, progressPercent, result, pauseToken, ct);
+                return ValueTask.CompletedTask;
+            }).ConfigureAwait(false);
 
             if (mode == TransferMode.Mirror)
             {
@@ -766,7 +779,12 @@ public sealed class TransferService
         if (result.TotalFiles > 0)
         {
             var done = result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
-            progressPercent?.Report(Math.Min((int)Math.Round(done * 100.0 / result.TotalFiles), 100));
+            var pct = Math.Min((int)Math.Round(done * 100.0 / result.TotalFiles), 100);
+            // Suppress out-of-order reports under parallel copy: only forward when we actually
+            // advanced the high-water mark. Sequential callers see no behavioral change because
+            // the mark advances every step anyway.
+            if (result.TryAdvanceReportedPercent(pct))
+                progressPercent?.Report(pct);
         }
     }
 
