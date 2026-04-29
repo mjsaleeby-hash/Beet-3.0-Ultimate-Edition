@@ -100,20 +100,47 @@ public sealed class TransferService
 
             CheckFreeSpace(sourceList, destinationDir);
             var excludeSet = exclusions != null && exclusions.Count > 0 ? exclusions : null;
-            result.TotalFiles = sourceList.Sum(s => CountFiles(s, excludeSet));
 
-            foreach (var source in sourceList)
+            // Phase 1 — enumerate. One walk of the source tree produces a frozen plan: every
+            // directory we'll need at the destination, every file with its action already decided.
+            // Workers consume the plan; they don't recurse, don't re-stat, don't race on KeepBoth
+            // uniqueness. This replaces the old depth-first recursive CopyItem orchestration for
+            // CopyAsync (MoveAsync still calls CopyItem directly — Stage 3 didn't touch that path).
+            progress?.Report("Scanning source...");
+            var plan = EnumerateWorkItems(sourceList, destinationDir, mode, excludeSet, cancellationToken);
+            result.TotalFiles = plan.Files.Count;
+
+            // Phase 2 — pre-create destination directories, parents before children. Sorting by
+            // separator-count (depth proxy) is enough because a child's path is always longer than
+            // its parent's. Done sequentially even in the parallel build to keep the create-parent
+            // invariant trivial; CreateDirectory is cheap relative to file copies.
+            foreach (var dir in plan.Directories.OrderBy(d => DepthOf(d.DestPath)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, excludeSet, throttleBytesPerSec, vssSession, versioning);
+                    if (!Directory.Exists(dir.DestPath))
+                        Directory.CreateDirectory(dir.DestPath);
+                    if (dir.IsHidden)
+                        File.SetAttributes(dir.DestPath, File.GetAttributes(dir.DestPath) | FileAttributes.Hidden);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    progress?.Report($"Error: {Path.GetFileName(source)} — {ex.Message}");
+                    result.IncrementDirectoriesFailed();
+                    result.AddFileError(dir.DestPath, ex.Message);
+                    FileLogger.LogException($"CreateDirectory failed: {dir.DestPath}", ex);
+                    progress?.Report($"ERROR: {Path.GetFileName(dir.DestPath)}\\ — {ex.Message}");
                 }
+            }
+
+            // Phase 3 — process each file. Sequential foreach today; Stage 4 swaps this for a
+            // Parallel.ForEachAsync gated by DriveTypeService.GetWorkerCount.
+            foreach (var item in plan.Files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ProcessFileWorkItem(item, stripPermissions, verifyChecksums, throttleBytesPerSec,
+                    vssSession, versioning, progress, progressPercent, result, pauseToken, cancellationToken);
             }
 
             if (mode == TransferMode.Mirror)
@@ -654,6 +681,105 @@ public sealed class TransferService
                 progressPercent?.Report(Math.Min(percent, 100));
             }
         }
+    }
+
+    /// <summary>
+    /// Processes one <see cref="FileWorkItem"/>: skip-identical, plain copy, or
+    /// archive-and-replace. Mirrors the per-file branches of the legacy <see cref="CopyItem"/>
+    /// (file branch only) including all exception handlers — used by <see cref="CopyAsync"/>'s
+    /// new enumerate-then-copy orchestrator.
+    /// </summary>
+    private void ProcessFileWorkItem(
+        FileWorkItem item,
+        bool stripPermissions,
+        bool verifyChecksums,
+        long throttleBytesPerSec,
+        VssSnapshotService? vss,
+        VersioningOptions? versioning,
+        IProgress<string>? progress,
+        IProgress<int>? progressPercent,
+        TransferResult result,
+        ManualResetEventSlim? pauseToken,
+        CancellationToken ct)
+    {
+        pauseToken?.Wait(ct);
+        ct.ThrowIfCancellationRequested();
+
+        var name = Path.GetFileName(item.SourcePath);
+
+        try
+        {
+            switch (item.Action)
+            {
+                case FileAction.SkipIdentical:
+                    result.IncrementFilesSkipped();
+                    progress?.Report($"Skipped (identical): {name}");
+                    break;
+
+                case FileAction.Copy:
+                    CopyAndVerify(item.SourcePath, item.DestPath, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
+                    progress?.Report(string.Equals(item.DestPath, Path.Combine(Path.GetDirectoryName(item.DestPath) ?? string.Empty, name), StringComparison.OrdinalIgnoreCase)
+                        ? $"Copied: {name}"
+                        : $"Copied (renamed): {Path.GetFileName(item.DestPath)}");
+                    break;
+
+                case FileAction.Replace:
+                    if (!VersioningService.ArchiveBeforeOverwrite(item.DestPath, versioning))
+                    {
+                        // Versioning archive failed — DO NOT destroy the destination. Mirror semantics
+                        // promise we never delete an irrecoverable destination. Record the failure
+                        // and move on; the existing destination file remains untouched.
+                        result.IncrementFilesFailed();
+                        result.AddFileError(item.DestPath, "Could not archive existing version; destination left untouched.");
+                        progress?.Report($"ERROR: {name} — version archive failed, keeping existing");
+                        break;
+                    }
+                    if (File.Exists(item.DestPath)) File.Delete(item.DestPath);
+                    CopyAndVerify(item.SourcePath, item.DestPath, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
+                    progress?.Report($"Updated: {name}");
+                    break;
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
+        {
+            result.IncrementDiskFullErrors();
+            result.AddFileError(item.SourcePath, "Disk full");
+            FileLogger.Error($"Disk full: {item.SourcePath}");
+            progress?.Report($"DISK FULL: {name} — not enough space");
+        }
+        catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+        {
+            result.IncrementFilesLocked();
+            result.AddFileError(item.SourcePath, "File is in use");
+            FileLogger.Warn($"File locked (retries + VSS exhausted): {item.SourcePath}");
+            progress?.Report($"LOCKED: {name} — file is in use");
+        }
+        catch (Exception ex)
+        {
+            result.IncrementFilesFailed();
+            result.AddFileError(item.SourcePath, ex.Message);
+            FileLogger.LogException($"File copy failed: {item.SourcePath}", ex);
+            progress?.Report($"ERROR: {name} — {ex.Message}");
+        }
+
+        if (result.TotalFiles > 0)
+        {
+            var done = result.FilesCopied + result.FilesSkipped + result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
+            progressPercent?.Report(Math.Min((int)Math.Round(done * 100.0 / result.TotalFiles), 100));
+        }
+    }
+
+    /// <summary>Path-separator count, used to sort plan directories so parents are created before children.</summary>
+    private static int DepthOf(string path)
+    {
+        int n = 0;
+        for (int i = 0; i < path.Length; i++)
+        {
+            var c = path[i];
+            if (c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar) n++;
+        }
+        return n;
     }
 
     private const int MaxRetries = 3;
