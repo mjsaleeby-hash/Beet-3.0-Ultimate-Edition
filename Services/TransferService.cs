@@ -1121,4 +1121,191 @@ public sealed class TransferService
             if (used.Add(candidate)) return candidate;
         }
     }
+
+    /// <summary>
+    /// Output of the enumeration pass — flat lists of directories to pre-create and files to
+    /// process. Phase 3's parallel copy engine consumes this and fans the file list out across
+    /// workers; enumerator side decides everything (mode, exclusions, KeepBoth uniqueness, skip
+    /// vs replace) so workers don't need to consult each other or re-read the destination.
+    /// </summary>
+    internal sealed class EnumerationPlan
+    {
+        public List<DirectoryWorkItem> Directories { get; } = new();
+        public List<FileWorkItem> Files { get; } = new();
+    }
+
+    /// <summary>
+    /// Walks <paramref name="sourcePaths"/> and produces a frozen plan describing every directory
+    /// to create and every file to copy / skip / replace. Honors exclusions, transfer mode, and
+    /// KeepBoth uniqueness up-front. Pure planning — no I/O writes are performed here, only reads.
+    /// </summary>
+    /// <remarks>
+    /// Not yet wired into <see cref="CopyAsync"/>; lives here as the foundation for the parallel
+    /// copy engine. The single-threaded recursive <c>CopyItem</c> path is still the active code
+    /// path until Stage 3b lands.
+    /// </remarks>
+    internal EnumerationPlan EnumerateWorkItems(
+        IEnumerable<string> sourcePaths,
+        string destinationDir,
+        TransferMode mode,
+        IReadOnlyList<string>? exclusions,
+        CancellationToken cancellationToken)
+    {
+        var plan = new EnumerationPlan();
+        // For KeepBoth: track destination paths we've already reserved within this run so two
+        // sources with the same leaf name don't both try to land at "Foo-1" and collide. Outside
+        // KeepBoth we only consult the live filesystem (existing files dictate Skip vs Replace).
+        var reservedDestPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var source in sourcePaths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                EnumerateOne(source, destinationDir, mode, exclusions, plan, reservedDestPaths, cancellationToken);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                FileLogger.LogException($"Enumerate failed: {source}", ex);
+                // Continue with other sources — partial plan is better than no plan.
+            }
+        }
+
+        return plan;
+    }
+
+    /// <summary>
+    /// Recursive helper for <see cref="EnumerateWorkItems"/>. Adds a <see cref="DirectoryWorkItem"/>
+    /// for every directory we'll need to create at the destination, and a <see cref="FileWorkItem"/>
+    /// for every file with its planned action baked in.
+    /// </summary>
+    private void EnumerateOne(
+        string sourcePath,
+        string destinationDir,
+        TransferMode mode,
+        IReadOnlyList<string>? exclusions,
+        EnumerationPlan plan,
+        HashSet<string> reservedDestPaths,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        FileAttributes attr;
+        try { attr = File.GetAttributes(sourcePath); }
+        catch (Exception ex)
+        {
+            FileLogger.LogException($"Enumerate: GetAttributes failed for {sourcePath}", ex);
+            return;
+        }
+
+        var name = Path.GetFileName(sourcePath);
+        bool isDirectory = attr.HasFlag(FileAttributes.Directory);
+
+        if (exclusions != null && IsExcluded(name, exclusions))
+        {
+            // Excluded directory subtree drops out entirely — no work items emitted.
+            // Excluded individual files at the top level are likewise omitted; the orchestrator
+            // tracks "skipped because excluded" through TotalFiles vs FilesCopied+...+FilesSkipped
+            // accounting (matches CountFiles semantics, which prunes excluded subtrees).
+            return;
+        }
+
+        if (isDirectory)
+        {
+            // Empty leaf-name guards a drive root like "D:\" — keep dest at the parent in that case.
+            var destSubDir = string.IsNullOrEmpty(name)
+                ? destinationDir
+                : Path.Combine(destinationDir, name);
+
+            if (mode == TransferMode.KeepBoth && Directory.Exists(destSubDir))
+                destSubDir = GetUniqueFolderPath(destSubDir);
+
+            plan.Directories.Add(new DirectoryWorkItem(
+                sourcePath,
+                destSubDir,
+                attr.HasFlag(FileAttributes.Hidden)));
+
+            // Walk children. Use shallow enumeration + recurse manually so a single failure on
+            // one child doesn't abort enumeration of its siblings.
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(sourcePath, "*", ShallowEnumOptions))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try { EnumerateOne(file, destSubDir, mode, exclusions, plan, reservedDestPaths, ct); }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) { FileLogger.LogException($"Enumerate file failed: {file}", ex); }
+                }
+                foreach (var dir in Directory.EnumerateDirectories(sourcePath, "*", ShallowEnumOptions))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try { EnumerateOne(dir, destSubDir, mode, exclusions, plan, reservedDestPaths, ct); }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) { FileLogger.LogException($"Enumerate dir failed: {dir}", ex); }
+                }
+            }
+            catch (UnauthorizedAccessException ex) { FileLogger.LogException($"Enumerate: access denied on {sourcePath}", ex); }
+            catch (DirectoryNotFoundException) { /* removed mid-walk; nothing to do */ }
+        }
+        else
+        {
+            var destFile = Path.Combine(destinationDir, name);
+            long sourceSize;
+            try { sourceSize = new FileInfo(sourcePath).Length; }
+            catch { sourceSize = 0; }
+
+            if (File.Exists(destFile))
+            {
+                switch (mode)
+                {
+                    case TransferMode.SkipExisting:
+                    case TransferMode.Mirror:
+                    {
+                        var sourceInfo = new FileInfo(sourcePath);
+                        var destInfo = new FileInfo(destFile);
+                        bool changed = sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc;
+                        plan.Files.Add(new FileWorkItem(sourcePath, destFile,
+                            changed ? FileAction.Replace : FileAction.SkipIdentical,
+                            sourceSize));
+                        break;
+                    }
+                    case TransferMode.KeepBoth:
+                    {
+                        var renamed = GetUniqueFilePathReserved(destFile, reservedDestPaths);
+                        plan.Files.Add(new FileWorkItem(sourcePath, renamed, FileAction.Copy, sourceSize));
+                        break;
+                    }
+                    case TransferMode.Replace:
+                        plan.Files.Add(new FileWorkItem(sourcePath, destFile, FileAction.Replace, sourceSize));
+                        break;
+                }
+            }
+            else
+            {
+                plan.Files.Add(new FileWorkItem(sourcePath, destFile, FileAction.Copy, sourceSize));
+            }
+        }
+    }
+
+    /// <summary>
+    /// KeepBoth-aware uniqueness: like <see cref="GetUniqueFilePath"/> but also avoids names
+    /// we've already reserved earlier in this same enumeration pass. Without this, two sources
+    /// named <c>Data.txt</c> would both pick <c>Data-1.txt</c> and the second worker would
+    /// silently overwrite the first.
+    /// </summary>
+    private static string GetUniqueFilePathReserved(string path, HashSet<string> reserved)
+    {
+        var dir = Path.GetDirectoryName(path)!;
+        var nameNoExt = Path.GetFileNameWithoutExtension(path);
+        var ext = Path.GetExtension(path);
+        int counter = 1;
+        string candidate;
+        do
+        {
+            candidate = Path.Combine(dir, $"{nameNoExt}-{counter}{ext}");
+            counter++;
+        } while (File.Exists(candidate) || !reserved.Add(candidate));
+        return candidate;
+    }
 }
