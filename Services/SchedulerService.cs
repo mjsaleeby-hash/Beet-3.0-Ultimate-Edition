@@ -20,6 +20,22 @@ public sealed class SchedulerService : IDisposable
     private readonly Dictionary<Guid, ManualResetEventSlim> _pauseGates = new();
     private Task? _runTask;
 
+    /// <summary>UTC timestamp of the most recent self-initiated write to <c>scheduled_jobs.json</c>.
+    /// The cross-process watcher uses this to suppress reloads triggered by our own SaveJobs.</summary>
+    private DateTime _lastSelfWrite = DateTime.MinValue;
+
+    /// <summary>Window after a self-save during which file-change events are ignored. File.Replace
+    /// fires multiple events; this avoids self-thrashing on the watcher.</summary>
+    private static readonly TimeSpan SelfWriteCooldown = TimeSpan.FromSeconds(2);
+
+    /// <summary>Coalesces a burst of file-change events into a single reload after the watcher quiets.</summary>
+    private CancellationTokenSource? _reloadCts;
+
+    /// <summary>Watcher on <c>scheduled_jobs.json</c>. The headless --run-job path advances NextRun
+    /// and writes the file from a separate process; without this watcher the foreground dashboard
+    /// keeps showing the pre-run NextRun forever (until app restart).</summary>
+    private FileSystemWatcher? _watcher;
+
     /// <summary>Last error message produced by the scheduler loop, if any.</summary>
     public string? LastSchedulerError { get; private set; }
 
@@ -48,6 +64,7 @@ public sealed class SchedulerService : IDisposable
         _transfer = transfer;
         _log = log;
         LoadJobs();
+        StartWatcher();
         _ticker = new PeriodicTimer(TimeSpan.FromMinutes(1));
     }
 
@@ -501,6 +518,9 @@ public sealed class SchedulerService : IDisposable
             {
                 lock (_jobsLock)
                 {
+                    // Replace, not append — this method is also the reload path for the file
+                    // watcher when another process updates scheduled_jobs.json.
+                    _jobs.Clear();
                     _jobs.AddRange(loaded);
                 }
             }
@@ -510,6 +530,9 @@ public sealed class SchedulerService : IDisposable
 
     private void SaveJobs()
     {
+        // Mark before the write begins, not after — watcher events from this write may fire
+        // before File.Replace returns, and we want every one of them to land inside the cooldown.
+        _lastSelfWrite = DateTime.UtcNow;
         try
         {
             var dir = Path.GetDirectoryName(JobsPath)!;
@@ -523,6 +546,58 @@ public sealed class SchedulerService : IDisposable
                 File.Move(tmpPath, JobsPath);
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Starts the <see cref="FileSystemWatcher"/> on <c>scheduled_jobs.json</c>. The headless
+    /// <c>--run-job</c> path runs in a separate process and writes this file when it advances
+    /// NextRun — without this watcher the foreground app's job list stays stuck on pre-run
+    /// timestamps until restart.
+    /// </summary>
+    private void StartWatcher()
+    {
+        if (_watcher != null) return;
+        try
+        {
+            var dir = Path.GetDirectoryName(JobsPath)!;
+            Directory.CreateDirectory(dir);
+            _watcher = new FileSystemWatcher(dir, Path.GetFileName(JobsPath))
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+                EnableRaisingEvents = true,
+            };
+            _watcher.Changed += OnJobsFileChanged;
+            _watcher.Created += OnJobsFileChanged;
+            _watcher.Renamed += OnJobsFileChanged;
+        }
+        catch (Exception ex)
+        {
+            FileLogger.LogException("SchedulerService: could not start file watcher", ex);
+        }
+    }
+
+    /// <summary>
+    /// Watcher callback. Fires on a thread-pool thread; debounces the burst that File.Replace
+    /// produces and ignores events caused by this process's own writes.
+    /// </summary>
+    private void OnJobsFileChanged(object sender, FileSystemEventArgs e)
+    {
+        if (DateTime.UtcNow - _lastSelfWrite < SelfWriteCooldown) return;
+
+        _reloadCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _reloadCts = cts;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), cts.Token).ConfigureAwait(false);
+                LoadJobs();
+                JobsChanged?.Invoke();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { FileLogger.LogException("SchedulerService: reload failed", ex); }
+        });
     }
 
     /// <summary>Builds a timestamped archive filename for a compressed scheduled job run.</summary>
@@ -548,6 +623,11 @@ public sealed class SchedulerService : IDisposable
 
     public void Dispose()
     {
+        _watcher?.Dispose();
+        _watcher = null;
+        _reloadCts?.Cancel();
+        _reloadCts?.Dispose();
+        _reloadCts = null;
         _cts.Cancel();
         _ticker.Dispose(); // Causes WaitForNextTickAsync to return false immediately
         // Wait briefly for the scheduler loop to exit — don't block indefinitely
