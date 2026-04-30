@@ -218,7 +218,11 @@ public static class DriveTypeService
     {
         public STORAGE_PROPERTY_ID PropertyId;
         public STORAGE_QUERY_TYPE QueryType;
-        // Variable-length AdditionalParameters[1] omitted — not needed for SeekPenalty query.
+        // Native sizeof(STORAGE_PROPERTY_QUERY) is 12 bytes — DWORD + DWORD + BYTE
+        // AdditionalParameters[1] padded to 4-byte alignment. Omitting this padding makes
+        // DeviceIoControl reject the call with ERROR_BAD_LENGTH (24) because the in-buffer
+        // size we report (8) is smaller than what the driver expects (12).
+        public uint AdditionalParameters;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -228,6 +232,11 @@ public static class DriveTypeService
         public uint Size;
         [MarshalAs(UnmanagedType.U1)]
         public bool IncursSeekPenalty;
+        // Pad to native alignment (12 bytes). Same rationale as STORAGE_PROPERTY_QUERY —
+        // the driver's reported sizeof() determines what it'll accept as the out-buffer size.
+        private byte _pad1;
+        private byte _pad2;
+        private byte _pad3;
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateFileW")]
