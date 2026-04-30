@@ -759,6 +759,12 @@
                             HorizontalAlignment="Stretch"
                             Command="{Binding ExportDiagnosticsCommand}"
                             ToolTip="Save a zip of logs, settings, and system info to your Desktop so you can email it to support."/>
+                    <Button Content="View User Guide (FAQ)"
+                            Style="{StaticResource ToolbarButton}"
+                            Margin="6,2"
+                            HorizontalAlignment="Stretch"
+                            Click="OpenFaq_Click"
+                            ToolTip="Open the Beet's Backup user guide PDF."/>
                 </StackPanel>
             </Border>
         </Popup>

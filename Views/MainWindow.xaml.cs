@@ -446,6 +446,42 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OpenFaq_Click(object sender, RoutedEventArgs e)
+    {
+        OptionsPopup.IsOpen = false;
+        var dir = Path.GetDirectoryName(Environment.ProcessPath)
+                  ?? Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd('\\', '/'))
+                  ?? AppContext.BaseDirectory;
+        var pdf = Path.Combine(dir, "beetsbackup_user_guide.pdf");
+        if (!File.Exists(pdf))
+        {
+            System.Windows.MessageBox.Show(
+                $"User guide not found.\nExpected: {pdf}",
+                "File Not Found", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        try
+        {
+            // Launch via explorer.exe rather than ShellExecute. Beet's Backup runs elevated
+            // (requireAdministrator), and ShellExecute from an elevated process can't hand off
+            // to a non-elevated app like Adobe Acrobat that's already running under the user
+            // token — the request silently fails to surface a window. explorer.exe runs under
+            // the user's normal token and routes through file association cleanly.
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{pdf}\"",
+                UseShellExecute = false
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"Could not open the user guide:\n{ex.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private void OptionsPopup_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
