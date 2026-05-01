@@ -48,8 +48,25 @@ public sealed class BackupLogService : IDisposable
     /// foreground app, and without this watch the dashboard shows stale Last/Next data forever).</summary>
     private FileSystemWatcher? _watcher;
 
+    /// <summary>When true, log mutations run synchronously under <see cref="_headlessLock"/> instead
+    /// of being posted to the WPF dispatcher. The headless --run-job path blocks the UI thread in
+    /// <c>GetAwaiter().GetResult()</c>, so dispatcher.BeginInvoke posts queue forever and are then
+    /// dropped by Environment.Exit — silently losing every Add/UpdateStatus/UpdateStats write.</summary>
+    private bool _headlessMode;
+
+    /// <summary>Serializes Entries mutations when <see cref="_headlessMode"/> is set. In foreground
+    /// mode the WPF dispatcher serializes via the UI thread; here we have no UI thread.</summary>
+    private readonly object _headlessLock = new();
+
     /// <summary>Observable collection of log entries, bound to the Log dialog's list view.</summary>
     public ObservableCollection<BackupLogEntry> Entries { get; } = new();
+
+    /// <summary>
+    /// Switches this service into headless mode: log mutations run synchronously under a lock
+    /// instead of being posted to the WPF dispatcher. Must be called before <see cref="Load"/>
+    /// in any process that won't pump the WPF dispatcher (i.e. the <c>--run-job</c> CLI path).
+    /// </summary>
+    public void MarkHeadless() => _headlessMode = true;
 
     /// <summary>
     /// Loads the backup log from disk. Marks stale "Running" entries as failed
@@ -249,9 +266,19 @@ public sealed class BackupLogService : IDisposable
         });
     }
 
-    /// <summary>Dispatches an action to the UI thread, executing synchronously if already on it.</summary>
-    private static void RunOnUiThread(Action action)
+    /// <summary>
+    /// Dispatches an action to the UI thread, executing synchronously if already on it.
+    /// In headless mode (<see cref="MarkHeadless"/>) runs the action synchronously under
+    /// <see cref="_headlessLock"/> instead — the WPF dispatcher cannot pump while the
+    /// <c>--run-job</c> path blocks the UI thread waiting for its async work to finish.
+    /// </summary>
+    private void RunOnUiThread(Action action)
     {
+        if (_headlessMode)
+        {
+            lock (_headlessLock) action();
+            return;
+        }
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher == null) return;
         if (dispatcher.CheckAccess())

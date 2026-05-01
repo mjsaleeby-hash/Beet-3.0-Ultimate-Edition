@@ -178,12 +178,6 @@ public partial class App : Application
     /// </summary>
     private void RunHeadlessJob(Guid jobId)
     {
-        // Final failsafe: if anything in this method hangs (async deadlock, stuck finalizer,
-        // abandoned background task), the watchdog kills the process so we never leave a zombie.
-        // The original bug: RunJobByIdAsync was awaited on the UI thread via GetAwaiter().GetResult(),
-        // which deadlocked when an async continuation tried to resume on the blocked WPF dispatcher.
-        ArmShutdownWatchdog(TimeSpan.FromSeconds(30), "RunHeadlessJob");
-
         try
         {
             FileLogger.Info($"=== Headless run: job {jobId} ===");
@@ -193,7 +187,13 @@ public partial class App : Application
             Services = services.BuildServiceProvider();
 
             Services.GetRequiredService<SettingsService>().Load();
-            Services.GetRequiredService<BackupLogService>().Load();
+            // Switch the log service into headless mode BEFORE Load(): every mutation must
+            // run synchronously, not be posted to a dispatcher that will never pump while we
+            // sit in GetAwaiter().GetResult() below. Without this the run finishes cleanly
+            // but no Running/Complete entry ever lands in backup_log.json.
+            var log = Services.GetRequiredService<BackupLogService>();
+            log.MarkHeadless();
+            log.Load();
 
             var scheduler = Services.GetRequiredService<SchedulerService>();
             // Run the async work on a thread-pool thread rather than blocking the WPF dispatcher
