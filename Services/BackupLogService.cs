@@ -335,6 +335,18 @@ public sealed class BackupLogService : IDisposable
     /// </summary>
     private void Save()
     {
+        // Headless mode has no WPF dispatcher to defer onto, so a debounced Save would
+        // post to a null dispatcher and silently drop the update (this is what kept the
+        // "Backup in progress" status flip from ever reaching the foreground app's log
+        // before — only the initial Add and final UpdateStats wrote to disk). Headless
+        // runs only call Save() a couple of times per job, so writing inline here costs
+        // nothing and lets the foreground's file watcher pick the update up.
+        if (_headlessMode)
+        {
+            SaveNow();
+            return;
+        }
+
         var now = DateTime.UtcNow;
         if (now - _lastSave < SaveDebounce)
         {

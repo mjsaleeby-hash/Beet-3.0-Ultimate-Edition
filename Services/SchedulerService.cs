@@ -369,7 +369,7 @@ public sealed class SchedulerService : IDisposable
             var exclusions = snapshot.ExclusionFilters.Count > 0 ? snapshot.ExclusionFilters : null;
 
             var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(snapshot.SourcePaths, exclusions)).ConfigureAwait(false);
-            _log.UpdateStatus(logEntry.Id, BackupStatus.Running, $"Transfer in progress — {FormatBytes(estimatedSize)} estimated");
+            _log.UpdateStatus(logEntry.Id, BackupStatus.Running, "Backup in progress");
             FileLogger.Info($"Estimated size for '{snapshot.Name}': {FormatBytes(estimatedSize)}");
 
             var percentProgress = new Progress<int>(pct =>
