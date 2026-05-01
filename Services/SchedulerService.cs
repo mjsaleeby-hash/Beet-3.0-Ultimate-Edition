@@ -307,8 +307,43 @@ public sealed class SchedulerService : IDisposable
     /// </summary>
     private async Task ExecuteJobAsync(ScheduledJob snapshot, ScheduledJob originalJob)
     {
+        // Cross-process per-job lock. The same job can race two ways:
+        //   1. Windows Task Scheduler launches `BeetsBackup.exe --run-job` while the
+        //      foreground app is already open, and that app's in-process minute-tick
+        //      ticker also fires the job before its file watcher picks up the headless
+        //      process's NextRun update.
+        //   2. Two foreground threads dispatch a Task.Run for the same job back-to-back.
+        // A named mutex (Global\ scope so it spans sessions) lets the first runner win
+        // and the second exit immediately without doing duplicate work.
+        var mutexName = $@"Global\BeetsBackup_Job_{snapshot.Id:N}";
+        Mutex? jobMutex = null;
+        bool gotLock = false;
+        try
+        {
+            jobMutex = new Mutex(initiallyOwned: false, name: mutexName);
+            try { gotLock = jobMutex.WaitOne(TimeSpan.Zero); }
+            catch (AbandonedMutexException) { gotLock = true; } // prior holder crashed; safe to take
+        }
+        catch (Exception ex)
+        {
+            // If creating the mutex itself fails (extremely rare — out of handles, ACL issue),
+            // fall through and run anyway. Better a possible duplicate run than a missed run.
+            FileLogger.LogException($"Could not create job mutex for '{snapshot.Name}'; running without cross-process lock", ex);
+            jobMutex?.Dispose();
+            jobMutex = null;
+        }
+
+        if (jobMutex != null && !gotLock)
+        {
+            FileLogger.Info($"Skipping '{snapshot.Name}' — another process or thread is already running this job.");
+            jobMutex.Dispose();
+            return;
+        }
+
         // Drop the "Scheduled for X" placeholder before the Running entry lands. Without this,
         // the log shows two entries for the same run forever — one Scheduled, one Complete.
+        // Done after the mutex check so a skipped tick doesn't strip the placeholder from
+        // under the process that's actually doing the work.
         _log.RemoveScheduledPlaceholdersForJob(snapshot.Id);
 
         var logEntry = new BackupLogEntry
@@ -404,6 +439,11 @@ public sealed class SchedulerService : IDisposable
                 pauseGate.Dispose();
                 originalJob.LastRun = DateTime.Now;
                 SaveJobs();
+            }
+            if (jobMutex != null)
+            {
+                try { jobMutex.ReleaseMutex(); } catch { /* never owned, or already released */ }
+                jobMutex.Dispose();
             }
         }
     }
