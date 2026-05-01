@@ -16,6 +16,15 @@ public partial class BackupLogEntry : ObservableObject
     /// <summary>Unique identifier for this log entry.</summary>
     public Guid Id { get; set; } = Guid.NewGuid();
 
+    /// <summary>
+    /// Identifier of the originating <see cref="ScheduledJob"/>, if this entry came from one.
+    /// Used to correlate the "Scheduled for X" placeholder with the eventual run entry so the
+    /// placeholder can be cleaned up when the run starts (or the job is deleted/edited).
+    /// <see cref="Guid.Empty"/> for entries created outside the scheduler (manual backups,
+    /// retries of pre-JobId log entries) and for log entries written before this field existed.
+    /// </summary>
+    public Guid JobId { get; set; }
+
     /// <summary>Display name of the backup job.</summary>
     public string JobName { get; set; } = string.Empty;
 

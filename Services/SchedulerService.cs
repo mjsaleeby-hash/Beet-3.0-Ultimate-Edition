@@ -127,6 +127,7 @@ public sealed class SchedulerService : IDisposable
             FileLogger.Info($"Skipped missed job: '{job.Name}' — next run advanced to {job.NextRun:g}");
             _log.Add(new BackupLogEntry
             {
+                JobId = job.Id,
                 JobName = job.Name,
                 SourcePath = string.Join("; ", job.SourcePaths),
                 DestinationPath = job.DestinationPath,
@@ -149,6 +150,7 @@ public sealed class SchedulerService : IDisposable
 
         _log.Add(new BackupLogEntry
         {
+            JobId = job.Id,
             JobName = job.Name,
             SourcePath = string.Join("; ", job.SourcePaths),
             DestinationPath = job.DestinationPath,
@@ -176,6 +178,9 @@ public sealed class SchedulerService : IDisposable
             SaveJobs();
         }
         WindowsTaskSchedulerService.Unregister(id);
+        // Drop the "Scheduled for X" placeholder that AddJob inserted — without this it
+        // hangs around in the log forever, advertising a run that will never happen.
+        _log.RemoveScheduledPlaceholdersForJob(id);
         JobsChanged?.Invoke();
     }
 
@@ -205,6 +210,11 @@ public sealed class SchedulerService : IDisposable
         WindowsTaskSchedulerService.Unregister(updated.Id);
         if (updated.IsEnabled)
             WindowsTaskSchedulerService.Register(updated);
+
+        // The old "Scheduled for X" placeholder may now be wrong (timing or recurrence may
+        // have changed). AddJob's flow re-creates the placeholder fresh on next add; for an
+        // edit we just drop the stale one — the next run will write a Running entry anyway.
+        _log.RemoveScheduledPlaceholdersForJob(updated.Id);
 
         JobsChanged?.Invoke();
     }
@@ -297,8 +307,13 @@ public sealed class SchedulerService : IDisposable
     /// </summary>
     private async Task ExecuteJobAsync(ScheduledJob snapshot, ScheduledJob originalJob)
     {
+        // Drop the "Scheduled for X" placeholder before the Running entry lands. Without this,
+        // the log shows two entries for the same run forever — one Scheduled, one Complete.
+        _log.RemoveScheduledPlaceholdersForJob(snapshot.Id);
+
         var logEntry = new BackupLogEntry
         {
+            JobId = snapshot.Id,
             JobName = snapshot.Name,
             SourcePath = string.Join("; ", snapshot.SourcePaths),
             DestinationPath = snapshot.DestinationPath,
@@ -465,6 +480,7 @@ public sealed class SchedulerService : IDisposable
 
         var logEntry = new BackupLogEntry
         {
+            JobId = failedEntry.JobId,
             JobName = failedEntry.JobName + " (retry)",
             SourcePath = failedEntry.SourcePath,
             DestinationPath = failedEntry.DestinationPath,

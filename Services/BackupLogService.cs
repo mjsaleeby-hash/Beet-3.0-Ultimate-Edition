@@ -120,6 +120,28 @@ public sealed class BackupLogService : IDisposable
                     anyStale = true;
                 }
 
+                // Drop orphaned Scheduled placeholders. A placeholder is "orphaned" once a
+                // newer non-Scheduled entry exists for the same job (matched by JobId when
+                // available, falling back to JobName + SourcePath + DestinationPath for log
+                // entries written before JobId existed). The placeholder served its purpose
+                // when the user added the job; once the run has happened it's just clutter.
+                var orphans = Entries
+                    .Where(e => e.Status == BackupStatus.Scheduled)
+                    .Where(s => Entries.Any(other =>
+                        other.Status != BackupStatus.Scheduled &&
+                        other.Timestamp > s.Timestamp &&
+                        (s.JobId != Guid.Empty
+                            ? other.JobId == s.JobId
+                            : other.JobName == s.JobName
+                              && other.SourcePath == s.SourcePath
+                              && other.DestinationPath == s.DestinationPath)))
+                    .ToList();
+                foreach (var orphan in orphans)
+                {
+                    Entries.Remove(orphan);
+                    anyStale = true;
+                }
+
                 if (anyStale) Save();
             });
         }
@@ -252,6 +274,24 @@ public sealed class BackupLogService : IDisposable
             if (fileErrors != null && fileErrors.Count > 0)
                 entry.FileErrors = fileErrors.ToList();
             entry.Timestamp = DateTime.Now;
+            SaveNow();
+        });
+    }
+
+    /// <summary>
+    /// Removes any "Scheduled for ..." placeholder entries belonging to <paramref name="jobId"/>.
+    /// Called when a run starts (so the placeholder doesn't sit alongside the run entry forever),
+    /// when a job is deleted, or when a job is edited (the placeholder text would now be wrong).
+    /// </summary>
+    public void RemoveScheduledPlaceholdersForJob(Guid jobId)
+    {
+        if (jobId == Guid.Empty) return;
+        RunOnUiThread(() =>
+        {
+            var matches = Entries.Where(e => e.Status == BackupStatus.Scheduled && e.JobId == jobId).ToList();
+            if (matches.Count == 0) return;
+            foreach (var entry in matches)
+                Entries.Remove(entry);
             SaveNow();
         });
     }
