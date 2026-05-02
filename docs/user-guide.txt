@@ -1,0 +1,954 @@
+================================================================================
+  BEET'S BACKUP — USER GUIDE
+  Version 3.0
+  Beet Software
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+  1.  Overview
+  2.  First Launch and UAC
+  3.  Main Window Layout
+  4.  Dashboard
+  5.  File Browser
+  6.  File Operations (Copy, Move, Delete, Rename)
+  7.  Transfer Options (Toolbar)
+  8.  Quick Filter
+  9.  Deep Search
+  10. Visual Mode (Pie Chart)
+  11. Archive and Extract
+  12. Split Pane View
+  13. Backup Wizard
+  14. Backup Now
+  15. Scheduled and Recurring Backups
+  16. Managing Jobs
+  17. Backup Log
+  18. System Tray
+  19. Options and Settings
+  20. Update Notifications
+  21. Crash Recovery and Diagnostics
+  22. Shadow Copy (VSS) and Locked Files
+  23. File Versioning
+  24. Tips and Troubleshooting
+
+
+================================================================================
+  1. OVERVIEW
+================================================================================
+
+Beet's Backup is a dual-pane file manager and backup tool for Windows 11. It
+lets you browse your drives side-by-side, copy and move files between locations,
+and set up automated backup jobs that run on a schedule — even when the app is
+not open.
+
+Core capabilities:
+  - Dual-pane file browser with full navigation history
+  - Copy, move, delete, and rename files and folders
+  - Recursive deep search across any folder
+  - Visual disk usage breakdown (pie chart)
+  - Zip archive creation and extraction
+  - Backup wizard for creating one-time or recurring jobs
+  - Automated scheduled backups via Windows Task Scheduler
+  - Shadow copy (VSS) support for backing up files that are currently in use
+  - File versioning — keep previous copies of overwritten files
+  - Compression — produce a single timestamped .zip instead of a folder copy
+  - Live dashboard showing backup status, schedule, and storage
+
+Beet's Backup runs on Windows 10 (1607+) and Windows 11 and requires
+administrator privileges for shadow copy support.
+
+
+================================================================================
+  2. FIRST LAUNCH AND UAC
+================================================================================
+
+When you launch Beet's Backup for the first time, Windows will show a User
+Account Control (UAC) prompt asking you to allow the app to run as
+Administrator. Click YES to proceed.
+
+Why is this required?
+  Beet's Backup uses Windows Volume Shadow Copy Service (VSS) to back up files
+  that are currently open or locked by other programs (such as Outlook .pst
+  files, databases, or files held open by Windows itself). VSS requires
+  administrator privileges to create shadow copies. Without this, those files
+  would be skipped or produce errors during backup.
+
+After you confirm the UAC prompt, the app will open normally. On subsequent
+launches you will see the UAC prompt once per session — this is expected and
+normal behavior for a backup application.
+
+If you have "Launch at Startup" enabled (see Section 19), the app will start
+automatically when you log in with no UAC prompt, because it uses a Windows
+Task Scheduler entry that runs elevated silently at login.
+
+
+================================================================================
+  3. MAIN WINDOW LAYOUT
+================================================================================
+
+The main window is divided into three areas:
+
+  TOP — Status Banner
+    A colored bar showing whether your data is protected or at risk. It also
+    shows last backup time, next scheduled backup, and total drive usage.
+    See Section 4 for details.
+
+  MIDDLE — Dashboard Cards
+    Four information cards side by side:
+      - Storage: total, used, and free space across all drives
+      - Schedule: next scheduled backup time
+      - What's Included: source folders from your active backup jobs
+      - Recent Backups: the last few completed backups with size/status
+
+  BOTTOM — File Browser
+    A dual-pane file manager. Both panes are independent and can browse
+    different drives or folders simultaneously. See Section 5.
+
+Along the top of the file browser is a toolbar row with:
+  - Drive selector (top and bottom panes)
+  - Navigation buttons: Back, Forward, Up
+  - Address bar showing the current path
+  - Quick Filter search box
+  - Deep Search button
+  - Visual Mode (pie chart) toggle
+  - Split Pane button
+  - Toolbar action buttons: Archive, Copy, Move (between panes)
+  - Transfer option toggles: Strip Permissions, Verify Checksums, Throttle
+
+Below the toolbar is the file list, showing Name, Type, Size, and
+Date Modified for each item.
+
+
+================================================================================
+  4. DASHBOARD
+================================================================================
+
+--- STATUS BANNER ---
+
+The colored banner at the very top of the window shows your backup health.
+
+  GREEN — "Protected"
+    Your most recent backup completed successfully within the last 7 days.
+
+  AMBER/RED — "At Risk"
+    Either no backup has completed successfully, or the most recent completed
+    backup was more than 7 days ago.
+
+The banner also displays:
+  - Last backup: how long ago the last backup ran (e.g. "Today, 2:45 PM")
+  - Next backup: when the next scheduled job will run
+  - Used / Free: aggregate disk usage across all drives
+
+--- DASHBOARD CARDS ---
+
+Storage Card:
+  Shows the total capacity, used space, and free space for all drives
+  currently connected to your computer. The values update automatically
+  when drives are added or removed.
+
+Schedule Card:
+  Shows the next scheduled backup time and recurrence (e.g. "Every day at
+  9:00 AM"). If no backup jobs are configured, it shows "No schedule
+  configured."
+
+What's Included Card:
+  Lists the source folders from all enabled backup jobs. Each entry shows
+  the folder name, the job it belongs to, and the full path on hover.
+
+Recent Backups Card:
+  Shows the last 4 completed (or failed) backup runs with their job name,
+  timestamp, and the amount of data transferred. Click "View all" (the log
+  button in the toolbar) to see the full history.
+
+Stats (bottom of dashboard):
+  - Backups Run: total number of successful backups
+  - Files Copied: total files copied across all time
+  - Data Transferred: total bytes transferred across all time
+
+
+================================================================================
+  5. FILE BROWSER
+================================================================================
+
+The file browser has two independent panes — top and bottom. Each pane has its
+own drive selector, navigation history, and folder tree.
+
+--- SELECTING A DRIVE ---
+
+At the top of each pane is a drive selector dropdown. Click it and choose a
+drive to navigate to its root. All connected drives are listed, including
+external hard drives and USB sticks.
+
+--- NAVIGATING FOLDERS ---
+
+To open a folder: double-click it in the file list.
+To go up one level: click the Up arrow button, or press Backspace.
+To go back: click the Back arrow (or use the back/forward buttons).
+To go forward: click the Forward arrow.
+
+The address bar shows the current full path. You can click it, type a path
+directly, and press Enter to navigate to that location.
+
+--- FOLDER TREE ---
+
+A collapsible folder tree is shown on the left side of each pane. Click any
+folder in the tree to navigate to it directly. The tree loads sub-folders
+lazily (on demand) as you expand them.
+
+--- FILE LIST COLUMNS ---
+
+  Name: file or folder name
+  Type: "Folder", or the file extension (e.g. "PDF Document")
+  Size: file size (folders show their total size once calculated)
+  Date Modified: last modification timestamp
+
+Click a column header to sort by that column.
+
+--- FOLDER SIZE CALCULATION ---
+
+When you navigate to a folder, Beet's Backup automatically calculates the size
+of each subfolder in the background. Sizes appear progressively as the
+calculation completes. You do not need to wait — you can continue browsing
+while sizes are calculated.
+
+--- REFRESHING ---
+
+To refresh the current view and reload drive information, use the Refresh
+button in the toolbar. This is useful after inserting or removing a drive.
+
+
+================================================================================
+  6. FILE OPERATIONS (COPY, MOVE, DELETE, RENAME)
+================================================================================
+
+--- SELECTING FILES ---
+
+Click a file or folder to select it. Hold Ctrl and click to select multiple
+items. Hold Shift and click to select a range.
+
+--- COPYING FILES ---
+
+To copy selected items from one pane to the other:
+  1. Select one or more items in the source pane.
+  2. Click the Copy button in the toolbar (arrow pointing down = top to bottom,
+     arrow pointing up = bottom to top).
+  3. A Transfer Mode dialog will appear. Choose how to handle conflicts
+     (see Section 7 for Transfer Mode descriptions).
+  4. Click OK. The copy starts immediately with a progress bar and ETA.
+
+--- MOVING FILES ---
+
+The Move operation works identically to Copy, but removes the originals
+from the source after a successful transfer. The source folder view is
+refreshed automatically when the move completes.
+
+--- PAUSING AND STOPPING A TRANSFER ---
+
+While a copy or move is in progress, two buttons appear in the status area:
+  Pause / Resume: temporarily halts the transfer. Click again to continue.
+  Stop: cancels the transfer. Files already copied remain at the destination.
+
+--- DELETING FILES ---
+
+Right-click a file or folder and choose Delete, or select the item and press
+the Delete key. The item is permanently deleted (does not go to the Recycle
+Bin). You will not be asked to confirm — use this carefully.
+
+--- RENAMING FILES ---
+
+Right-click a file or folder and choose Rename. An inline editor appears.
+Type the new name and press Enter, or press Escape to cancel.
+
+
+================================================================================
+  7. TRANSFER OPTIONS (TOOLBAR)
+================================================================================
+
+Three toggle buttons in the toolbar apply to all manual copy/move operations:
+
+--- STRIP PERMISSIONS ---
+
+When enabled, NTFS access control lists (permissions) are removed from copied
+files. This is useful when:
+  - Copying files to a drive that belongs to a different user account
+  - Copying files that have overly restrictive permissions preventing access
+  - Moving files to a NAS or external drive that doesn't use NTFS permissions
+
+When disabled (default), permissions are preserved on the destination.
+
+--- VERIFY CHECKSUMS ---
+
+When enabled, Beet's Backup computes a SHA-256 hash of each file after it is
+written and compares it to the original. If the hashes do not match, the file
+is counted as a checksum mismatch error.
+
+This is the most thorough verification available and catches bit-level
+corruption caused by failing drives, bad USB cables, or memory errors. It
+adds transfer time proportional to the amount of data copied.
+
+--- THROTTLE (SPEED LIMIT) ---
+
+When enabled, the transfer speed is capped at 10 MB/s. This is useful when:
+  - Copying large files in the background without impacting other applications
+  - Copying to a slow external drive or USB stick where higher speeds cause
+    read errors
+
+The throttle applies to manual copy/move operations. Backup jobs have their
+own per-job speed limit configured in the wizard (see Section 13).
+
+--- TRANSFER MODE DIALOG ---
+
+When you initiate a copy or move, a dialog asks how to handle files that
+already exist at the destination:
+
+  Skip existing
+    Files that already exist at the destination are not touched. Only new
+    files (not present at the destination) are copied. This is the safest
+    mode and the default.
+
+  Keep both
+    If a file already exists, the incoming copy is renamed with a counter
+    suffix (e.g. "report (2).pdf") so both versions are kept.
+
+  Replace with newer version
+    A file is replaced only if the source version is newer (based on the
+    last modified date). Older or same-age files are skipped.
+
+  Mirror (make destination identical)
+    Files present in the destination but NOT in the source are deleted.
+    Files present in the source but not the destination are copied. Files
+    present in both are replaced if the source is newer.
+    WARNING: Mirror mode deletes files at the destination that no longer
+    exist in the source. Use with care.
+
+
+================================================================================
+  8. QUICK FILTER
+================================================================================
+
+The Quick Filter box is in the navigation bar of each pane. Type any text to
+instantly filter the file list to show only items whose names contain that text.
+The filter is case-insensitive and applies immediately as you type.
+
+Press Escape or clear the box to remove the filter and show all items again.
+
+The Quick Filter only searches items in the currently visible folder — it does
+not search subfolders. For recursive search across subfolders, use Deep Search
+(Section 9).
+
+
+================================================================================
+  9. DEEP SEARCH
+================================================================================
+
+Deep Search recursively searches the entire folder tree under the current
+location and streams results into the file list as they are found.
+
+--- HOW TO USE ---
+
+  1. Navigate to the folder you want to search within.
+  2. Type your search query in the Deep Search box in the navigation bar and
+     press Enter (or click the search icon).
+  3. Results appear in the file list as they are found.
+  4. The status bar shows the running count of results found.
+  5. When complete, the status bar shows the total count.
+
+To cancel a search: click the X button next to the search box, or clear the
+search query and press Enter.
+
+--- SEARCH TYPES ---
+
+  Name search: type any word or phrase to find files and folders whose names
+  contain that text. Example: typing "invoice" finds "invoice_march.pdf",
+  "invoices_2024", etc.
+
+  Extension search: type a file extension starting with a dot to find all
+  files of that type in the tree. Example: ".pdf" finds all PDF files;
+  ".xlsx" finds all Excel files.
+
+--- NOTES ---
+
+  - Junction points and symbolic links are skipped to prevent infinite loops.
+  - Folders you do not have permission to access are silently skipped.
+  - Results stream in batches of 50 items at a time.
+  - Deep Search is available in both the top and bottom panes independently.
+
+
+================================================================================
+  10. VISUAL MODE (PIE CHART)
+================================================================================
+
+Visual Mode shows a pie chart of the top 10 largest items in the current folder,
+helping you quickly see what is using the most disk space.
+
+--- ENABLING VISUAL MODE ---
+
+Click the pie chart icon button in the navigation bar of either pane. Click
+again to return to the normal list view.
+
+--- READING THE CHART ---
+
+  - Each colored slice represents one file or folder.
+  - The legend below the chart shows the name, size, and percentage for each
+    slice.
+  - An "Other" slice (gray) groups all items outside the top 10.
+  - The total folder size is shown in the center of the chart.
+
+--- NOTES ---
+
+  - Visual Mode requires folder sizes to be calculated first. If you just
+    navigated to the folder, Beet's Backup may still be computing sizes in
+    the background. The chart updates progressively as sizes are calculated.
+  - Only items with a known size greater than zero appear in the chart.
+  - Click a slice in the legend to navigate to that item.
+
+
+================================================================================
+  11. ARCHIVE AND EXTRACT
+================================================================================
+
+--- ARCHIVE NOW (CREATE A ZIP) ---
+
+Archive Now compresses one or more files or folders into a single timestamped
+.zip file.
+
+  1. Select one or more files or folders in the top pane.
+     (If nothing is selected, the entire current folder is archived.)
+  2. Click the Archive button in the toolbar.
+  3. A folder picker dialog opens. Choose where to save the archive.
+  4. Beet's Backup creates a file named:
+       archive_YYYY-MM-DD_HH-mm-ss.zip
+     in the chosen folder.
+
+The archive operation shows a progress bar and can be paused or stopped like
+any other transfer.
+
+--- EXTRACT HERE ---
+
+Extracts a .zip archive into a new folder next to the archive file.
+
+  1. Select a .zip file in either pane.
+  2. Right-click and choose "Extract Here", or use the Extract Here button.
+  3. A new folder is created with the same name as the archive (without .zip).
+     If a folder with that name already exists, a counter is appended
+     (e.g. "archive (2)").
+
+--- EXTRACT TO... ---
+
+Extracts a .zip archive into a folder you choose.
+
+  1. Select a .zip file in either pane.
+  2. Right-click and choose "Extract To...", or use the Extract To button.
+  3. A folder picker dialog opens. Choose the destination folder.
+  4. Files are extracted into that folder. Existing files are not overwritten
+     (they are skipped).
+
+--- NOTES ---
+
+  - Only .zip format is supported for extraction.
+  - Archive Now and Extract both support pause/stop controls.
+  - After extraction, if the destination folder's parent is the current top
+    pane location, the file list automatically refreshes to show the new folder.
+
+
+================================================================================
+  12. SPLIT PANE VIEW
+================================================================================
+
+The Split Pane button (in the toolbar) opens a second, independent file browser
+window side-by-side with the main window. This gives you four total panes to
+work with simultaneously — the two in the main window and two more in the split
+pane window.
+
+The split pane window has all the same features as the main window's file
+browser: navigation, search, visual mode, copy/move, and archive operations.
+
+Click the Split Pane button again (or close the second window) to close the
+split pane view.
+
+
+================================================================================
+  13. BACKUP WIZARD
+================================================================================
+
+The Backup Wizard guides you through creating a backup job step by step. To
+open the wizard, click the "Backup Wizard" button in the main toolbar, or click
+"Back Up Now" when no backup jobs are configured.
+
+The wizard has 7 steps (or 6 for one-time backups). Progress is shown by dots
+along the top of the dialog.
+
+--- STEP 1: TYPE — What kind of backup? ---
+
+  One-time backup (run now)
+    Runs a single backup immediately when you finish the wizard. The job is
+    not saved for future use.
+
+  Scheduled (one-time)
+    Runs once at a specific date and time you choose in the next step.
+
+  Recurring
+    Runs automatically on a repeating schedule (every hour, day, or week).
+    The app uses Windows Task Scheduler to fire the backup even if the app
+    is not open.
+
+--- STEP 2: WHEN — Schedule (skipped for "run now") ---
+
+  For scheduled one-time jobs:
+    - Choose the date and time for the backup to run.
+
+  For recurring jobs:
+    - Choose a job name (this is how the job appears in the log and job list).
+    - Choose the start date and time.
+    - Choose the recurrence: Hourly (every 1, 2, 4, 6, 8, or 12 hours),
+      Daily, or Weekly.
+
+--- STEP 3: SOURCE — What to back up ---
+
+Add one or more source locations:
+  - Click "Add Folder" to browse for a folder to include.
+  - Click "Add Drive" to include an entire drive (e.g. all of C:\).
+  - Click the X next to a path to remove it.
+
+Multiple source paths are supported — they are all backed up to the same
+destination folder.
+
+--- STEP 4: DESTINATION — Where to save the backup ---
+
+  - Click "Browse" to choose the destination folder.
+  - The destination should be on a different drive from the source — an
+    external hard drive, a USB stick, or a network location.
+  - Beet's Backup warns you if you choose a destination on the same drive
+    as the source.
+
+--- STEP 5: MODE — Conflict handling ---
+
+Choose what happens when a file at the destination already exists:
+
+  Skip existing (default)
+    Only new files are copied. Already-backed-up files are not touched.
+    Best for incremental backups where most files don't change.
+
+  Keep both
+    Both the old and new versions are kept. The incoming file is renamed
+    with a counter suffix.
+
+  Replace with newer version
+    Files are replaced only when the source is newer. Older files at the
+    destination are left as-is.
+
+  Mirror (make destination identical)
+    The destination is made to exactly match the source — files deleted from
+    the source are also deleted from the destination.
+    Use with care: files deleted from the destination cannot be recovered
+    unless you have versioning enabled (see Step 6).
+
+--- STEP 6: OPTIONS — Advanced settings ---
+
+All of these are optional and off by default.
+
+  Verify checksums
+    After each file is copied, compute its SHA-256 hash and compare to the
+    original. Catches storage corruption. Adds time proportional to file size.
+
+  Remove permissions
+    Strip NTFS access control lists from copied files. Useful when the
+    destination drive uses a different security context.
+
+  Speed limit
+    Caps the backup transfer speed to reduce impact on other applications.
+    Options: 1, 5, 10, 25, 50, or 100 MB/s. Off by default (unlimited speed).
+
+  Keep versions
+    Before overwriting a file at the destination, the old version is moved to
+    a hidden ".versions" folder inside the destination. Choose how many
+    versions to keep (1–99). Older versions beyond the limit are deleted
+    automatically. Cannot be used with Compress to .zip.
+    See Section 23 for more details.
+
+  Compress to .zip
+    Instead of copying files individually, the entire backup is compressed
+    into a single timestamped .zip archive at the destination:
+      JobName_YYYY-MM-DD_HH-mm-ss.zip
+    Useful for archiving old projects or creating portable backup bundles.
+    Cannot be used with versioning.
+
+  Exclusions
+    Glob patterns for files or folders to skip. Examples:
+      *.tmp          — skip all .tmp files
+      *.log          — skip all log files
+      node_modules   — skip any folder named "node_modules"
+      Thumbs.db      — skip this specific file
+    Type a pattern and click Add. Click a pattern and click Remove to delete it.
+
+--- STEP 7: REVIEW — Summary ---
+
+The final step shows a summary of everything you configured. Review it carefully.
+
+  - If anything is wrong, click Back to go to the relevant step and change it.
+  - Beet's Backup estimates the required disk space and shows a warning if
+    the destination may not have enough room.
+  - For scheduled or recurring jobs, click "Schedule Backup" to save the job.
+  - For one-time immediate jobs, click "Start Backup Now" to run immediately.
+
+
+================================================================================
+  14. BACKUP NOW
+================================================================================
+
+The "Back Up Now" button in the main toolbar runs all enabled backup jobs
+immediately, one after the other, without waiting for their scheduled time.
+
+  - Jobs run sequentially (one at a time, not simultaneously).
+  - If a job is cancelled or fails due to insufficient disk space, the
+    remaining jobs in the queue are not run.
+  - Progress, pause, and stop controls work normally during each job.
+
+If you have no enabled backup jobs configured, clicking "Back Up Now" opens the
+Backup Wizard to help you create one.
+
+
+================================================================================
+  15. SCHEDULED AND RECURRING BACKUPS
+================================================================================
+
+When you create a scheduled or recurring backup job through the wizard, Beet's
+Backup registers an entry with the Windows Task Scheduler. This means the
+backup fires at the scheduled time even if the main app window is not open.
+
+--- HOW HEADLESS BACKUPS WORK ---
+
+At the scheduled time, Windows Task Scheduler launches:
+  BeetsBackup.exe --run-job <job-id>
+
+The app starts in a minimal background mode (no window), runs the job, writes
+the result to the log, and exits. You will see a Windows toast notification
+when the job completes.
+
+--- WHAT HAPPENS ON STARTUP ---
+
+When you open the main window, Beet's Backup checks whether any scheduled jobs
+were missed while the app was closed or the computer was off. If missed jobs
+are found, a dialog appears offering to run them now or skip them.
+
+--- VIEWING THE SCHEDULE ---
+
+The Schedule card on the dashboard shows the next job and its recurrence. To
+see all jobs and their next run times, click the Jobs button (see Section 16).
+
+
+================================================================================
+  16. MANAGING JOBS
+================================================================================
+
+Click the Jobs button in the toolbar to open the Jobs Manager dialog.
+
+The Jobs Manager shows all configured backup jobs in a list with columns for:
+  - Job name
+  - Source paths
+  - Destination path
+  - Transfer mode
+  - Schedule / recurrence
+  - Next run time
+  - Enabled/disabled status
+
+--- ACTIONS ---
+
+  Edit: select a job and click Edit to open it in the wizard and change
+  any settings.
+
+  Enable / Disable: toggle whether a job is active. Disabled jobs are not
+  run by the scheduler and are not included in "Back Up Now". They remain
+  saved and can be re-enabled at any time.
+
+  Delete: permanently removes a job and cancels its Windows Task Scheduler
+  entry. This cannot be undone.
+
+
+================================================================================
+  17. BACKUP LOG
+================================================================================
+
+Click the Log button in the toolbar to open the Backup Log dialog.
+
+The log shows every backup run, including:
+  - Job name
+  - Start time and date
+  - Status (Complete, Failed, Skipped, Running)
+  - Files copied, skipped, and failed
+  - Data transferred
+  - Any per-file errors
+
+--- FILTERING ---
+
+Use the filter box at the top of the log to search for specific job names,
+dates, or statuses.
+
+--- PER-FILE ERRORS ---
+
+Select a log entry and click "View Errors" to see details about individual
+files that failed to copy — including the file path and the error message.
+Common causes: file was locked by another process, access denied, or the
+destination drive ran out of space.
+
+--- LOG PERSISTENCE ---
+
+The backup log is saved to disk and persists across sessions. You can review
+the full history of all backups at any time.
+
+
+================================================================================
+  18. SYSTEM TRAY
+================================================================================
+
+When the main window is closed, Beet's Backup minimizes to the system tray
+(the notification area near the clock). The app continues running in the
+background so scheduled backups can fire on time.
+
+--- TRAY ICON ---
+
+Right-click the tray icon for a context menu:
+  - Show: brings the main window back to the foreground
+  - Exit: shuts down Beet's Backup completely (scheduled tasks will still
+    fire via Windows Task Scheduler even after Exit)
+
+Double-click the tray icon to show the main window.
+
+--- SINGLE INSTANCE ---
+
+If you try to launch Beet's Backup when it is already running in the tray,
+the existing instance's window is brought to the foreground instead of
+opening a second copy.
+
+--- LAUNCH AT STARTUP ---
+
+When "Launch at Startup" is enabled in Options (Section 19), Beet's Backup
+automatically starts when you log in to Windows. A Windows Task Scheduler
+entry handles this — no UAC prompt appears at login.
+
+If "Start Minimized" is also enabled, the app starts silently to the tray
+(no window shown) when launched at login. The window appears normally if
+you double-click the tray icon.
+
+
+================================================================================
+  19. OPTIONS AND SETTINGS
+================================================================================
+
+Options are accessible from the toolbar or the system tray context menu.
+
+--- DARK MODE / LIGHT MODE ---
+
+Toggle between dark and light themes using the theme toggle button
+(sun/moon icon) in the toolbar. The setting is saved automatically and
+persists across sessions.
+
+--- LAUNCH AT STARTUP ---
+
+When enabled, Beet's Backup starts automatically when you log in to Windows.
+A Windows Task Scheduler entry is created to handle this. To disable, uncheck
+this option — the scheduled entry is removed automatically.
+
+--- START MINIMIZED ---
+
+When enabled (and "Launch at Startup" is also on), the app starts silently to
+the system tray at login without showing the main window. You can still access
+it by clicking the tray icon.
+
+When disabled (default), the main window always appears on launch — including
+auto-start launches.
+
+--- SETTINGS FILE LOCATION ---
+
+Settings are saved to:
+  C:\Users\<your name>\AppData\Local\Beet's Backup\settings.json
+
+
+================================================================================
+  20. UPDATE NOTIFICATIONS
+================================================================================
+
+Beet's Backup checks for updates automatically a few seconds after launch.
+If a newer version is available, a notification banner appears below the
+toolbar.
+
+  - Click "Download" to open the GitHub releases page in your browser.
+  - Click "Skip this version" to dismiss the banner. That version will not
+    be flagged again; only newer releases will show the notification.
+
+To check for updates manually, click "Check for Updates" in the Help menu.
+
+The update check is read-only — it only queries the version number and release
+URL. It does not download or install anything automatically.
+
+
+================================================================================
+  21. CRASH RECOVERY AND DIAGNOSTICS
+================================================================================
+
+If Beet's Backup ended unexpectedly during your last session (crash, power
+loss, or forced close), the next launch shows a recovery banner at the top
+of the window with the timestamp of the interrupted session.
+
+--- WHAT TO DO ---
+
+  1. Click "Export Diagnostics" in the recovery banner to create a diagnostic
+     bundle on your Desktop.
+  2. The bundle is a .zip file containing:
+     - The operational log (all actions, warnings, and errors)
+     - Any crash dumps written during the session
+     - Your settings file and backup history
+     - System information
+  3. Attach this file to a support email if you need help investigating the issue.
+  4. Click Dismiss to close the banner once you have exported the diagnostics.
+
+--- EXPORTING DIAGNOSTICS MANUALLY ---
+
+You can export a diagnostics bundle at any time from the Help menu, even
+without a crash. This is useful for general troubleshooting.
+
+--- LOG FILE LOCATION ---
+
+The operational log is at:
+  C:\Users\<your name>\AppData\Local\Beet's Backup\operational.log
+
+This file is plain text and can be opened in any text editor.
+
+
+================================================================================
+  22. SHADOW COPY (VSS) AND LOCKED FILES
+================================================================================
+
+Some files cannot be copied by normal means because they are held open by
+another program. Common examples:
+  - Outlook .pst and .ost data files
+  - Browser profile databases (Chrome, Firefox)
+  - SQL Server and Access database files
+  - Files used by running virtual machines
+  - Windows registry hive files
+
+Beet's Backup uses the Windows Volume Shadow Copy Service (VSS) to take a
+point-in-time snapshot of the source volume, then reads the file from the
+snapshot where it is not locked. This allows locked files to be backed up
+without stopping the program that has them open.
+
+--- REQUIREMENTS ---
+
+  - VSS requires administrator privileges. Beet's Backup always runs as
+    administrator (see Section 2) for this reason.
+  - VSS works on local NTFS volumes only. Network shares and FAT32 drives
+    are not supported by VSS — files on those locations that are locked will
+    be skipped.
+
+--- IN THE LOG ---
+
+After a backup, the log shows how many files were copied via shadow copy
+in the transfer summary (e.g. "47 copied, 3 via shadow copy").
+
+
+================================================================================
+  23. FILE VERSIONING
+================================================================================
+
+Versioning is an optional backup job setting that keeps previous copies of
+files that are overwritten at the destination. It is configured per-job in
+the Backup Wizard (Step 6 — Options).
+
+--- HOW IT WORKS ---
+
+Before overwriting a file at the destination, the existing copy is moved to
+a hidden ".versions" folder inside the destination directory:
+
+  Destination\
+    my-document.docx              (current version)
+    .versions\
+      my-document.docx.1          (most recent previous version)
+      my-document.docx.2          (older version)
+      my-document.docx.3          (oldest kept version)
+
+Version numbers go from 1 (newest previous) to N (oldest). When the maximum
+number of versions is reached, the oldest version is permanently deleted to
+make room for the new one.
+
+--- CONFIGURATION ---
+
+  Maximum versions: how many previous copies to keep per file. Range 1–99.
+  Default is 5.
+
+--- RECOVERING A PREVIOUS VERSION ---
+
+  1. Navigate to the destination folder in the file browser.
+  2. The .versions folder is hidden by default. Enable "Show hidden files"
+     (right-click in the file list) to see it.
+  3. Open .versions and find the file you want to restore.
+  4. Copy or move it back to the destination folder (renaming it as needed).
+
+--- LIMITATIONS ---
+
+  - Versioning is not compatible with compression (.zip mode). If you enable
+    both in the wizard, compression takes priority.
+  - The .versions folder counts toward the destination drive's used space.
+    Make sure you have enough room for the versions you want to keep.
+
+
+================================================================================
+  24. TIPS AND TROUBLESHOOTING
+================================================================================
+
+--- A BACKUP JOB DID NOT RUN AT THE SCHEDULED TIME ---
+
+  1. Check that the job is enabled in the Jobs Manager (Section 16).
+  2. Check that the computer was on and logged in at the scheduled time.
+     Task Scheduler requires a logged-in session for tasks that show a window.
+  3. On next launch, Beet's Backup will detect the missed job and offer to
+     run it now.
+
+--- "NOT ENOUGH DISK SPACE" ERROR ---
+
+  The destination drive is full. Free up space or choose a different
+  destination. The Backup Wizard estimates required space on the summary
+  step — pay attention to the warning if it appears.
+
+--- FILES ARE MISSING FROM THE BACKUP ---
+
+  Check the backup log for that job. Select the log entry and click
+  "View Errors" to see which files failed and why. Common causes:
+  - "Access denied": the file requires higher permissions than your account
+    has, even when running as administrator (rare, usually system files).
+  - "File in use" on a non-NTFS drive: VSS cannot help here. Back up the
+    file manually after closing the program that holds it open.
+
+--- THE STATUS BANNER SHOWS "AT RISK" BUT I JUST RAN A BACKUP ---
+
+  The banner turns green ("Protected") only when the most recent terminal
+  backup completed with status "Complete" within the last 7 days. If it
+  shows "At Risk" after a run, check the log to see whether the job
+  completed successfully or ended with an error or cancellation.
+
+--- BEET'S BACKUP IS USING A LOT OF CPU DURING FOLDER NAVIGATION ---
+
+  Beet's Backup calculates folder sizes in parallel in the background as
+  soon as you navigate to a folder. This is intentional and temporary —
+  the CPU usage drops once all sizes have been computed. The calculation
+  scales to the number of processor cores on your machine.
+
+--- HOW TO MOVE BEET'S BACKUP TO A NEW PC ---
+
+  1. Copy the BeetsBackup.exe to the new PC and run it.
+  2. On the old PC, find the app data at:
+       C:\Users\<your name>\AppData\Local\Beet's Backup\
+  3. Copy the jobs.json and settings.json files to the same location on
+     the new PC (create the folder if it doesn't exist).
+  4. Your backup jobs and settings will be restored on first launch.
+
+--- WHERE ARE MY FILES STORED? ---
+
+  Executable:        wherever you saved BeetsBackup.exe
+  Settings & jobs:   C:\Users\<your name>\AppData\Local\Beet's Backup\
+  Operational log:   C:\Users\<your name>\AppData\Local\Beet's Backup\operational.log
+  Scheduled tasks:   Windows Task Scheduler under "BeetsBackup_*" entries
+
+================================================================================
+  END OF GUIDE — Beet's Backup v3.0
+  Copyright 2026 Beet Software. All rights reserved.
+================================================================================
