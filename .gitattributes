@@ -1,0 +1,34 @@
+# Default: let git auto-detect line endings for text, normalize to LF in the repo
+* text=auto eol=lf
+
+# Source files always LF in the repo
+*.cs       text eol=lf
+*.csproj   text eol=lf
+*.xaml     text eol=lf
+*.xml      text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+*.txt      text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.html     text eol=lf
+*.css      text eol=lf
+*.js       text eol=lf
+*.sh       text eol=lf
+
+# Windows-specific scripts keep CRLF
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.ps1      text eol=crlf
+
+# Binary assets: never convert
+*.pdf      binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.zip      binary
+*.dll      binary
+*.exe      binary
+*.pdb      binary
