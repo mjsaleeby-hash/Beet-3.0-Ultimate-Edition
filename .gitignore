@@ -6,3 +6,10 @@ revert-transfer-modes.sh
 *.user
 *.suo
 .vs/
+
+# Local-only artifacts produced by running the app — not source content.
+BeetsBackup-Diagnostics-*/
+BeetsBackup_Log_*.csv
+
+# Scratch UI experiments kept locally; not part of the shipped app.
+Test UI/

@@ -1,0 +1,4 @@
+bin/
+obj/
+logs/*.jsonl
+audit/trend_report_*.md

@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Beet's Backup — v3 Dashboard Redesign</title>
+<style>
+  /* ─────────────── Theme tokens ───────────────
+     Adopted directly from the reference styles.css the user provided.
+     Purple/violet accent, deep-navy surfaces, generous radius. */
+  :root {
+    --bg:          #0b1020;    /* body background */
+    --surface:     #121735;    /* sidebar, panes */
+    --surface-2:   #1a2045;    /* drive tiles, dashboard cards */
+    --surface-3:   #1f2550;    /* buttons, pane headers, borders */
+    --border:      #1f2550;
+    --border-ring: #2a3168;
+    --text:        #e6e9f2;
+    --text-dim:    #9aa1d3;
+    --text-mute:   #8a90c7;
+    --accent:      #7c5cff;
+    --accent-2:    #9f7cff;
+    --accent-3:    #4b3bcf;
+    --good-a:      #1e6f4c;
+    --good-b:      #134e3a;
+    --danger:      #b33a3a;
+    --radius:      12px;
+    --radius-sm:   10px;
+    --radius-xs:   8px;
+  }
+
+  * { box-sizing: border-box; font-family: "Segoe UI", sans-serif; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* ─────────────── App shell ─────────────── */
+  .app {
+    display: grid;
+    grid-template-rows: 1fr 28px;
+    height: 100vh;
+  }
+  .body-row {
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ─────────────── SIDEBAR ─────────────── */
+  .sidebar {
+    width: 280px;
+    background: var(--surface);
+    padding: 20px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar h3 {
+    margin: 0 0 15px 0;
+    color: var(--text-mute);
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+  }
+  .drive-list {
+    flex: 1;
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+  }
+
+  /* Drive tile — matches reference CSS (bg, padding, radius), with an
+     added chevron that toggles the nested tree. The main row is still a
+     flex-between of name/capacity on the left and the circular % badge
+     on the right, exactly per the reference. */
+  .drive {
+    background: var(--surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    margin-bottom: 10px;
+    overflow: hidden;
+    transition: border-color 120ms ease;
+  }
+  .drive.active { border-color: var(--accent); }
+  .drive:hover:not(.active) { border-color: var(--border-ring); }
+
+  .drive-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    cursor: pointer;
+    gap: 10px;
+  }
+  .drive-head .info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+  }
+  .chev {
+    width: 0; height: 0;
+    border-left: 5px solid var(--text-mute);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    flex-shrink: 0;
+    transition: transform 150ms ease;
+  }
+  .drive.open .chev { transform: rotate(90deg); }
+
+  .drive-text {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .drive-text strong {
+    display: block;
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .drive-text span {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* Circular % badge — radial purple gradient, centered text */
+  .circle {
+    background: radial-gradient(circle, var(--accent), var(--accent-3));
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(124, 92, 255, 0.3);
+  }
+
+  /* Nested folder tree — lives inside the drive card, reveals on expand */
+  .drive-tree {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 200ms ease;
+    border-top: 0 solid transparent;
+  }
+  .drive.open .drive-tree {
+    max-height: 500px;
+    border-top-color: var(--surface-3);
+  }
+  .drive-tree-inner { padding: 6px 12px 10px 34px; }
+  .node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .node:hover { background: rgba(255,255,255,0.03); color: var(--text); }
+  .node.sel  { background: rgba(124, 92, 255, 0.18); color: var(--text); }
+  .node .chev-sm {
+    width: 0; height: 0;
+    border-left: 4px solid var(--text-mute);
+    border-top: 3px solid transparent;
+    border-bottom: 3px solid transparent;
+    transition: transform 150ms ease;
+  }
+  .node.open .chev-sm { transform: rotate(90deg); }
+  .node .folder-ico {
+    width: 13px; height: 10px;
+    background: var(--text-mute);
+    clip-path: polygon(0 100%, 0 20%, 40% 20%, 50% 0, 100% 0, 100% 100%);
+  }
+
+  /* Sidebar footer — total capacity */
+  .sidebar-footer {
+    margin-top: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .sidebar-footer .label {
+    font-size: 11px;
+    letter-spacing: 1.2px;
+    color: var(--text-mute);
+    margin-bottom: 6px;
+  }
+  .sidebar-footer .total {
+    font-size: 22px;
+    font-weight: 600;
+  }
+  .sidebar-footer .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    display: flex;
+    gap: 14px;
+  }
+
+  /* ─────────────── MAIN ─────────────── */
+  .main {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Top bar */
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 0; }
+  .actions button {
+    margin-left: 8px;
+    padding: 8px 14px;
+    border-radius: var(--radius-xs);
+    border: 1px solid transparent;
+    background: var(--surface-3);
+    color: #fff;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: filter 120ms ease, border-color 120ms ease;
+  }
+  .actions button:hover { filter: brightness(1.15); }
+  .actions .primary {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    font-weight: 600;
+  }
+  .actions .highlight { border-color: var(--accent); }
+  .actions .danger   { background: var(--danger); }
+
+  /* Status banner — green gradient exactly per reference, with the shield
+     the user liked tucked on the left */
+  .status {
+    padding: 20px 24px;
+    border-radius: var(--radius);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+  }
+  .status.success {
+    background: linear-gradient(90deg, var(--good-a), var(--good-b));
+  }
+  .shield {
+    width: 48px; height: 48px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .shield::after {
+    content: '';
+    width: 18px; height: 9px;
+    border-left: 3px solid #fff;
+    border-bottom: 3px solid #fff;
+    transform: rotate(-45deg) translate(1px, -2px);
+    margin-top: -2px;
+  }
+  .status h2 {
+    margin: 0 0 4px 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: #fff;
+  }
+  .status p {
+    margin: 0;
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+  }
+  .status .view-link {
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.9;
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.1);
+    cursor: pointer;
+  }
+  .status .view-link:hover { background: rgba(255,255,255,0.18); }
+
+  /* Dashboard cards */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+  }
+  .card {
+    background: var(--surface-2);
+    padding: 16px;
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+  }
+  .card h3 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .card p {
+    margin: 4px 0;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .card .kv { display: flex; justify-content: space-between; }
+  .card .kv b { color: var(--text); font-weight: 500; }
+  .card .good { color: #5ae0a4; }
+  .card button, .card .inline-btn {
+    margin-top: auto;
+    align-self: flex-start;
+    background: var(--surface-3);
+    color: #fff;
+    border: none;
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 12px;
+  }
+  .card .schedule-big {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .card .schedule-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .chip {
+    display: inline-block;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    border-radius: 999px;
+    background: rgba(124, 92, 255, 0.18);
+    color: var(--accent-2);
+    margin: 2px 4px 2px 0;
+  }
+
+  /* Recent backups list — each row is a small tile with a colored dot
+     and primary/secondary text lines */
+  .recent-row {
+    display: grid;
+    grid-template-columns: 10px 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 0;
+    border-top: 1px solid var(--surface-3);
+  }
+  .recent-row:first-of-type { border-top: none; padding-top: 2px; }
+  .recent-row .pip {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #3dd68c;
+  }
+  .recent-row.warn .pip { background: #f0b860; }
+  .recent-row.fail .pip { background: var(--danger); }
+  .recent-row .time {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .recent-row .meta {
+    font-size: 11px;
+    color: var(--text-mute);
+    margin-top: 2px;
+  }
+
+  /* Split pane (file browser) */
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+  .pane {
+    background: var(--surface);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .pane-header {
+    background: var(--surface-3);
+    padding: 10px 14px;
+    font-weight: 600;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pane-header .path {
+    font-weight: 400;
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .pane ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .pane .head-row,
+  .pane li {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1.2fr 0.7fr;
+    gap: 8px;
+    padding: 7px 14px;
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pane .head-row {
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    font-weight: 600;
+    background: rgba(0,0,0,0.15);
+  }
+  .pane li { cursor: default; color: var(--text-dim); }
+  .pane li:hover { background: rgba(255,255,255,0.02); }
+  .pane li.sel { background: rgba(124, 92, 255, 0.15); color: var(--text); }
+  .pane li .name {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text);
+  }
+  .pane li .name .folder-ico {
+    width: 14px; height: 11px;
+    background: var(--text-mute);
+    clip-path: polygon(0 100%, 0 20%, 40% 20%, 50% 0, 100% 0, 100% 100%);
+  }
+
+  /* Status bar */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 18px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--text-mute);
+  }
+  .statusbar .ok { color: #3dd68c; }
+  .statusbar .spacer { flex: 1; }
+  .statusbar a { color: var(--accent-2); cursor: pointer; text-decoration: none; }
+  .statusbar a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="body-row">
+
+    <!-- ═══════════ SIDEBAR ═══════════ -->
+    <aside class="sidebar">
+      <h3>DRIVES</h3>
+      <div class="drive-list">
+
+        <!-- Drive: expanded + active -->
+        <div class="drive active open">
+          <div class="drive-head">
+            <div class="info">
+              <span class="chev"></span>
+              <div class="drive-text">
+                <strong>Local Disk (C:)</strong>
+                <span>379.9 GB / 464.9 GB</span>
+              </div>
+            </div>
+            <div class="circle">82%</div>
+          </div>
+          <div class="drive-tree">
+            <div class="drive-tree-inner">
+              <div class="node open"><span class="chev-sm"></span><span class="folder-ico"></span>Program Files</div>
+              <div class="node sel"><span class="chev-sm"></span><span class="folder-ico"></span>Users</div>
+              <div class="node"><span class="chev-sm"></span><span class="folder-ico"></span>Windows</div>
+              <div class="node"><span class="chev-sm"></span><span class="folder-ico"></span>ProgramData</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Plex 1 -->
+        <div class="drive">
+          <div class="drive-head">
+            <div class="info">
+              <span class="chev"></span>
+              <div class="drive-text">
+                <strong>Plex 1 (D:)</strong>
+                <span>1.57 TB / 3.64 TB</span>
+              </div>
+            </div>
+            <div class="circle">43%</div>
+          </div>
+          <div class="drive-tree"><div class="drive-tree-inner"></div></div>
+        </div>
+
+        <!-- Plex 2 -->
+        <div class="drive">
+          <div class="drive-head">
+            <div class="info">
+              <span class="chev"></span>
+              <div class="drive-text">
+                <strong>Plex 2 (E:)</strong>
+                <span>1.82 TB / 3.64 TB</span>
+              </div>
+            </div>
+            <div class="circle">50%</div>
+          </div>
+          <div class="drive-tree"><div class="drive-tree-inner"></div></div>
+        </div>
+
+        <!-- Backup 1 -->
+        <div class="drive">
+          <div class="drive-head">
+            <div class="info">
+              <span class="chev"></span>
+              <div class="drive-text">
+                <strong>Backup 1 (F:)</strong>
+                <span>2.03 TB / 3.64 TB</span>
+              </div>
+            </div>
+            <div class="circle">56%</div>
+          </div>
+          <div class="drive-tree"><div class="drive-tree-inner"></div></div>
+        </div>
+
+        <!-- Backup 2 -->
+        <div class="drive">
+          <div class="drive-head">
+            <div class="info">
+              <span class="chev"></span>
+              <div class="drive-text">
+                <strong>Backup 2 (G:)</strong>
+                <span>3.17 TB / 3.64 TB</span>
+              </div>
+            </div>
+            <div class="circle">87%</div>
+          </div>
+          <div class="drive-tree"><div class="drive-tree-inner"></div></div>
+        </div>
+
+        <!-- Google Drive -->
+        <div class="drive">
+          <div class="drive-head">
+            <div class="info">
+              <span class="chev"></span>
+              <div class="drive-text">
+                <strong>Google Drive (H:)</strong>
+                <span>480 GB / 2.00 TB</span>
+              </div>
+            </div>
+            <div class="circle">24%</div>
+          </div>
+          <div class="drive-tree"><div class="drive-tree-inner"></div></div>
+        </div>
+
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="label">TOTAL CAPACITY</div>
+        <div class="total">11.29 TB</div>
+        <div class="sub">
+          <span>Used 8.29 TB</span>
+          <span>Free 3.00 TB</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ═══════════ MAIN ═══════════ -->
+    <main class="main">
+
+      <!-- Top bar -->
+      <div class="topbar">
+        <h1>Beet's Backup</h1>
+        <div class="actions">
+          <button class="primary">Back up now</button>
+          <button>Pause</button>
+          <button class="danger">Stop</button>
+          <button>Schedule</button>
+          <button class="highlight">Backup Wizard</button>
+          <button>Visual</button>
+          <button>Split Pane</button>
+        </div>
+      </div>
+
+      <!-- Status banner -->
+      <div class="status success">
+        <div class="shield"></div>
+        <div>
+          <h2>You are protected</h2>
+          <p>Last backup: Today 2:14 AM &nbsp;•&nbsp; Next: Tonight 2:00 AM</p>
+        </div>
+        <a class="view-link">View details →</a>
+      </div>
+
+      <!-- Dashboard -->
+      <div class="cards">
+        <div class="card">
+          <h3>Protection Summary</h3>
+          <p class="kv"><span>Files</span><b>1.23M</b></p>
+          <p class="kv"><span>Backups run</span><b>128</b></p>
+          <p class="kv"><span>Status</span><b class="good">Healthy</b></p>
+          <p class="kv"><span>Errors</span><b>0</b></p>
+        </div>
+
+        <div class="card">
+          <h3>Backup Schedule</h3>
+          <div class="schedule-big">Every night at 2:00 AM</div>
+          <div class="schedule-sub">Automatic · runs headless</div>
+          <button>Edit schedule</button>
+        </div>
+
+        <div class="card">
+          <h3>What's Included</h3>
+          <div>
+            <span class="chip">System (C:)</span>
+            <span class="chip">Documents</span>
+            <span class="chip">Pictures</span>
+            <span class="chip">+2 more</span>
+          </div>
+          <button>Manage backup set</button>
+        </div>
+
+        <div class="card">
+          <h3>Recent Backups</h3>
+          <div class="recent-row">
+            <span class="pip"></span>
+            <div>
+              <div class="time">Today, 2:14 AM</div>
+              <div class="meta">2.1 GB · 1,234 files</div>
+            </div>
+          </div>
+          <div class="recent-row">
+            <span class="pip"></span>
+            <div>
+              <div class="time">Yesterday, 2:00 AM</div>
+              <div class="meta">1.8 GB · 1,220 files</div>
+            </div>
+          </div>
+          <div class="recent-row warn">
+            <span class="pip"></span>
+            <div>
+              <div class="time">Apr 21, 2:00 AM</div>
+              <div class="meta">3 files locked · 1.9 GB</div>
+            </div>
+          </div>
+          <div class="recent-row">
+            <span class="pip"></span>
+            <div>
+              <div class="time">Apr 20, 2:00 AM</div>
+              <div class="meta">2.0 GB · 1,198 files</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Split pane -->
+      <div class="split">
+        <div class="pane">
+          <div class="pane-header">Local Disk (C:)<span class="path">C:\</span></div>
+          <div class="head-row"><span>Name</span><span>Type</span><span>Modified</span><span>Size</span></div>
+          <ul>
+            <li class="sel"><span class="name"><span class="folder-ico"></span>Program Files</span><span>File folder</span><span>5/17/2025</span><span>—</span></li>
+            <li><span class="name"><span class="folder-ico"></span>Users</span><span>File folder</span><span>4/22/2026</span><span>—</span></li>
+            <li><span class="name"><span class="folder-ico"></span>Windows</span><span>File folder</span><span>4/10/2026</span><span>—</span></li>
+            <li><span class="name"><span class="folder-ico"></span>ProgramData</span><span>File folder</span><span>4/18/2026</span><span>—</span></li>
+          </ul>
+        </div>
+
+        <div class="pane">
+          <div class="pane-header">Plex 1 (D:)<span class="path">D:\</span></div>
+          <div class="head-row"><span>Name</span><span>Type</span><span>Modified</span><span>Size</span></div>
+          <ul>
+            <li><span class="name"><span class="folder-ico"></span>Movies</span><span>File folder</span><span>4/17/2026</span><span>—</span></li>
+            <li><span class="name"><span class="folder-ico"></span>TV Shows</span><span>File folder</span><span>4/19/2026</span><span>—</span></li>
+            <li><span class="name"><span class="folder-ico"></span>Music</span><span>File folder</span><span>4/02/2026</span><span>—</span></li>
+            <li><span class="name"><span class="folder-ico"></span>Documents</span><span>File folder</span><span>4/22/2026</span><span>—</span></li>
+          </ul>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <span class="ok">●</span>
+    <span>You're on the latest version v3.0.0</span>
+    <span class="spacer"></span>
+    <span>Background service: <span class="ok">Running</span></span>
+    <span>·</span>
+    <a>Open logs folder</a>
+  </div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.drive-head').forEach(head => {
+    head.addEventListener('click', () => {
+      const drive = head.parentElement;
+      drive.classList.toggle('open');
+      document.querySelectorAll('.drive').forEach(d => d.classList.remove('active'));
+      drive.classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>
