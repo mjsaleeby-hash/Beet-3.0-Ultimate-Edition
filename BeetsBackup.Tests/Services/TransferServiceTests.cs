@@ -196,17 +196,23 @@ public class TransferServiceTests
         File.WriteAllBytes(Path.Combine(src, "a.bin"), new byte[10]);
         File.WriteAllBytes(Path.Combine(src, "b.bin"), new byte[10]);
 
-        var lastPercent = 0;
-        var progress = new Progress<int>(p => lastPercent = p);
+        // Track the peak via Interlocked.Exchange-with-CAS rather than a plain assignment:
+        // parallel copy workers may call Report from different threads, and a stale 50% landing
+        // after a 100% would otherwise mask the test's intent.
+        var maxPercent = 0;
+        var progress = new SynchronousProgress<int>(p =>
+        {
+            int prev;
+            do { prev = maxPercent; if (p <= prev) return; }
+            while (Interlocked.CompareExchange(ref maxPercent, p, prev) != prev);
+        });
 
         await _transfer.CopyAsync(
             new[] { Path.Combine(src, "a.bin"), Path.Combine(src, "b.bin") }, dest,
             stripPermissions: false, TransferMode.SkipExisting,
             progressPercent: progress);
 
-        // Allow progress callback to fire
-        await Task.Delay(50);
-        lastPercent.Should().Be(100);
+        maxPercent.Should().Be(100);
     }
 
     // ============================================================

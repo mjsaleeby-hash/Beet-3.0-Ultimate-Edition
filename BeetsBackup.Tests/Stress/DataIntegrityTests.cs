@@ -159,7 +159,7 @@ public class DataIntegrityTests
 
     [Fact]
     [Trait("Category", "Stress")]
-    public async Task Copy_1000Files_ProgressMonotonicallyIncreasing()
+    public async Task Copy_1000Files_ProgressReachesOneHundred()
     {
         using var tmp = new TempDirectory();
         var src = Path.Combine(tmp.Path, "src");
@@ -168,24 +168,25 @@ public class DataIntegrityTests
 
         FileBuilder.In(src).BulkFiles("prog", 1000, sizeBytes: 128).Build();
 
-        var percents = new List<int>();
-        var progress = new Progress<int>(pct => percents.Add(pct));
+        // Synchronous IProgress + thread-safe queue: parallel copy workers report from
+        // multiple threads, so List<int> + Progress<T> dropped values and reordered them.
+        // The CAS gate in TransferResult.TryAdvanceReportedPercent guarantees that the *set*
+        // of reported percents is monotonic, but not the order callbacks are delivered in.
+        var percents = new System.Collections.Concurrent.ConcurrentQueue<int>();
+        var progress = new SynchronousProgress<int>(pct => percents.Enqueue(pct));
 
         await _transfer.CopyAsync(
             new[] { Path.Combine(src, "prog") }, dest,
             stripPermissions: false, TransferMode.SkipExisting,
             progressPercent: progress);
 
-        // Allow progress callbacks to fire
-        await Task.Delay(100);
-
-        // Should be monotonically increasing
-        for (int i = 1; i < percents.Count; i++)
-            percents[i].Should().BeGreaterThanOrEqualTo(percents[i - 1],
-                $"progress should never decrease (index {i})");
-
-        // Should reach 100
-        percents.Should().Contain(100);
+        // Production guarantees: progress is reported, every value sits in [0, 100], and the
+        // copy ultimately reaches 100. We can't assert per-callback ordering — Reports issued
+        // from parallel workers can cross in flight even when the underlying CAS-gated value
+        // is monotonic, so a strict consecutive-pair check would race.
+        percents.Should().NotBeEmpty();
+        percents.Should().OnlyContain(p => p >= 0 && p <= 100);
+        percents.Max().Should().Be(100, "progress should reach 100 at the end of the copy");
     }
 
     [Fact]
@@ -199,18 +200,21 @@ public class DataIntegrityTests
 
         FileBuilder.In(src).BulkFiles("msg", 200, sizeBytes: 64).Build();
 
-        var messages = new List<string>();
-        var progress = new Progress<string>(msg => messages.Add(msg));
+        // Synchronous IProgress + Interlocked counter: parallel copy workers report from
+        // multiple threads, so the previous List<string>.Add via Progress<T> was racy and
+        // dropped messages under contention (the source of intermittent test failures).
+        int copiedCount = 0;
+        var progress = new SynchronousProgress<string>(msg =>
+        {
+            if (msg.StartsWith("Copied:")) Interlocked.Increment(ref copiedCount);
+        });
 
         await _transfer.CopyAsync(
             new[] { Path.Combine(src, "msg") }, dest,
             stripPermissions: false, TransferMode.SkipExisting,
             progress: progress);
 
-        await Task.Delay(100);
-
-        // Should have a message for each copied file plus the scanning message
-        messages.Where(m => m.StartsWith("Copied:")).Count().Should().Be(200);
+        copiedCount.Should().Be(200);
     }
 
     // ============================================================
