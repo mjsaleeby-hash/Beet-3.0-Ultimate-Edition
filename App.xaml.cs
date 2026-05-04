@@ -122,6 +122,7 @@ public partial class App : Application
 
         // Check for missed backups before starting the scheduler
         var scheduler = Services.GetRequiredService<SchedulerService>();
+        scheduler.Load();
         var missedJobs = scheduler.GetMissedJobs();
         bool hasMissedBackups = missedJobs.Count > 0;
 
@@ -196,6 +197,7 @@ public partial class App : Application
             log.Load();
 
             var scheduler = Services.GetRequiredService<SchedulerService>();
+            scheduler.Load();
             // Run the async work on a thread-pool thread rather than blocking the WPF dispatcher
             // directly. Without the outer Task.Run, any await inside RunJobByIdAsync that captured
             // the dispatcher SynchronizationContext would deadlock when it tried to resume — the
@@ -485,6 +487,10 @@ public partial class App : Application
         services.AddSingleton<BackupLogService>();
         services.AddSingleton<SchedulerService>();
         services.AddSingleton<UpdateService>();
+        // Lazy wrapper: defers UpdateService construction until something actually
+        // touches `.Value` (the post-startup update check, ~3 s after launch).
+        services.AddSingleton<Lazy<UpdateService>>(sp =>
+            new Lazy<UpdateService>(() => sp.GetRequiredService<UpdateService>()));
 
         // ViewModels
         services.AddTransient<MainViewModel>();

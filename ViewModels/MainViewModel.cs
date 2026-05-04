@@ -25,7 +25,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly SchedulerService _scheduler;
     private readonly BackupLogService _log;
     private readonly SettingsService _settings;
-    private readonly UpdateService _update;
+    // Lazy: UpdateService isn't touched until ~3 s after launch (background update check)
+    // or when the user opens About — keeps it out of the cold-start critical path.
+    private readonly Lazy<UpdateService> _update;
 
     // --- Theme ---
     [ObservableProperty] private bool _isDarkMode;
@@ -276,7 +278,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _topNavCts;
     private CancellationTokenSource? _bottomNavCts;
 
-    public MainViewModel(ThemeService theme, FileSystemService fs, TransferService transfer, SchedulerService scheduler, BackupLogService log, SettingsService settings, UpdateService update)
+    public MainViewModel(ThemeService theme, FileSystemService fs, TransferService transfer, SchedulerService scheduler, BackupLogService log, SettingsService settings, Lazy<UpdateService> update)
     {
         _theme = theme;
         _fs = fs;
@@ -377,29 +379,31 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private async Task CheckForUpdatesAsync()
     {
         StatusMessage = "Checking for updates...";
-        var available = await Task.Run(() => _update.CheckForUpdateAsync());
+        var update = _update.Value;
+        var available = await Task.Run(() => update.CheckForUpdateAsync());
         if (available)
         {
             IsUpdateAvailable = true;
-            UpdateMessage = $"Update available: v{_update.LatestVersion}";
+            UpdateMessage = $"Update available: v{update.LatestVersion}";
             StatusMessage = UpdateMessage;
         }
         else
         {
             IsUpdateAvailable = false;
             UpdateMessage = string.Empty;
-            StatusMessage = $"You're on the latest version (v{_update.CurrentVersion})";
+            StatusMessage = $"You're on the latest version (v{update.CurrentVersion})";
         }
     }
 
     [RelayCommand]
     private void OpenUpdatePage()
     {
-        if (_update.ReleaseUrl != null && _update.ReleaseUrl.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase))
+        var url = _update.Value.ReleaseUrl;
+        if (url != null && url.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase))
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = _update.ReleaseUrl,
+                FileName = url,
                 UseShellExecute = true
             });
         }
@@ -408,7 +412,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void DismissUpdate()
     {
-        _update.SkipVersion();
+        _update.Value.SkipVersion();
         IsUpdateAvailable = false;
         UpdateMessage = string.Empty;
         StatusMessage = "Ready";

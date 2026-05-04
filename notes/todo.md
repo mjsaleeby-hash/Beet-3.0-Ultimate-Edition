@@ -25,9 +25,9 @@ Performance work is organized in phases from the 2026-04-18 Windows practices au
 ### Phase 4 — Hygiene (low risk, sweeping)
 
 - [x] **`ConfigureAwait(false)` sweep** — Added to every `await` in `TransferService.cs` (4), `SchedulerService.cs` (6), and `UpdateService.cs` (1). Eliminates the dispatcher-context deadlock class that caused the zombie process bug.
-- [ ] **Lazy DI in `App.OnStartup`** — Move `SchedulerService.LoadJobs()` off the constructor; make `UpdateService` lazy (only needed 3 seconds post-launch). Reduces cold-start time on the UI thread.
+- [x] **Lazy DI in `App.OnStartup`** — Pulled `LoadJobs()` out of the `SchedulerService` constructor into an explicit `Load()` (called from `App.OnStartup` and `RunHeadlessJob`). Wrapped `UpdateService` in `Lazy<UpdateService>` so it's not constructed until the post-launch update check actually runs.
 - [x] **Long-path support** — Added `app.manifest` with `longPathAware` and Windows 10/11 compatibility. Paths >260 characters now work without `\\?\` prefix normalization.
-- [ ] **`CopyFileEx` PInvoke** — Replace the hand-rolled buffered copy with the Win32 `CopyFileEx` API. Handles sparse files, alternate data streams, and provides a kernel-level progress callback.
+- [x] **`CopyFileEx` PInvoke** — `FileSystemService.CopyFile` now calls Win32 `CopyFileEx` directly (kernel-level sparse-file/ADS handling). The throttled and checksum-verify paths still use buffered `FileStream` for chunk-level rate limiting and SHA-256 streaming. Paths are converted to `\\?\` extended form so the call is long-path-safe regardless of the host process's manifest.
 
 ---
 

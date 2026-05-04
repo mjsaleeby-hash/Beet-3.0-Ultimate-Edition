@@ -19,7 +19,7 @@ public class MainViewModelTests
         var transfer = new TransferService(fs);
         var log = new BackupLogService();
         var scheduler = new SchedulerService(transfer, log);
-        var update = new UpdateService(settings);
+        var update = new Lazy<UpdateService>(() => new UpdateService(settings));
         return new MainViewModel(theme, fs, transfer, scheduler, log, settings, update);
     }
 

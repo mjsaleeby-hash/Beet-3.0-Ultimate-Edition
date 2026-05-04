@@ -56,16 +56,25 @@ public sealed class SchedulerService : IDisposable
     public event Action<string>? SchedulerError;
 
     /// <summary>
-    /// Creates the scheduler, loading persisted jobs from disk.
-    /// Call <see cref="Start"/> to begin the polling loop.
+    /// Creates the scheduler. Call <see cref="Load"/> to read persisted jobs from disk,
+    /// then <see cref="Start"/> to begin the polling loop.
     /// </summary>
     public SchedulerService(TransferService transfer, BackupLogService log)
     {
         _transfer = transfer;
         _log = log;
+        _ticker = new PeriodicTimer(TimeSpan.FromMinutes(1));
+    }
+
+    /// <summary>
+    /// Reads persisted jobs from disk and starts the cross-process file watcher.
+    /// Idempotent — safe to call once at startup. Kept out of the constructor so unit
+    /// tests can build a scheduler without touching disk.
+    /// </summary>
+    public void Load()
+    {
         LoadJobs();
         StartWatcher();
-        _ticker = new PeriodicTimer(TimeSpan.FromMinutes(1));
     }
 
     /// <summary>Starts the background scheduler loop (idempotent).</summary>

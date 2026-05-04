@@ -1,9 +1,11 @@
 using BeetsBackup.Models;
 using Microsoft.VisualBasic.FileIO;
 using System.Buffers;
+using System.ComponentModel;
 using System.IO;
-using System.Security.AccessControl;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Security.AccessControl;
 
 namespace BeetsBackup.Services;
 
@@ -78,12 +80,19 @@ public sealed class FileSystemService
     /// Copies a single file, preserving timestamps and optionally resetting permissions.
     /// Hidden files remain hidden at the destination.
     /// </summary>
+    /// <remarks>
+    /// Uses Win32 <c>CopyFileEx</c> rather than <see cref="File.Copy(string,string,bool)"/> so the
+    /// kernel handles sparse files, alternate data streams, and large-file optimisations directly.
+    /// </remarks>
     public void CopyFile(string source, string dest, bool stripPermissions)
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
         var srcLastWrite = File.GetLastWriteTimeUtc(source);
 
-        File.Copy(source, dest, overwrite: true);
+        CopyFileExNative(source, dest);
+        // CopyFileEx already mirrors timestamps, but the destination filesystem can normalise them
+        // (e.g. FAT32 truncates to 2-second resolution). Re-stamp explicitly so a later
+        // SkipExisting pass sees identical mtimes between source and dest.
         File.SetLastWriteTimeUtc(dest, srcLastWrite);
 
         if (stripPermissions)
@@ -92,6 +101,48 @@ public sealed class FileSystemService
         if (isHidden)
             File.SetAttributes(dest, File.GetAttributes(dest) | FileAttributes.Hidden);
     }
+
+    /// <summary>
+    /// Wraps <c>CopyFileExW</c> with overwrite semantics matching <c>File.Copy(..., overwrite: true)</c>.
+    /// Throws <see cref="IOException"/> with the underlying Win32 error message on failure.
+    /// </summary>
+    private static void CopyFileExNative(string source, string dest)
+    {
+        int cancel = 0;
+        // dwCopyFlags = 0 → allow overwrite, no restartable mode, buffered I/O.
+        // Pass null for the progress routine: this path doesn't report per-file progress
+        // (TransferService reports at file granularity from the parallel work loop).
+        // \\?\ prefix bypasses the MAX_PATH limit unconditionally — required because the
+        // raw Win32 API doesn't honour the longPathAware manifest in every host process
+        // (e.g. unit-test runners), and paths > 260 chars are common in deeply nested trees.
+        if (!CopyFileEx(ToExtendedPath(source), ToExtendedPath(dest),
+                lpProgressRoutine: IntPtr.Zero, lpData: IntPtr.Zero, ref cancel, dwCopyFlags: 0))
+        {
+            int err = Marshal.GetLastWin32Error();
+            throw new IOException($"CopyFileEx failed copying '{source}' to '{dest}': {new Win32Exception(err).Message}", err);
+        }
+    }
+
+    /// <summary>
+    /// Returns the path in Win32 extended-length form (<c>\\?\</c> prefix) so <c>CopyFileEx</c>
+    /// accepts paths longer than <c>MAX_PATH</c>. Already-prefixed and UNC paths pass through unchanged.
+    /// </summary>
+    private static string ToExtendedPath(string path)
+    {
+        if (path.StartsWith(@"\\?\", StringComparison.Ordinal)) return path;
+        if (path.StartsWith(@"\\", StringComparison.Ordinal)) return @"\\?\UNC\" + path[2..];
+        return @"\\?\" + path;
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CopyFileExW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CopyFileEx(
+        string lpExistingFileName,
+        string lpNewFileName,
+        IntPtr lpProgressRoutine,
+        IntPtr lpData,
+        ref int pbCancel,
+        uint dwCopyFlags);
 
     /// <summary>
     /// Copies a file while computing the SHA-256 hash of the source data in a single read pass.
