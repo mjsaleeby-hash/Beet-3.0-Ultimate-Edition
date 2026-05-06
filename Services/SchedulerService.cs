@@ -18,6 +18,10 @@ public sealed class SchedulerService : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly object _jobsLock = new();
     private readonly Dictionary<Guid, ManualResetEventSlim> _pauseGates = new();
+    /// <summary>Per-running-job cancellation sources, keyed by log entry id. Lets the homepage
+    /// pause/stop controls cancel an in-progress scheduled run — previously scheduled backups
+    /// could not be cancelled at all because no token was passed to the transfer call.</summary>
+    private readonly Dictionary<Guid, CancellationTokenSource> _runningCts = new();
     private Task? _runTask;
 
     /// <summary>UTC timestamp of the most recent self-initiated write to <c>scheduled_jobs.json</c>.
@@ -35,6 +39,11 @@ public sealed class SchedulerService : IDisposable
     /// and writes the file from a separate process; without this watcher the foreground dashboard
     /// keeps showing the pre-run NextRun forever (until app restart).</summary>
     private FileSystemWatcher? _watcher;
+
+    /// <summary>Set the moment <see cref="Dispose"/> begins. Watcher callbacks already in flight
+    /// on the thread pool short-circuit on this flag rather than touching <see cref="_reloadCts"/>
+    /// (which is being torn down).</summary>
+    private volatile bool _disposed;
 
     /// <summary>Last error message produced by the scheduler loop, if any.</summary>
     public string? LastSchedulerError { get; private set; }
@@ -54,6 +63,95 @@ public sealed class SchedulerService : IDisposable
 
     /// <summary>Raised when the scheduler encounters an error executing a job.</summary>
     public event Action<string>? SchedulerError;
+
+    /// <summary>Raised whenever the running-scheduled-job set transitions: a job starts,
+    /// ends, is paused, or is resumed. Lets the main window's toolbar pause/stop buttons
+    /// stay in sync with scheduled runs even though those runs originate from the scheduler
+    /// rather than from the manual transfer flow.</summary>
+    public event Action? RunningJobChanged;
+
+    /// <summary>True if at least one scheduled job is currently executing.</summary>
+    public bool IsRunningAnyJob
+    {
+        get { lock (_jobsLock) { return _pauseGates.Count > 0; } }
+    }
+
+    /// <summary>True if a scheduled job is currently executing AND its pause gate is reset.
+    /// Mirrors what the user sees: "something is running and it's paused right now".</summary>
+    public bool IsRunningJobPaused
+    {
+        get
+        {
+            lock (_jobsLock)
+            {
+                if (_pauseGates.Count == 0) return false;
+                foreach (var gate in _pauseGates.Values)
+                    if (!gate.IsSet) return true;
+                return false;
+            }
+        }
+    }
+
+    /// <summary>Snapshot of the log-entry ids for every scheduled job currently running.
+    /// The home dashboard uses this to mirror the running entry's progress percent.</summary>
+    public IReadOnlyList<Guid> RunningJobLogIds
+    {
+        get { lock (_jobsLock) { return _pauseGates.Keys.ToList(); } }
+    }
+
+    /// <summary>Pauses every scheduled job that is currently running. Used by the main
+    /// window toolbar's pause button, which can't know per-job log-entry ids in advance.</summary>
+    public void PauseRunning()
+    {
+        bool changed = false;
+        lock (_jobsLock)
+        {
+            foreach (var gate in _pauseGates.Values)
+            {
+                if (gate.IsSet) { gate.Reset(); changed = true; }
+            }
+        }
+        if (changed) RunningJobChanged?.Invoke();
+    }
+
+    /// <summary>Resumes every paused scheduled job.</summary>
+    public void ResumeRunning()
+    {
+        bool changed = false;
+        lock (_jobsLock)
+        {
+            foreach (var gate in _pauseGates.Values)
+            {
+                if (!gate.IsSet) { gate.Set(); changed = true; }
+            }
+        }
+        if (changed) RunningJobChanged?.Invoke();
+    }
+
+    /// <summary>Cancels every running scheduled job. Each job's <see cref="CancellationToken"/>
+    /// is observed by the transfer service, which throws <see cref="OperationCanceledException"/>;
+    /// <see cref="ExecuteJobAsync"/> catches it and marks the entry Skipped with "Cancelled by user".
+    /// Pause gates are released first so a paused worker observes the cancellation immediately.
+    /// Cancel runs under <see cref="_jobsLock"/> so it can't race the worker's finally block,
+    /// which removes-then-disposes the same CTS under the same lock — without this, Cancel could
+    /// be invoked on a CTS whose Dispose was mid-flight and produce undocumented behavior.</summary>
+    public void CancelRunning()
+    {
+        bool any;
+        lock (_jobsLock)
+        {
+            // Release any pause so workers observing pauseToken.Wait() unblock and see the
+            // cancellation request rather than sleeping forever.
+            foreach (var gate in _pauseGates.Values)
+                gate.Set();
+            foreach (var cts in _runningCts.Values)
+            {
+                try { cts.Cancel(); } catch (ObjectDisposedException) { /* defensive */ }
+            }
+            any = _runningCts.Count > 0;
+        }
+        if (any) RunningJobChanged?.Invoke();
+    }
 
     /// <summary>
     /// Creates the scheduler. Call <see cref="Load"/> to read persisted jobs from disk,
@@ -371,13 +469,19 @@ public sealed class SchedulerService : IDisposable
         FileLogger.Info($"Scheduled job started: '{snapshot.Name}' — {string.Join("; ", snapshot.SourcePaths)} → {snapshot.DestinationPath}");
 
         var pauseGate = new ManualResetEventSlim(true);
-        lock (_jobsLock) { _pauseGates[logEntry.Id] = pauseGate; }
+        var runCts = new CancellationTokenSource();
+        lock (_jobsLock)
+        {
+            _pauseGates[logEntry.Id] = pauseGate;
+            _runningCts[logEntry.Id] = runCts;
+        }
+        RunningJobChanged?.Invoke();
 
         try
         {
             var exclusions = snapshot.ExclusionFilters.Count > 0 ? snapshot.ExclusionFilters : null;
 
-            var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(snapshot.SourcePaths, exclusions)).ConfigureAwait(false);
+            var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(snapshot.SourcePaths, exclusions), runCts.Token).ConfigureAwait(false);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Running, "Backup in progress");
             FileLogger.Info($"Estimated size for '{snapshot.Name}': {FormatBytes(estimatedSize)}");
 
@@ -396,6 +500,7 @@ public sealed class SchedulerService : IDisposable
                     snapshot.DestinationPath,
                     archiveName: BuildArchiveName(snapshot.Name),
                     exclusions: exclusions,
+                    cancellationToken: runCts.Token,
                     pauseToken: pauseGate,
                     progressPercent: percentProgress).ConfigureAwait(false);
             }
@@ -407,6 +512,7 @@ public sealed class SchedulerService : IDisposable
                     snapshot.StripPermissions,
                     snapshot.TransferMode,
                     progressPercent: percentProgress,
+                    cancellationToken: runCts.Token,
                     pauseToken: pauseGate,
                     verifyChecksums: snapshot.VerifyChecksums,
                     exclusions: exclusions,
@@ -414,17 +520,17 @@ public sealed class SchedulerService : IDisposable
                     versioning: versioning).ConfigureAwait(false);
             }
 
-            var totalFailed = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
-            _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
-                result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles,
-                totalFailed, result.FileErrors);
-            FileLogger.Info($"Scheduled job completed: '{snapshot.Name}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped{(totalFailed > 0 ? $", {totalFailed} failed" : "")}");
-
-            var toastKind = totalFailed > 0 ? ToastKind.Warning : ToastKind.Success;
-            var toastBody = totalFailed > 0
-                ? $"{result.FilesCopied} copied, {totalFailed} failed."
-                : $"{result.FilesCopied} copied, {result.FilesSkipped} skipped.";
-            ToastNotifier.Notify($"Backup complete: {snapshot.Name}", toastBody, toastKind);
+            _log.UpdateStats(logEntry.Id, BackupStatus.Complete, result);
+            FileLogger.Info($"Scheduled job completed: '{snapshot.Name}' — {TransferReporter.FormatSummary(result)}");
+            TransferReporter.Notify($"Backup complete: {snapshot.Name}", result);
+        }
+        catch (OperationCanceledException) when (runCts.IsCancellationRequested)
+        {
+            // User pressed Stop on the homepage (or LogDialog). Treat as Skipped, not Failed —
+            // it wasn't an error, it was an explicit user choice. Toast as info, not warning.
+            FileLogger.Info($"Scheduled job cancelled: '{snapshot.Name}'");
+            _log.UpdateStatus(logEntry.Id, BackupStatus.Skipped, "Cancelled by user");
+            ToastNotifier.Notify($"Backup stopped: {snapshot.Name}", "Cancelled by user.", ToastKind.Warning);
         }
         catch (InsufficientSpaceException)
         {
@@ -446,9 +552,12 @@ public sealed class SchedulerService : IDisposable
             {
                 _pauseGates.Remove(logEntry.Id);
                 pauseGate.Dispose();
+                _runningCts.Remove(logEntry.Id);
+                runCts.Dispose();
                 originalJob.LastRun = DateTime.Now;
                 SaveJobs();
             }
+            RunningJobChanged?.Invoke();
             if (jobMutex != null)
             {
                 try { jobMutex.ReleaseMutex(); } catch { /* never owned, or already released */ }
@@ -484,21 +593,31 @@ public sealed class SchedulerService : IDisposable
     /// <summary>Pauses a currently running job by resetting its pause gate.</summary>
     public void PauseJob(Guid logEntryId)
     {
+        bool changed = false;
         lock (_jobsLock)
         {
-            if (_pauseGates.TryGetValue(logEntryId, out var gate))
+            if (_pauseGates.TryGetValue(logEntryId, out var gate) && gate.IsSet)
+            {
                 gate.Reset();
+                changed = true;
+            }
         }
+        if (changed) RunningJobChanged?.Invoke();
     }
 
     /// <summary>Resumes a paused job by signaling its pause gate.</summary>
     public void ResumeJob(Guid logEntryId)
     {
+        bool changed = false;
         lock (_jobsLock)
         {
-            if (_pauseGates.TryGetValue(logEntryId, out var gate))
+            if (_pauseGates.TryGetValue(logEntryId, out var gate) && !gate.IsSet)
+            {
                 gate.Set();
+                changed = true;
+            }
         }
+        if (changed) RunningJobChanged?.Invoke();
     }
 
     /// <summary>Returns whether the specified running job is currently paused.</summary>
@@ -554,11 +673,8 @@ public sealed class SchedulerService : IDisposable
                 logEntry.TransferMode,
                 progressPercent: percentProgress).ConfigureAwait(false);
 
-            var totalFailed = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
-            _log.UpdateStats(logEntry.Id, BackupStatus.Complete,
-                result.FilesCopied, result.FilesSkipped, result.BytesTransferred, result.TotalFiles,
-                totalFailed, result.FileErrors);
-            FileLogger.Info($"Retry completed: '{logEntry.JobName}' — {result.FilesCopied} copied, {result.FilesSkipped} skipped{(totalFailed > 0 ? $", {totalFailed} failed" : "")}");
+            _log.UpdateStats(logEntry.Id, BackupStatus.Complete, result);
+            FileLogger.Info($"Retry completed: '{logEntry.JobName}' — {TransferReporter.FormatSummary(result)}");
         }
         catch (InsufficientSpaceException)
         {
@@ -647,9 +763,13 @@ public sealed class SchedulerService : IDisposable
     /// </summary>
     private void OnJobsFileChanged(object sender, FileSystemEventArgs e)
     {
+        if (_disposed) return;
         if (DateTime.UtcNow - _lastSelfWrite < SelfWriteCooldown) return;
 
-        _reloadCts?.Cancel();
+        // Cancel may race with Dispose; ObjectDisposedException is benign here.
+        try { _reloadCts?.Cancel(); }
+        catch (ObjectDisposedException) { return; }
+        if (_disposed) return;
         var cts = new CancellationTokenSource();
         _reloadCts = cts;
         _ = Task.Run(async () =>
@@ -688,9 +808,18 @@ public sealed class SchedulerService : IDisposable
 
     public void Dispose()
     {
-        _watcher?.Dispose();
-        _watcher = null;
-        _reloadCts?.Cancel();
+        // Flip the flag and silence the watcher before tearing anything else down — any
+        // callback already queued on the thread pool will short-circuit before touching
+        // _reloadCts. EnableRaisingEvents=false throws if the watcher is already disposed,
+        // which can't happen here but is defensively wrapped anyway.
+        _disposed = true;
+        if (_watcher != null)
+        {
+            try { _watcher.EnableRaisingEvents = false; } catch { }
+            _watcher.Dispose();
+            _watcher = null;
+        }
+        try { _reloadCts?.Cancel(); } catch (ObjectDisposedException) { }
         _reloadCts?.Dispose();
         _reloadCts = null;
         _cts.Cancel();
@@ -704,9 +833,18 @@ public sealed class SchedulerService : IDisposable
         }
         lock (_jobsLock)
         {
+            // Cancel running jobs first, then release their pause gates so workers can observe
+            // the cancellation. Order matters: a cancelled-but-paused job would otherwise block
+            // here forever waiting on the gate.
+            foreach (var cts in _runningCts.Values)
+            {
+                try { cts.Cancel(); } catch (ObjectDisposedException) { }
+                cts.Dispose();
+            }
+            _runningCts.Clear();
             foreach (var gate in _pauseGates.Values)
             {
-                gate.Set(); // Unblock any paused jobs so they can observe cancellation
+                gate.Set();
                 gate.Dispose();
             }
             _pauseGates.Clear();

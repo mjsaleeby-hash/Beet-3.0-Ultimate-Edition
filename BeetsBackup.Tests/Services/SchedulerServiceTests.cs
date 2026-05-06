@@ -10,16 +10,45 @@ namespace BeetsBackup.Tests.Services;
 /// </summary>
 public class SchedulerServiceTests
 {
-    [Fact]
-    public async Task RunJobByIdAsync_UnknownId_ReturnsFalseAndDoesNotThrow()
+    private static SchedulerService BuildScheduler()
     {
         var fs = new FileSystemService();
         var transfer = new TransferService(fs);
         var log = new BackupLogService();
-        using var scheduler = new SchedulerService(transfer, log);
+        return new SchedulerService(transfer, log);
+    }
+
+    [Fact]
+    public async Task RunJobByIdAsync_UnknownId_ReturnsFalseAndDoesNotThrow()
+    {
+        using var scheduler = BuildScheduler();
 
         var ran = await scheduler.RunJobByIdAsync(Guid.NewGuid());
 
         ran.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsRunningAnyJob_NoJobs_ReturnsFalse()
+    {
+        using var scheduler = BuildScheduler();
+
+        scheduler.IsRunningAnyJob.Should().BeFalse();
+        scheduler.IsRunningJobPaused.Should().BeFalse();
+        scheduler.RunningJobLogIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void PauseRunning_NoJobs_DoesNotFireEvent()
+    {
+        using var scheduler = BuildScheduler();
+        int eventFireCount = 0;
+        scheduler.RunningJobChanged += () => eventFireCount++;
+
+        scheduler.PauseRunning();
+        scheduler.ResumeRunning();
+        scheduler.CancelRunning();
+
+        eventFireCount.Should().Be(0, "no running jobs means no state changed");
     }
 }

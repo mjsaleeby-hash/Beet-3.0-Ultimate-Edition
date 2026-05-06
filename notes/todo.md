@@ -1,44 +1,51 @@
-## 2026-04-18 — Performance roadmap (post-Phase 1)
+## Reliability & Optimization Roadmap
 
-Performance work is organized in phases from the 2026-04-18 Windows practices audit (`PerformanceMonitor/audit/windows-practices-audit-2026-04-18.md`). Phase 1 is complete. Phases 2–4 remain.
-
----
-
-### Phase 2 — I/O Tuning (~1–2 hours, low risk)
-
-- [x] **FileStream options** — Added `FileOptions.SequentialScan` and 1 MB internal buffers to `FileStream` constructors in `CopyFileWithHash` and `ThrottledCopy`. Also applied to `ComputeSha256`. `CopyFile` uses `File.Copy` (kernel-optimized, no change needed).
-- [x] **BackupLogService debounce** — Raised debounce from 1s to 5s. Terminal statuses (Complete/Failed) now call `SaveNow()` directly, bypassing debounce. Running/Scheduled transitions use the debounced path.
-- [x] **Flush-to-disk in verify mode** — Both `CopyFileWithHash` and `ThrottledCopy` now flush to disk (`Flush(flushToDisk: true)`) before the destination re-read. The re-read is retained — flush alone cannot detect silent corruption, USB failures, or bit flips. The flush reduces the chance of re-reading stale OS cache data.
+Focus: bug-free before feature-complete. No new features unless critical.
 
 ---
 
-### Phase 3 — Parallel Copy Engine (~half day, medium risk)
+### Tier 1 — Visibility (do first, enables everything else)
 
-- [x] **`Parallel.ForEachAsync` with drive-type-aware concurrency** — Stage 4 (`0bbd938`). Workers gated by `DriveTypeService.GetWorkerCount`: SSD↔SSD = `min(8, ProcessorCount)`; any HDD/removable in pair = 1; network = 4; unknown = 2.
-- [x] **Thread-safe counters** — Stage 1 (`6492b24`). `TransferResult` counters use `Interlocked.Increment`/`Add`; `AddFileError` is locked. `TryAdvanceReportedPercent` enforces monotonic percent reports under parallelism.
-- [x] **Ordered directory creation** — Stage 3b (`168b730`). Phase 2 of `CopyAsync` pre-creates all `DirectoryWorkItem` paths sorted by depth before any file workers start. `EnumerateWorkItems` produces the frozen plan.
-- [x] **Thread-safe mirror cleanup** — Mirror cleanup is still sequential (runs after `Parallel.ForEachAsync` completes). Intentional: destruction logic deserves audit-friendly serial code, and mirror cleanup is a small fraction of total wall time. `VssSnapshotService.GetOrCreateSnapshotRoot` was made thread-safe in Stage 4 for the parallel copy phase itself.
-- [ ] **Regression sweep on real hardware** — Stage 5. Automated test suite is 169 green; remaining items need a real backup run: SSD→HDD perf check, VSS fallback path on a locked file, mirror with non-empty destination, large-volume checksum verify, mid-run cancellation, pause/resume.
+- [x] **Crash logger (#15)** — All three handlers (`DispatcherUnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException`) wired in `App.OnStartup`. `FileLogger.WriteCrashDump` writes to `%LocalAppData%\Beet's Backup\crash_dump.log` with timestamp, source, app/OS/.NET version, memory, uptime, exception type + HResult + stack trace, full inner-exception chain, and AggregateException unrolling. Auto-rotates at 10 MB. Handler registration was moved above the `--run-job` headless branch so scheduled backups crashing unattended also produce a dump.
 
 ---
 
-### Phase 4 — Hygiene (low risk, sweeping)
+### Tier 2 — Fragile code that will eventually break
 
-- [x] **`ConfigureAwait(false)` sweep** — Added to every `await` in `TransferService.cs` (4), `SchedulerService.cs` (6), and `UpdateService.cs` (1). Eliminates the dispatcher-context deadlock class that caused the zombie process bug.
-- [x] **Lazy DI in `App.OnStartup`** — Pulled `LoadJobs()` out of the `SchedulerService` constructor into an explicit `Load()` (called from `App.OnStartup` and `RunHeadlessJob`). Wrapped `UpdateService` in `Lazy<UpdateService>` so it's not constructed until the post-launch update check actually runs.
-- [x] **Long-path support** — Added `app.manifest` with `longPathAware` and Windows 10/11 compatibility. Paths >260 characters now work without `\\?\` prefix normalization.
-- [x] **`CopyFileEx` PInvoke** — `FileSystemService.CopyFile` now calls Win32 `CopyFileEx` directly (kernel-level sparse-file/ADS handling). The throttled and checksum-verify paths still use buffered `FileStream` for chunk-level rate limiting and SHA-256 streaming. Paths are converted to `\\?\` extended form so the call is long-path-safe regardless of the host process's manifest.
+- [x] **SettingsService self-serialization (#17)** — `SettingsService` already uses a `SettingsData` POCO (`Save()` serializes `Data`, `Load()` deserializes `SettingsData`). The other two persistence services (`SchedulerService`, `BackupLogService`) were already serializing clean POCO collections (`List<ScheduledJob>`, `List<BackupLogEntry>`). No `JsonSerializer.Serialize(this)` anywhere in the codebase.
+
+- [x] **UI thread blocking on navigate (#21)** — Both `NavigateTop` and `NavigateBottom` already wrap `_fs.GetChildren(path).ToList()` in `Task.Run` with cancellation tokens that supersede stale navigations. Recursive search (top + bottom) likewise runs inside `Task.Run` with batched `dispatcher.BeginInvoke` updates. Remaining `Directory.Exists`/`File.Exists` calls on the UI thread are single-syscall checks on user-chosen paths — not freeze hazards.
 
 ---
 
-### Other open items (pre-existing, from 2026-04-01 assessment)
+### Tier 3 — Reporting accuracy
 
-- [x] Move data-loss: source delete on partial failure — Fixed: per-item failure tracking, source preserved on any error
-- [x] Atomic JSON saves — Fixed: all three services use write-to-tmp + File.Replace pattern
-- [x] Single-instance mutex — Fixed: named Mutex in App.OnStartup, second instance signals first to show
-- [x] Professional error messages (remove "dummy!" text) — Fixed: all user-facing messages are professional
-- [x] Items 7–12 from 2026-03-24 viability assessment — all resolved (recycle bin deletes, timestamp comparison, async tree, search batching, stale log entries, log cap at 500)
-- [x] Backup wizard (fully implemented — 7-step wizard with stepper UI, disk-space preflight, wizard validates source/destination)
+- [x] **Locked file counter (#14)** — `TransferResult.FilesLocked` is populated by `TransferService` and now persisted to `BackupLogEntry.FilesLocked`. `BackupLogEntry.StatsDisplay` and the new `TransferReporter.FormatSummary` surface "X locked" separately from "X failed". `SchedulerService` no longer lumps locked files into `FilesFailed`.
+
+- [x] **Directory failure count (#22)** — `TransferResult.DirectoriesFailed` is populated by `TransferService` (4 sites) and now persisted to `BackupLogEntry.DirectoriesFailed`. Surfaced as "X folders failed" in `StatsDisplay` and toast/log summaries via `TransferReporter`. File failure ratios now reflect only file-level errors.
+
+**Refactor by-product**: extracted `Services/TransferReporter.cs` so manual transfers (`MainViewModel`) and scheduled jobs (`SchedulerService`) share one consistent surface for `FormatSummary`, `Notify`, and `TotalFailed`. Replaced `BackupLogService.UpdateStats` long-param signature with `(id, status, TransferResult)` that auto-extends as new counters land. Old `BackupLogEntry.StatsDisplay` format `"X copied, Y skipped, Z failed, bytes"` replaced with one that lists every non-zero counter (e.g. `"100 copied, 50 skipped, 12 locked, 2 folders failed, 1.2 GB"`).
+
+---
+
+### Tier 4 — UX correctness (after counters are accurate)
+
+- [x] **Homepage pause/stop control over scheduled backups** — Previously the toolbar pause/stop buttons only worked for manual file-pane transfers and went disabled while a scheduled run was active. Scheduled backups had no cancel path at all (no `CancellationToken` was passed to the transfer call), so a runaway scheduled run could only be stopped by killing the process. `SchedulerService` now tracks per-job CTSs in `_runningCts`, exposes `IsRunningAnyJob`, `IsRunningJobPaused`, `RunningJobLogIds`, plus `PauseRunning()` / `ResumeRunning()` / `CancelRunning()`, and fires a `RunningJobChanged` event. `MainViewModel.IsTransferring` and `IsPaused` are now combined getters over manual + scheduler state; pause/stop commands route to whichever flow is active. The progress banner mirrors the running scheduled entry's `ProgressPercent`. Cancelled scheduled runs are logged as Skipped with "Cancelled by user".
+
+- [x] **Clearer dashboard/completion text** — When a backup completes with 0 copies, 0 failures, and only skips, the summary now reads `"Up to date — N files verified"` instead of `"0 copied, N skipped"`. Applied consistently across `TransferReporter.FormatSummary` (status bar + `FileLogger`), `TransferReporter.Notify` (Windows toast body), and `BackupLogEntry.StatsDisplay` (LogDialog grid). Empty-input case reads `"Done — nothing to do"` so the previous bare `"Done."` doesn't get confused with a real run that did nothing. Locked-file case correctly does NOT use the up-to-date phrasing — locked files are real failures, not a clean run.
+
+---
+
+### Tier 5 — Architecture (no rush)
+
+- [ ] **VSS elevation — Option A (elevated helper subprocess)** — Keep main app non-elevated. When a locked file is hit, spawn a small helper exe via `ShellExecute("runas")` that does only the VSS snapshot, returns the shadow path via named pipe or temp file, then exits. One UAC prompt, only when needed. See architecture notes below.
+
+- [ ] **Launcher rename for shipping** — `BeetsBackupLauncher.exe` → `BeetsBackup.exe` (user-facing); current elevated WPF app → `BeetsBackup.Core.exe` (internal). See details below.
+
+---
+
+### Deferred features (not being worked — parked for reference)
+
 - [ ] Dry run / preview mode
 - [ ] Encryption
 - [ ] Pre/post backup scripts
@@ -46,17 +53,7 @@ Performance work is organized in phases from the 2026-04-18 Windows practices au
 
 ---
 
-### Medium/low viability items still open (from 2026-03-24 assessment)
-
-- [ ] **#14 Locked file counter** — Catch locked-file `IOException` (HResult `0x80070020`), track `FilesLocked` counter in `TransferResult`, show in completion message
-- [ ] **#15 Crash logger** — Add `DispatcherUnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` handlers; write to `crash_log.txt`
-- [ ] **#17 SettingsService self-serialization** — Extract `SettingsData` POCO; currently serializes `this` which is fragile
-- [ ] **#21 Navigate UI thread blocking** — `_fs.GetChildren(path)` on UI thread; wrap in `Task.Run` + dispatcher populate
-- [ ] **#22 TransferService directory failure count** — Directory failures increment `FilesFailed` but skew the failure %; track separately
-
----
-
-## Future Fixes / Additions
+## Architecture Notes
 
 ### VSS — Remove elevation requirement (2026-04-21)
 

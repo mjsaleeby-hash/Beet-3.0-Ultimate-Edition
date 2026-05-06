@@ -257,8 +257,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     // --- Transfer controls ---
-    [ObservableProperty] private bool _isTransferring;
-    [ObservableProperty] private bool _isPaused;
+    // Manual flags are private state for the file-pane copy/move flow. The public IsTransferring
+    // and IsPaused properties combine these with the scheduler's running-job state so the
+    // toolbar pause/stop buttons (bound to IsTransferring) light up for both manual transfers
+    // AND scheduled backups, and pressing them routes to whichever flow is active.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTransferring))]
+    private bool _isManuallyTransferring;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPaused))]
+    private bool _isManuallyPaused;
+
+    /// <summary>True if either a manual transfer or any scheduled backup is currently running.
+    /// Drives <c>IsEnabled</c> on the toolbar pause/stop buttons and the visibility of the
+    /// transfer progress banner.</summary>
+    public bool IsTransferring => IsManuallyTransferring || _scheduler.IsRunningAnyJob;
+
+    /// <summary>True if the active transfer (manual or scheduled) is paused. Drives the
+    /// pause/resume button's icon swap.</summary>
+    public bool IsPaused => IsManuallyPaused || _scheduler.IsRunningJobPaused;
+
     [ObservableProperty] private int _transferProgressPercent;
     [ObservableProperty] private string _transferEta = string.Empty;
 
@@ -292,6 +311,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StartMinimized = settings.StartMinimized;
         _scheduler.SchedulerError += OnSchedulerError;
         _scheduler.JobsChanged += OnSchedulerJobsChanged;
+        _scheduler.RunningJobChanged += OnSchedulerRunningJobChanged;
         LoadDrives();
         Drives.CollectionChanged += (_, _) => NotifyCapacityPropertiesChanged();
 
@@ -326,6 +346,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(IsProtected));
             NotifyLogPropertiesChanged();
         }
+        else if (e.PropertyName == nameof(BackupLogEntry.ProgressPercent)
+                 && !IsManuallyTransferring
+                 && sender is BackupLogEntry entry
+                 && _scheduler.RunningJobLogIds.Contains(entry.Id))
+        {
+            // Mirror the running scheduled job's progress into the homepage banner. The banner
+            // is visible whenever IsTransferring is true (manual or scheduled), but the percent
+            // and ETA only updated for manual transfers before this — leaving scheduled runs
+            // showing 0% and an empty ETA in a UI that's clearly trying to indicate progress.
+            TransferProgressPercent = entry.ProgressPercent;
+        }
     }
 
     private void NotifyLogPropertiesChanged()
@@ -345,6 +376,28 @@ public partial class MainViewModel : ObservableObject, IDisposable
             dispatcher.BeginInvoke(NotifySchedulePropertiesChanged);
         else
             NotifySchedulePropertiesChanged();
+    }
+
+    /// <summary>
+    /// Fires when the scheduler starts/ends/pauses/resumes a job. Refreshes the combined
+    /// <see cref="IsTransferring"/> and <see cref="IsPaused"/> bindings so the toolbar
+    /// pause/stop buttons enable/disable and the icon swap correctly reflect scheduled runs.
+    /// Also resets the homepage progress percent when scheduled runs end (and no manual
+    /// transfer is active) so a stale 100% doesn't carry into the next banner appearance.
+    /// </summary>
+    private void OnSchedulerRunningJobChanged()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        Action update = () =>
+        {
+            OnPropertyChanged(nameof(IsTransferring));
+            OnPropertyChanged(nameof(IsPaused));
+            if (!IsTransferring) TransferProgressPercent = 0;
+        };
+        if (dispatcher != null && !dispatcher.CheckAccess())
+            dispatcher.BeginInvoke(update);
+        else
+            update();
     }
 
     private void NotifySchedulePropertiesChanged()
@@ -476,39 +529,63 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Toggles the pause/resume state of an in-progress transfer.</summary>
+    /// <summary>Toggles the pause/resume state of whichever transfer is currently active —
+    /// manual file-pane copy/move, or a scheduled backup. If both are running (rare) both flip.</summary>
     [RelayCommand]
     private void PauseResumeTransfer()
     {
         if (!IsTransferring) return;
-        if (IsPaused)
+
+        // Determine direction from the combined paused-state. If anything is paused, resume;
+        // otherwise pause. Pre-computed because the scheduler's state changes mid-flow.
+        bool resuming = IsPaused;
+
+        if (IsManuallyTransferring)
         {
-            _pausedDuration += DateTime.Now - _pauseStartTime;
-            _pauseGate.Set();
-            IsPaused = false;
-            StatusMessage = "Resumed...";
+            if (resuming)
+            {
+                _pausedDuration += DateTime.Now - _pauseStartTime;
+                _pauseGate.Set();
+                IsManuallyPaused = false;
+            }
+            else
+            {
+                _pauseStartTime = DateTime.Now;
+                _pauseGate.Reset();
+                IsManuallyPaused = true;
+            }
         }
-        else
+
+        if (_scheduler.IsRunningAnyJob)
         {
-            _pauseStartTime = DateTime.Now;
-            _pauseGate.Reset();
-            IsPaused = true;
-            StatusMessage = "Paused.";
+            if (resuming) _scheduler.ResumeRunning();
+            else _scheduler.PauseRunning();
         }
+
+        StatusMessage = resuming ? "Resumed..." : "Paused.";
     }
 
-    /// <summary>Cancels the current transfer by signalling the cancellation token.</summary>
+    /// <summary>Cancels whichever transfer is currently active — manual or scheduled, or both.</summary>
     [RelayCommand]
     private void StopTransfer()
     {
         if (!IsTransferring) return;
-        _pauseGate.Set();
-        _transferCts?.Cancel();
-        IsPaused = false;
+
+        if (IsManuallyTransferring)
+        {
+            _pauseGate.Set();
+            _transferCts?.Cancel();
+            IsManuallyPaused = false;
+        }
+
+        if (_scheduler.IsRunningAnyJob)
+            _scheduler.CancelRunning();
+
         StatusMessage = "Stopping...";
     }
 
-    /// <summary>Resets transfer state (CTS, pause gate, progress) and marks IsTransferring = true.</summary>
+    /// <summary>Resets manual-transfer state (CTS, pause gate, progress) and marks the
+    /// manual-transfer flag true. Does not touch scheduled-job state.</summary>
     private void BeginTransfer()
     {
         _transferCts?.Cancel();
@@ -519,19 +596,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _pauseGate = new ManualResetEventSlim(true);
         oldGate.Set(); // unblock any old transfer so it can observe cancellation
         oldGate.Dispose();
-        IsTransferring = true;
-        IsPaused = false;
+        IsManuallyTransferring = true;
+        IsManuallyPaused = false;
         TransferProgressPercent = 0;
         TransferEta = string.Empty;
         _transferStartTime = DateTime.Now;
         _pausedDuration = TimeSpan.Zero;
     }
 
-    /// <summary>Clears transfer state and displays the final status message.</summary>
+    /// <summary>Clears manual-transfer state and displays the final status message.</summary>
     private void EndTransfer(string message)
     {
-        IsTransferring = false;
-        IsPaused = false;
+        IsManuallyTransferring = false;
+        IsManuallyPaused = false;
         TransferProgressPercent = 0;
         TransferEta = string.Empty;
         StatusMessage = message;
@@ -542,6 +619,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _scheduler.SchedulerError -= OnSchedulerError;
         _scheduler.JobsChanged -= OnSchedulerJobsChanged;
+        _scheduler.RunningJobChanged -= OnSchedulerRunningJobChanged;
         _pauseGate.Dispose();
         _transferCts?.Dispose();
         _topSizeCts?.Cancel(); _topSizeCts?.Dispose();
@@ -1682,36 +1760,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return string.IsNullOrWhiteSpace(safe) ? "backup" : safe;
     }
 
-    /// <summary>
-    /// Fires a Windows toast notification summarizing the outcome of a completed transfer.
-    /// Warning kind if there were any per-file errors; otherwise success.
-    /// </summary>
-    private static void NotifyTransferCompletion(string title, TransferResult result)
-    {
-        var totalFailed = result.FilesFailed + result.DirectoriesFailed + result.DiskFullErrors + result.FilesLocked + result.ChecksumMismatches;
-        var body = totalFailed > 0
-            ? $"{result.FilesCopied} copied, {totalFailed} failed."
-            : $"{result.FilesCopied} copied, {result.FilesSkipped} skipped.";
-        var kind = totalFailed > 0 ? ToastKind.Warning : ToastKind.Success;
-        ToastNotifier.Notify(title, body, kind);
-    }
+    /// <summary>Routes through <see cref="TransferReporter"/> so manual and scheduled flows
+    /// surface identical toast wording.</summary>
+    private static void NotifyTransferCompletion(string title, TransferResult result) =>
+        TransferReporter.Notify(title, result);
 
-    /// <summary>Builds a human-readable summary string from a <see cref="TransferResult"/>.</summary>
-    internal static string FormatTransferResult(TransferResult result)
-    {
-        var parts = new List<string>();
-        if (result.FilesCopied > 0) parts.Add($"{result.FilesCopied} copied");
-        if (result.FilesCopiedViaVss > 0) parts.Add($"{result.FilesCopiedViaVss} via shadow copy");
-        if (result.FilesSkipped > 0) parts.Add($"{result.FilesSkipped} skipped");
-        if (result.FilesFailed > 0) parts.Add($"{result.FilesFailed} failed");
-        if (result.DirectoriesFailed > 0) parts.Add($"{result.DirectoriesFailed} folders failed");
-        if (result.FilesLocked > 0) parts.Add($"{result.FilesLocked} locked");
-        if (result.DiskFullErrors > 0) parts.Add($"{result.DiskFullErrors} disk full errors");
-        if (result.ChecksumMismatches > 0) parts.Add($"{result.ChecksumMismatches} checksum mismatches!");
-        if (result.FilesDeleted > 0) parts.Add($"{result.FilesDeleted} deleted");
-        if (result.DirectoriesDeleted > 0) parts.Add($"{result.DirectoriesDeleted} folders deleted");
-        return parts.Count > 0 ? $"Done — {string.Join(", ", parts)}" : "Done.";
-    }
+    /// <summary>Routes through <see cref="TransferReporter"/> so manual and scheduled flows
+    /// surface identical status-line wording.</summary>
+    internal static string FormatTransferResult(TransferResult result) =>
+        TransferReporter.FormatSummary(result);
 
     // --- Pie chart (data distribution) ---
 

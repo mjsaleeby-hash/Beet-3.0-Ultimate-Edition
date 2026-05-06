@@ -48,6 +48,11 @@ public sealed class BackupLogService : IDisposable
     /// foreground app, and without this watch the dashboard shows stale Last/Next data forever).</summary>
     private FileSystemWatcher? _watcher;
 
+    /// <summary>Set the moment <see cref="Dispose"/> begins. Watcher callbacks already in flight
+    /// on the thread pool short-circuit on this flag rather than touching <see cref="_reloadCts"/>
+    /// (which is being torn down) or the dispatcher (which may be gone).</summary>
+    private volatile bool _disposed;
+
     /// <summary>When true, log mutations run synchronously under <see cref="_headlessLock"/> instead
     /// of being posted to the WPF dispatcher. The headless --run-job path blocks the UI thread in
     /// <c>GetAwaiter().GetResult()</c>, so dispatcher.BeginInvoke posts queue forever and are then
@@ -183,11 +188,15 @@ public sealed class BackupLogService : IDisposable
     /// </summary>
     private void OnLogFileChanged(object sender, FileSystemEventArgs e)
     {
+        if (_disposed) return;
         if (DateTime.UtcNow - _lastSelfWrite < SelfWriteCooldown) return;
 
         // Cancel any pending reload and schedule a new one — coalesces the rename/write/delete
-        // burst that File.Replace produces into a single ReloadFromDisk call.
-        _reloadCts?.Cancel();
+        // burst that File.Replace produces into a single ReloadFromDisk call. Cancel may race
+        // with Dispose; ObjectDisposedException is benign (the work we'd cancel is already gone).
+        try { _reloadCts?.Cancel(); }
+        catch (ObjectDisposedException) { return; }
+        if (_disposed) return;
         var cts = new CancellationTokenSource();
         _reloadCts = cts;
         _ = Task.Run(async () =>
@@ -202,14 +211,22 @@ public sealed class BackupLogService : IDisposable
         });
     }
 
-    /// <summary>Stops the file watcher and cancels any pending debounced reload.</summary>
+    /// <summary>Stops the file watcher and cancels any pending debounced reload. Order matters:
+    /// flip <see cref="_disposed"/> and disable the watcher's events before disposing the
+    /// reload CTS, so any callback already running on the thread pool short-circuits before
+    /// touching state we're tearing down.</summary>
     public void Dispose()
     {
-        _reloadCts?.Cancel();
+        _disposed = true;
+        if (_watcher != null)
+        {
+            try { _watcher.EnableRaisingEvents = false; } catch { /* watcher already disposed */ }
+            _watcher.Dispose();
+            _watcher = null;
+        }
+        try { _reloadCts?.Cancel(); } catch (ObjectDisposedException) { }
         _reloadCts?.Dispose();
         _reloadCts = null;
-        _watcher?.Dispose();
-        _watcher = null;
     }
 
     /// <summary>
@@ -256,22 +273,36 @@ public sealed class BackupLogService : IDisposable
         });
     }
 
-    /// <summary>Updates the final transfer statistics for a completed backup entry.</summary>
-    public void UpdateStats(Guid id, BackupStatus status, int filesCopied, int filesSkipped, long bytesTransferred, int totalFiles = 0, int filesFailed = 0, IReadOnlyList<FileError>? fileErrors = null)
+    /// <summary>
+    /// Updates the final transfer statistics for a completed backup entry from a
+    /// <see cref="TransferResult"/>. Each counter is persisted separately so the
+    /// log surface can distinguish locked files, directory failures, disk-full
+    /// errors, and checksum mismatches from generic <c>FilesFailed</c>.
+    /// </summary>
+    public void UpdateStats(Guid id, BackupStatus status, TransferResult result)
     {
         RunOnUiThread(() =>
         {
             var entry = Entries.FirstOrDefault(e => e.Id == id);
             if (entry == null) return;
             entry.Status = status;
-            entry.FilesCopied = filesCopied;
-            entry.FilesSkipped = filesSkipped;
-            entry.FilesFailed = filesFailed;
-            entry.BytesTransferred = bytesTransferred;
-            entry.TotalFiles = totalFiles;
+            entry.FilesCopied = result.FilesCopied;
+            entry.FilesSkipped = result.FilesSkipped;
+            entry.FilesFailed = result.FilesFailed;
+            entry.FilesLocked = result.FilesLocked;
+            entry.DirectoriesFailed = result.DirectoriesFailed;
+            entry.FilesCopiedViaVss = result.FilesCopiedViaVss;
+            entry.DiskFullErrors = result.DiskFullErrors;
+            entry.ChecksumMismatches = result.ChecksumMismatches;
+            entry.BytesTransferred = result.BytesTransferred;
+            entry.TotalFiles = result.TotalFiles;
             entry.ProgressPercent = 100;
-            entry.Message = filesFailed > 0 ? $"Complete with {filesFailed} error(s)" : "Complete";
-            if (fileErrors != null && fileErrors.Count > 0)
+
+            var totalFailed = TransferReporter.TotalFailed(result);
+            entry.Message = totalFailed > 0 ? $"Complete with {totalFailed} error(s)" : "Complete";
+
+            var fileErrors = result.FileErrors;
+            if (fileErrors.Count > 0)
                 entry.FileErrors = fileErrors.ToList();
             entry.Timestamp = DateTime.Now;
             SaveNow();
@@ -311,6 +342,9 @@ public sealed class BackupLogService : IDisposable
     /// In headless mode (<see cref="MarkHeadless"/>) runs the action synchronously under
     /// <see cref="_headlessLock"/> instead — the WPF dispatcher cannot pump while the
     /// <c>--run-job</c> path blocks the UI thread waiting for its async work to finish.
+    /// During app shutdown <see cref="Application.Current"/> can be cleared before the
+    /// final scheduled-job completion writes its log entry; in that window we also fall
+    /// back to running synchronously under the lock so the final UpdateStats isn't dropped.
     /// </summary>
     private void RunOnUiThread(Action action)
     {
@@ -320,7 +354,13 @@ public sealed class BackupLogService : IDisposable
             return;
         }
         var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher == null) return;
+        if (dispatcher == null)
+        {
+            // Shutdown fallback — Application.Current was cleared but a job's finally is
+            // still trying to record its terminal status. Lock-and-run mirrors headless mode.
+            lock (_headlessLock) action();
+            return;
+        }
         if (dispatcher.CheckAccess())
             action();
         else

@@ -47,10 +47,13 @@ public class MainViewModelTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void FormatTransferResult_AllZero_ReturnsDone()
+    public void FormatTransferResult_AllZero_ReturnsNothingToDo()
     {
+        // The old wording was "Done." but on an empty result that read as if a real backup
+        // had completed and moved nothing — confusing. The reporter now distinguishes
+        // genuinely-empty input from "everything already up to date".
         var result = new TransferResult();
-        MainViewModel.FormatTransferResult(result).Should().Be("Done.");
+        MainViewModel.FormatTransferResult(result).Should().Be("Done — nothing to do");
     }
 
     [Fact]

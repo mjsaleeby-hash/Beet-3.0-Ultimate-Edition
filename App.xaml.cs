@@ -52,6 +52,13 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Wire up global exception handlers FIRST so they cover both the UI path and the
+        // headless --run-job path. Scheduled headless backups crash unattended, so they're
+        // the case where having a crash_dump.log to read after the fact matters most.
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
         // Tag the process with the shared AUMID before any window is shown, so the taskbar
         // entry the WPF window registers itself under matches the launcher stub's icon.
         try { SetCurrentProcessExplicitAppUserModelID(AppUserModelId); }
@@ -93,11 +100,6 @@ public partial class App : Application
         //      to a High IL object regardless of DACL. We lower the label to Low IL.
         _showSignal = CreateShowSignalCrossIL("BeetsBackup_ShowWindow_Signal");
         StartShowSignalListener();
-
-        // Global exception handlers
-        DispatcherUnhandledException += OnDispatcherUnhandledException;
-        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
-        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
         FileLogger.Info("═══ Application starting ═══");
 

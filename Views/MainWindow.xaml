@@ -839,12 +839,18 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock FontSize="10.5" Foreground="{DynamicResource SecondaryTextBrush}">
-                                        <Run Text="Used: "/><Run Text="{Binding TotalUsedDisplay, Mode=OneWay}" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                                    </TextBlock>
-                                    <TextBlock Grid.Column="1" FontSize="10.5" Foreground="{DynamicResource SecondaryTextBrush}">
-                                        <Run Text="Free: "/><Run Text="{Binding TotalFreeDisplay, Mode=OneWay}" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                                    </TextBlock>
+                                    <!-- Used / Free split into discrete TextBlocks: Run.Text's binding metadata
+                                         probes the writable path during attach even with Mode=OneWay, throwing
+                                         InvalidOperationException for read-only computed properties. TextBlock.Text
+                                         doesn't have that quirk. -->
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="Used: " FontSize="10.5" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                        <TextBlock Text="{Binding TotalUsedDisplay, Mode=OneWay}" FontSize="10.5" Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <TextBlock Text="Free: " FontSize="10.5" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                        <TextBlock Text="{Binding TotalFreeDisplay, Mode=OneWay}" FontSize="10.5" Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -944,19 +950,21 @@
                                     <TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock FontSize="11" VerticalAlignment="Center" Margin="0,0,18,0">
-                                        <Run Text="Last backup: " Foreground="{DynamicResource SecondaryTextBrush}"/>
-                                        <Run Text="{Binding LastBackupDisplay, Mode=OneWay}" Foreground="White"/>
-                                    </TextBlock>
+                                    <!-- Last backup label/value split into discrete TextBlocks; see Used/Free
+                                         comment above for the rationale (Run.Text writable-probe on attach). -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0">
+                                        <TextBlock Text="Last backup: " FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                        <TextBlock Text="{Binding LastBackupDisplay, Mode=OneWay}" FontSize="11" Foreground="White"/>
+                                    </StackPanel>
 
                                     <!-- Next backup -->
                                     <TextBlock Text="&#xE917;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBlock FontSize="11" VerticalAlignment="Center">
-                                        <Run Text="Next backup: " Foreground="{DynamicResource SecondaryTextBrush}"/>
-                                        <Run Text="{Binding NextBackupDisplay, Mode=OneWay}" Foreground="White"/>
-                                    </TextBlock>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Next backup: " FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                        <TextBlock Text="{Binding NextBackupDisplay, Mode=OneWay}" FontSize="11" Foreground="White"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
 

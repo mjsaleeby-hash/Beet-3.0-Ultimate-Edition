@@ -63,8 +63,27 @@ public partial class BackupLogEntry : ObservableObject
     /// <summary>Number of files skipped (already up-to-date).</summary>
     public int FilesSkipped { get; set; }
 
-    /// <summary>Number of files that failed to transfer.</summary>
+    /// <summary>Number of files that failed to transfer with a non-lock, non-disk-full error.</summary>
     public int FilesFailed { get; set; }
+
+    /// <summary>Number of files skipped because they were locked by another process.
+    /// Tracked separately from <see cref="FilesFailed"/> so the user can see which "failures"
+    /// are actually OS-level lock contention versus genuine errors.</summary>
+    public int FilesLocked { get; set; }
+
+    /// <summary>Number of directories that could not be created at the destination.
+    /// Tracked separately from <see cref="FilesFailed"/> so file-level failure ratios aren't
+    /// skewed by upstream directory creation errors.</summary>
+    public int DirectoriesFailed { get; set; }
+
+    /// <summary>Number of files that fell back to a VSS shadow copy after lock retries.</summary>
+    public int FilesCopiedViaVss { get; set; }
+
+    /// <summary>Number of files that failed because the destination disk filled up.</summary>
+    public int DiskFullErrors { get; set; }
+
+    /// <summary>Number of files whose post-copy SHA-256 hash did not match the source.</summary>
+    public int ChecksumMismatches { get; set; }
 
     /// <summary>Total bytes written to the destination.</summary>
     public long BytesTransferred { get; set; }
@@ -95,10 +114,39 @@ public partial class BackupLogEntry : ObservableObject
     /// <summary>Formatted timestamp for display in the log grid.</summary>
     public string TimestampDisplay => Timestamp.ToString("yyyy-MM-dd  HH:mm:ss");
 
-    /// <summary>Summary of transfer statistics, shown only when the backup is complete.</summary>
-    public string StatsDisplay => Status == BackupStatus.Complete
-        ? $"{FilesCopied} copied, {FilesSkipped} skipped{(FilesFailed > 0 ? $", {FilesFailed} failed" : "")}, {FormatBytes(BytesTransferred)}"
-        : string.Empty;
+    /// <summary>Summary of transfer statistics, shown only when the backup is complete.
+    /// Surfaces locked / directory / disk-full / checksum counters separately so the user can
+    /// distinguish lock contention from genuine errors. When the backup didn't actually
+    /// change anything (every file already up-to-date), reads "Up to date — N verified"
+    /// instead of "0 copied, N skipped" so the user doesn't read the row as a failed run.</summary>
+    public string StatsDisplay
+    {
+        get
+        {
+            if (Status != BackupStatus.Complete) return string.Empty;
+
+            var totalFailed = FilesFailed + DirectoriesFailed + DiskFullErrors + FilesLocked + ChecksumMismatches;
+            bool nothingChanged = FilesCopied == 0 && FilesCopiedViaVss == 0 && totalFailed == 0;
+            if (nothingChanged)
+            {
+                return FilesSkipped > 0
+                    ? $"Up to date — {FilesSkipped} verified"
+                    : "Up to date";
+            }
+
+            var parts = new List<string>();
+            if (FilesCopied > 0) parts.Add($"{FilesCopied} copied");
+            if (FilesCopiedViaVss > 0) parts.Add($"{FilesCopiedViaVss} via shadow copy");
+            if (FilesSkipped > 0) parts.Add($"{FilesSkipped} skipped");
+            if (FilesFailed > 0) parts.Add($"{FilesFailed} failed");
+            if (FilesLocked > 0) parts.Add($"{FilesLocked} locked");
+            if (DirectoriesFailed > 0) parts.Add($"{DirectoriesFailed} folders failed");
+            if (DiskFullErrors > 0) parts.Add($"{DiskFullErrors} disk-full");
+            if (ChecksumMismatches > 0) parts.Add($"{ChecksumMismatches} checksum mismatches");
+            parts.Add(FormatBytes(BytesTransferred));
+            return string.Join(", ", parts);
+        }
+    }
 
     /// <summary>Human-readable bytes transferred (e.g. "7.41 GB").</summary>
     public string BytesTransferredDisplay => FormatBytes(BytesTransferred);
