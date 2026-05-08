@@ -6,6 +6,15 @@ using System.Threading;
 namespace BeetsBackup.Services;
 
 /// <summary>
+/// Snapshot of the scheduler's running-job state at the moment a <see cref="SchedulerService.RunningJobChanged"/>
+/// event fires. Consumers (e.g. MainViewModel) cache this on the UI thread and use it to drive
+/// computed properties — without the snapshot they'd re-query <see cref="SchedulerService.IsRunningAnyJob"/>
+/// inside a BeginInvoke closure, by which time a fast job may have already finished and the
+/// re-read would show false right after an event meant to indicate "started", flickering the UI.
+/// </summary>
+public readonly record struct SchedulerRunningState(bool IsRunningAnyJob, bool IsRunningJobPaused);
+
+/// <summary>
 /// Background scheduler that checks for due backup jobs every minute and executes them.
 /// Also provides job CRUD operations, pause/resume control, and retry logic.
 /// </summary>
@@ -22,6 +31,15 @@ public sealed class SchedulerService : IDisposable
     /// pause/stop controls cancel an in-progress scheduled run — previously scheduled backups
     /// could not be cancelled at all because no token was passed to the transfer call.</summary>
     private readonly Dictionary<Guid, CancellationTokenSource> _runningCts = new();
+
+    /// <summary>Job ids currently dispatched (Task.Run launched but ExecuteJobAsync not yet
+    /// finished). Used by the minute tick and missed-job dispatch to skip jobs that are still
+    /// running — without this, a long-running backup would be re-dispatched every tick (the
+    /// cross-process mutex catches it, but it's wasteful churn). NextRun is now advanced in
+    /// <see cref="ExecuteJobAsync"/>'s finally so it reflects actual completion time, not the
+    /// dispatch time, which means we can no longer rely on "NextRun is in the future" as the
+    /// claim mechanism.</summary>
+    private readonly HashSet<Guid> _dispatchedJobIds = new();
     private Task? _runTask;
 
     /// <summary>UTC timestamp of the most recent self-initiated write to <c>scheduled_jobs.json</c>.
@@ -45,6 +63,14 @@ public sealed class SchedulerService : IDisposable
     /// (which is being torn down).</summary>
     private volatile bool _disposed;
 
+    /// <summary>When true, <see cref="Load"/> skips <see cref="StartWatcher"/>. The headless
+    /// --run-job path is a one-shot process that advances NextRun once and exits — a watcher
+    /// there serves no purpose and only adds a shutdown failure mode.</summary>
+    private bool _headlessMode;
+
+    /// <summary>Marks this scheduler as headless. Must be called before <see cref="Load"/>.</summary>
+    public void MarkHeadless() => _headlessMode = true;
+
     /// <summary>Last error message produced by the scheduler loop, if any.</summary>
     public string? LastSchedulerError { get; private set; }
 
@@ -67,8 +93,23 @@ public sealed class SchedulerService : IDisposable
     /// <summary>Raised whenever the running-scheduled-job set transitions: a job starts,
     /// ends, is paused, or is resumed. Lets the main window's toolbar pause/stop buttons
     /// stay in sync with scheduled runs even though those runs originate from the scheduler
-    /// rather than from the manual transfer flow.</summary>
-    public event Action? RunningJobChanged;
+    /// rather than from the manual transfer flow. The <see cref="SchedulerRunningState"/>
+    /// payload is captured under <see cref="_jobsLock"/> at fire time so consumers don't race
+    /// the next state transition when their handler runs on the dispatcher.</summary>
+    public event Action<SchedulerRunningState>? RunningJobChanged;
+
+    /// <summary>Captures the current running-job state under the lock — used as the payload
+    /// for every <see cref="RunningJobChanged"/> firing.</summary>
+    private SchedulerRunningState SnapshotRunningState()
+    {
+        lock (_jobsLock)
+        {
+            bool anyPaused = false;
+            foreach (var gate in _pauseGates.Values)
+                if (!gate.IsSet) { anyPaused = true; break; }
+            return new SchedulerRunningState(_pauseGates.Count > 0, anyPaused);
+        }
+    }
 
     /// <summary>True if at least one scheduled job is currently executing.</summary>
     public bool IsRunningAnyJob
@@ -111,7 +152,7 @@ public sealed class SchedulerService : IDisposable
                 if (gate.IsSet) { gate.Reset(); changed = true; }
             }
         }
-        if (changed) RunningJobChanged?.Invoke();
+        if (changed) RunningJobChanged?.Invoke(SnapshotRunningState());
     }
 
     /// <summary>Resumes every paused scheduled job.</summary>
@@ -125,7 +166,7 @@ public sealed class SchedulerService : IDisposable
                 if (!gate.IsSet) { gate.Set(); changed = true; }
             }
         }
-        if (changed) RunningJobChanged?.Invoke();
+        if (changed) RunningJobChanged?.Invoke(SnapshotRunningState());
     }
 
     /// <summary>Cancels every running scheduled job. Each job's <see cref="CancellationToken"/>
@@ -150,7 +191,7 @@ public sealed class SchedulerService : IDisposable
             }
             any = _runningCts.Count > 0;
         }
-        if (any) RunningJobChanged?.Invoke();
+        if (any) RunningJobChanged?.Invoke(SnapshotRunningState());
     }
 
     /// <summary>
@@ -172,7 +213,7 @@ public sealed class SchedulerService : IDisposable
     public void Load()
     {
         LoadJobs();
-        StartWatcher();
+        if (!_headlessMode) StartWatcher();
     }
 
     /// <summary>Starts the background scheduler loop (idempotent).</summary>
@@ -191,26 +232,21 @@ public sealed class SchedulerService : IDisposable
         }
     }
 
-    /// <summary>Fires off missed backup jobs on background threads and advances their next-run times.</summary>
+    /// <summary>Fires off missed backup jobs on background threads. Each task's finally block in
+    /// <see cref="ExecuteJobAsync"/> advances NextRun and persists — no longer done here so the
+    /// persisted timing reflects when the run actually ended, not when it was queued.</summary>
     public void RunMissedJobs(List<ScheduledJob> jobs)
     {
         foreach (var job in jobs)
         {
             FileLogger.Info($"Running missed job: '{job.Name}'");
-            // Snapshot job data before launching background task to avoid race conditions
             var snapshot = SnapshotJob(job);
+            lock (_jobsLock) { _dispatchedJobIds.Add(job.Id); }
             _ = Task.Run(async () =>
             {
                 try { await ExecuteJobAsync(snapshot, job); }
                 catch (Exception ex) { FileLogger.LogException($"Missed job failed: '{job.Name}'", ex); }
             });
-            lock (_jobsLock)
-            {
-                job.UpdateNextRun();
-                if (!job.IsRecurring)
-                    job.IsEnabled = false;
-                SaveJobs();
-            }
         }
         JobsChanged?.Invoke();
     }
@@ -343,16 +379,9 @@ public sealed class SchedulerService : IDisposable
         }
 
         var snapshot = SnapshotJob(job);
+        lock (_jobsLock) { _dispatchedJobIds.Add(job.Id); }
         await ExecuteJobAsync(snapshot, job).ConfigureAwait(false);
-
-        // Advance timing so Task Scheduler and the in-process timer agree about the next run.
-        lock (_jobsLock)
-        {
-            job.UpdateNextRun();
-            if (!job.IsRecurring)
-                job.IsEnabled = false;
-            SaveJobs();
-        }
+        // ExecuteJobAsync's finally advances NextRun, removes from _dispatchedJobIds, saves.
         return true;
     }
 
@@ -377,25 +406,24 @@ public sealed class SchedulerService : IDisposable
                 var now = DateTime.Now;
                 lock (_jobsLock)
                 {
-                    dueJobs = _jobs.Where(j => j.IsEnabled && j.NextRun <= now).ToList();
+                    // Skip jobs still running from a prior tick — _dispatchedJobIds is the
+                    // claim flag. Without this filter the tick re-dispatches every minute and
+                    // the cross-process mutex absorbs the duplicate (wasteful but correct).
+                    dueJobs = _jobs.Where(j => j.IsEnabled
+                                               && j.NextRun <= now
+                                               && !_dispatchedJobIds.Contains(j.Id)).ToList();
+                    foreach (var job in dueJobs)
+                        _dispatchedJobIds.Add(job.Id);
                 }
 
                 foreach (var job in dueJobs)
                 {
-                    // Snapshot job data before launching background task to avoid race conditions
                     var snapshot = SnapshotJob(job);
                     _ = Task.Run(async () =>
                     {
                         try { await ExecuteJobAsync(snapshot, job); }
                         catch (Exception jobEx) { FileLogger.LogException($"Scheduled job failed: '{job.Name}'", jobEx); }
                     });
-                    lock (_jobsLock)
-                    {
-                        job.UpdateNextRun();
-                        if (!job.IsRecurring)
-                            job.IsEnabled = false;
-                        SaveJobs();
-                    }
                 }
             }
             catch (Exception ex)
@@ -444,6 +472,9 @@ public sealed class SchedulerService : IDisposable
         {
             FileLogger.Info($"Skipping '{snapshot.Name}' — another process or thread is already running this job.");
             jobMutex.Dispose();
+            // Mutex-skip path bypasses the main try-finally, so release the dispatch claim here
+            // ourselves — otherwise the next tick would still see this job as "dispatched".
+            lock (_jobsLock) { _dispatchedJobIds.Remove(originalJob.Id); }
             return;
         }
 
@@ -475,7 +506,7 @@ public sealed class SchedulerService : IDisposable
             _pauseGates[logEntry.Id] = pauseGate;
             _runningCts[logEntry.Id] = runCts;
         }
-        RunningJobChanged?.Invoke();
+        RunningJobChanged?.Invoke(SnapshotRunningState());
 
         try
         {
@@ -554,10 +585,19 @@ public sealed class SchedulerService : IDisposable
                 pauseGate.Dispose();
                 _runningCts.Remove(logEntry.Id);
                 runCts.Dispose();
+                _dispatchedJobIds.Remove(originalJob.Id);
                 originalJob.LastRun = DateTime.Now;
+                // Advance NextRun (and disable one-shot jobs) *here*, after the run completes,
+                // so the persisted timing matches the actual run timing. Doing it earlier — in
+                // the caller before await — left a window where Task Scheduler could see a
+                // post-advance NextRun while the foreground job was still running, causing
+                // duplicate runs in some cross-process timing edge cases.
+                originalJob.UpdateNextRun();
+                if (!originalJob.IsRecurring)
+                    originalJob.IsEnabled = false;
                 SaveJobs();
             }
-            RunningJobChanged?.Invoke();
+            RunningJobChanged?.Invoke(SnapshotRunningState());
             if (jobMutex != null)
             {
                 try { jobMutex.ReleaseMutex(); } catch { /* never owned, or already released */ }
@@ -602,7 +642,7 @@ public sealed class SchedulerService : IDisposable
                 changed = true;
             }
         }
-        if (changed) RunningJobChanged?.Invoke();
+        if (changed) RunningJobChanged?.Invoke(SnapshotRunningState());
     }
 
     /// <summary>Resumes a paused job by signaling its pause gate.</summary>
@@ -617,7 +657,7 @@ public sealed class SchedulerService : IDisposable
                 changed = true;
             }
         }
-        if (changed) RunningJobChanged?.Invoke();
+        if (changed) RunningJobChanged?.Invoke(SnapshotRunningState());
     }
 
     /// <summary>Returns whether the specified running job is currently paused.</summary>

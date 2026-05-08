@@ -57,36 +57,61 @@ public partial class BackupLogEntry : ObservableObject
     [ObservableProperty] private int _filesProcessed;
     [ObservableProperty] private int _totalFiles;
 
+    // Counter fields below back StatsDisplay. They're declared as observable with
+    // NotifyPropertyChangedFor so the log dialog refreshes the moment any counter
+    // changes — without this, StatsDisplay only updated when Status changed, which
+    // forced UpdateStats to assign Status last (a brittle ordering requirement).
+
     /// <summary>Number of files successfully copied.</summary>
-    public int FilesCopied { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _filesCopied;
 
     /// <summary>Number of files skipped (already up-to-date).</summary>
-    public int FilesSkipped { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _filesSkipped;
 
     /// <summary>Number of files that failed to transfer with a non-lock, non-disk-full error.</summary>
-    public int FilesFailed { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _filesFailed;
 
     /// <summary>Number of files skipped because they were locked by another process.
     /// Tracked separately from <see cref="FilesFailed"/> so the user can see which "failures"
     /// are actually OS-level lock contention versus genuine errors.</summary>
-    public int FilesLocked { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _filesLocked;
 
     /// <summary>Number of directories that could not be created at the destination.
     /// Tracked separately from <see cref="FilesFailed"/> so file-level failure ratios aren't
     /// skewed by upstream directory creation errors.</summary>
-    public int DirectoriesFailed { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _directoriesFailed;
 
     /// <summary>Number of files that fell back to a VSS shadow copy after lock retries.</summary>
-    public int FilesCopiedViaVss { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _filesCopiedViaVss;
 
     /// <summary>Number of files that failed because the destination disk filled up.</summary>
-    public int DiskFullErrors { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _diskFullErrors;
 
     /// <summary>Number of files whose post-copy SHA-256 hash did not match the source.</summary>
-    public int ChecksumMismatches { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    private int _checksumMismatches;
 
     /// <summary>Total bytes written to the destination.</summary>
-    public long BytesTransferred { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatsDisplay))]
+    [NotifyPropertyChangedFor(nameof(BytesTransferredDisplay))]
+    [NotifyPropertyChangedFor(nameof(SizeOrStatusDisplay))]
+    private long _bytesTransferred;
 
     /// <summary>Detailed per-file error records.</summary>
     public List<FileError> FileErrors { get; set; } = new();

@@ -43,7 +43,7 @@ public class SchedulerServiceTests
     {
         using var scheduler = BuildScheduler();
         int eventFireCount = 0;
-        scheduler.RunningJobChanged += () => eventFireCount++;
+        scheduler.RunningJobChanged += _ => eventFireCount++;
 
         scheduler.PauseRunning();
         scheduler.ResumeRunning();

@@ -82,7 +82,10 @@ public sealed class BackupLogService : IDisposable
     public void Load()
     {
         ReloadFromDisk(applyHousekeeping: true);
-        StartWatcher();
+        // Headless --run-job is a one-shot writer process. There's no UI to keep in sync
+        // with external edits, and the watcher's thread-pool callbacks just create a
+        // shutdown failure mode (the process is about to Environment.Exit).
+        if (!_headlessMode) StartWatcher();
     }
 
     /// <summary>

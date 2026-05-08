@@ -91,6 +91,23 @@ public partial class MainWindow : Window
 
     private void QuitApplication()
     {
+        // Prompt before tearing down a transfer in flight. OnExit's bounded 5-second dispose
+        // will hard-cancel any running scheduled job, mid-write, with no warning otherwise —
+        // the in-progress file is left partial and the user loses the run record. A modal
+        // here gives them a chance to wait it out instead of pulling the rug.
+        if (Vm.IsTransferring)
+        {
+            var result = MessageBox.Show(
+                this,
+                "A backup is currently in progress. Quitting now will cancel it and any " +
+                "in-progress file copy may be left partial.\n\nQuit anyway?",
+                "Backup in progress",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes) return;
+        }
+
         _isReallyClosing = true;
         _trayIcon?.Dispose();
         _trayIcon = null;

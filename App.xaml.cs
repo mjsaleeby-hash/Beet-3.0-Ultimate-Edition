@@ -199,6 +199,8 @@ public partial class App : Application
             log.Load();
 
             var scheduler = Services.GetRequiredService<SchedulerService>();
+            // Headless = one-shot. No watcher needed; pairs with BackupLogService.MarkHeadless above.
+            scheduler.MarkHeadless();
             scheduler.Load();
             // Run the async work on a thread-pool thread rather than blocking the WPF dispatcher
             // directly. Without the outer Task.Run, any await inside RunJobByIdAsync that captured

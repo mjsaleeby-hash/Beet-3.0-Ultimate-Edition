@@ -269,14 +269,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(IsPaused))]
     private bool _isManuallyPaused;
 
+    // Cached scheduler state, refreshed on every RunningJobChanged event using the snapshot
+    // captured at fire time (under _jobsLock). Reading this instead of _scheduler.IsRunningAnyJob
+    // means a fast scheduled job that completes before the dispatcher drains its event closure
+    // doesn't flicker the toolbar — the closure sees the state as of the firing, not "now".
+    private bool _cachedSchedulerRunning;
+    private bool _cachedSchedulerPaused;
+
     /// <summary>True if either a manual transfer or any scheduled backup is currently running.
     /// Drives <c>IsEnabled</c> on the toolbar pause/stop buttons and the visibility of the
     /// transfer progress banner.</summary>
-    public bool IsTransferring => IsManuallyTransferring || _scheduler.IsRunningAnyJob;
+    public bool IsTransferring => IsManuallyTransferring || _cachedSchedulerRunning;
 
     /// <summary>True if the active transfer (manual or scheduled) is paused. Drives the
     /// pause/resume button's icon swap.</summary>
-    public bool IsPaused => IsManuallyPaused || _scheduler.IsRunningJobPaused;
+    public bool IsPaused => IsManuallyPaused || _cachedSchedulerPaused;
 
     [ObservableProperty] private int _transferProgressPercent;
     [ObservableProperty] private string _transferEta = string.Empty;
@@ -312,6 +319,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _scheduler.SchedulerError += OnSchedulerError;
         _scheduler.JobsChanged += OnSchedulerJobsChanged;
         _scheduler.RunningJobChanged += OnSchedulerRunningJobChanged;
+        // Seed the cache so IsTransferring is correct before the first event fires.
+        _cachedSchedulerRunning = _scheduler.IsRunningAnyJob;
+        _cachedSchedulerPaused = _scheduler.IsRunningJobPaused;
         LoadDrives();
         Drives.CollectionChanged += (_, _) => NotifyCapacityPropertiesChanged();
 
@@ -384,20 +394,28 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// pause/stop buttons enable/disable and the icon swap correctly reflect scheduled runs.
     /// Also resets the homepage progress percent when scheduled runs end (and no manual
     /// transfer is active) so a stale 100% doesn't carry into the next banner appearance.
+    /// The <paramref name="state"/> snapshot was captured under the scheduler's lock at fire
+    /// time; we trust it over a fresh re-query to avoid UI flicker on fast jobs.
     /// </summary>
-    private void OnSchedulerRunningJobChanged()
+    private void OnSchedulerRunningJobChanged(SchedulerRunningState state)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        Action update = () =>
+        if (dispatcher == null) return; // shutdown — bindings are torn down anyway
+
+        void Apply()
         {
+            _cachedSchedulerRunning = state.IsRunningAnyJob;
+            _cachedSchedulerPaused = state.IsRunningJobPaused;
             OnPropertyChanged(nameof(IsTransferring));
             OnPropertyChanged(nameof(IsPaused));
             if (!IsTransferring) TransferProgressPercent = 0;
-        };
-        if (dispatcher != null && !dispatcher.CheckAccess())
-            dispatcher.BeginInvoke(update);
-        else
-            update();
+        }
+
+        // Always marshal off-thread invocations: the scheduler raises this from worker threads,
+        // and OnPropertyChanged needs to land on the UI thread for WPF binding consumers that
+        // mutate a DependencyObject. Inline-when-on-UI is fine and saves a dispatcher hop.
+        if (dispatcher.CheckAccess()) Apply();
+        else dispatcher.BeginInvoke((Action)Apply);
     }
 
     private void NotifySchedulePropertiesChanged()
