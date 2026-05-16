@@ -359,7 +359,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         else if (e.PropertyName == nameof(BackupLogEntry.ProgressPercent)
                  && !IsManuallyTransferring
                  && sender is BackupLogEntry entry
-                 && _scheduler.RunningJobLogIds.Contains(entry.Id))
+                 && _scheduler.IsLogIdRunning(entry.Id))
         {
             // Mirror the running scheduled job's progress into the homepage banner. The banner
             // is visible whenever IsTransferring is true (manual or scheduled), but the percent
@@ -1598,6 +1598,36 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// the run aborted due to insufficient disk space.</returns>
     public async Task<bool> RunWizardBackupAsync(ScheduledJob job)
     {
+        // Cross-process per-job lock — same Global\BeetsBackup_Job_{id} name SchedulerService
+        // uses in ExecuteJobAsync. Without this, a user clicking Back Up Now while Windows Task
+        // Scheduler also fires the same job at its scheduled minute races: both run, and a
+        // compressed job's archive name (built from DateTime.Now to second resolution) collides
+        // — one wins, the other lands as "name (2).zip". Acquire here; release after the run.
+        var mutexName = $@"Global\BeetsBackup_Job_{job.Id:N}";
+        Mutex? jobMutex = null;
+        bool gotLock = false;
+        try
+        {
+            jobMutex = new Mutex(initiallyOwned: false, name: mutexName);
+            try { gotLock = jobMutex.WaitOne(TimeSpan.Zero); }
+            catch (AbandonedMutexException) { gotLock = true; }
+        }
+        catch (Exception ex)
+        {
+            // Mutex creation failure (out of handles, ACL issue) is rare — fall through and run
+            // without the cross-process guard, matching SchedulerService's policy.
+            FileLogger.LogException($"Could not create job mutex for '{job.Name}'; running without cross-process lock", ex);
+            jobMutex?.Dispose();
+            jobMutex = null;
+        }
+        if (jobMutex != null && !gotLock)
+        {
+            FileLogger.Info($"Back up now: skipping '{job.Name}' — already running in another process or thread.");
+            ToastNotifier.Notify($"Backup already running: {job.Name}", "Another process or thread is already running this job.", ToastKind.Warning);
+            jobMutex.Dispose();
+            return false;
+        }
+
         BeginTransfer();
         StatusMessage = $"Backup: {job.Name}...";
         FileLogger.Info($"Backup started: {job.Name} — {job.SourcePaths.Count} source(s) → {job.DestinationPath} (mode={job.TransferMode})");
@@ -1652,6 +1682,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ToastNotifier.Notify($"Backup failed: {job.Name}", "Not enough disk space on the destination drive.", ToastKind.Error);
             System.Windows.MessageBox.Show("Not enough disk space on the destination drive. Please free up space or choose a different destination.", "Beets Backup", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
             return false;
+        }
+        finally
+        {
+            if (jobMutex != null)
+            {
+                if (gotLock) { try { jobMutex.ReleaseMutex(); } catch { /* never owned, or already released */ } }
+                jobMutex.Dispose();
+            }
         }
     }
 

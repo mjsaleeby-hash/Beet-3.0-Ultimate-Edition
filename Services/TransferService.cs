@@ -173,7 +173,7 @@ public sealed class TransferService
                             FileLogger.Warn($"Mirror cleanup skipped for empty source: {source}");
                             continue;
                         }
-                        MirrorCleanup(source, destSubDir, progress, result, cancellationToken);
+                        MirrorCleanup(source, destSubDir, excludeSet, progress, result, cancellationToken);
                     }
                 }
             }
@@ -913,11 +913,38 @@ public sealed class TransferService
         }
         else
         {
-            _fs.CopyFile(source, dest, stripPermissions);
+            // For files large enough that the per-file granularity of the parallel work loop
+            // leaves the status text frozen for many seconds, attach a CopyProgressRoutine
+            // and emit periodic "Copying foo.iso: 23%" updates. 256 MB threshold is a
+            // compromise — small enough to catch ISO/VM-image workloads, large enough that
+            // typical user-file backups don't spam progress callbacks.
+            Action<long, long>? onProgress = null;
+            if (progress != null && fileSize >= LargeFileProgressThresholdBytes)
+            {
+                var name = Path.GetFileName(source);
+                int lastReportedPct = -1;
+                onProgress = (transferred, total) =>
+                {
+                    if (total <= 0) return;
+                    var pct = (int)(transferred * 100 / total);
+                    // Throttle to whole-percent transitions so we don't spam the progress channel.
+                    if (pct != lastReportedPct)
+                    {
+                        lastReportedPct = pct;
+                        progress.Report($"Copying {name}: {pct}%");
+                    }
+                };
+            }
+            _fs.CopyFile(source, dest, stripPermissions, onProgress);
             result.IncrementFilesCopied();
             result.AddBytesTransferred(fileSize);
         }
     }
+
+    /// <summary>Files at or above this size get within-file progress callbacks routed through
+    /// CopyFileEx's CopyProgressRoutine. Below the threshold, the per-file granularity of the
+    /// parallel work loop is fast enough that an extra progress channel is just noise.</summary>
+    private const long LargeFileProgressThresholdBytes = 256L * 1024 * 1024;
 
     /// <summary>
     /// Copies a file with bandwidth throttling using chunked reads with timed delays.
@@ -1019,6 +1046,7 @@ public sealed class TransferService
     }
 
     private static void MirrorCleanup(string sourceDir, string destDir,
+        IReadOnlyList<string>? exclusions,
         IProgress<string>? progress, TransferResult result, CancellationToken ct)
     {
         // Delete destination files that don't exist in source
@@ -1026,6 +1054,13 @@ public sealed class TransferService
         {
             ct.ThrowIfCancellationRequested();
             var name = Path.GetFileName(destFile);
+
+            // Excluded names are off-limits to cleanup. The copy phase already skipped them,
+            // so the dest copy is intentional carry-over — deleting it would silently erase data
+            // the user told us to leave alone.
+            if (exclusions != null && IsExcluded(name, exclusions))
+                continue;
+
             var sourceFile = Path.Combine(sourceDir, name);
             if (!File.Exists(sourceFile))
             {
@@ -1053,10 +1088,16 @@ public sealed class TransferService
             if (name.Equals(VersioningOptions.VersionsFolderName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            // Excluded subtree — neither recurse into it nor delete it. The copy phase pruned
+            // the matching source subtree from enumeration, so without this guard cleanup would
+            // walk the dest tree alone and slowly drain it into the Recycle Bin.
+            if (exclusions != null && IsExcluded(name, exclusions))
+                continue;
+
             var sourceSub = Path.Combine(sourceDir, name);
             if (Directory.Exists(sourceSub))
             {
-                MirrorCleanup(sourceSub, destSub, progress, result, ct);
+                MirrorCleanup(sourceSub, destSub, exclusions, progress, result, ct);
             }
             else
             {

@@ -31,9 +31,13 @@ public sealed class BackupLogService : IDisposable
     /// </summary>
     private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(5);
 
-    /// <summary>UTC timestamp of the most recent self-initiated write. The cross-process file
-    /// watcher uses this to suppress reloads triggered by our own SaveNow.</summary>
-    private DateTime _lastSelfWrite = DateTime.MinValue;
+    /// <summary>UTC ticks of the most recent self-initiated write. The cross-process file
+    /// watcher uses this to suppress reloads triggered by our own SaveNow. Stored as a long
+    /// and accessed via Volatile.Read/Write so the watcher thread reliably observes the
+    /// writer's update — DateTime is two longs (no atomic write guarantee), and even with an
+    /// atomic 8-byte type the .NET memory model does not promise cross-thread visibility
+    /// without a barrier.</summary>
+    private long _lastSelfWriteTicks;
 
     /// <summary>Window after a self-save during which file-change events are ignored. File.Replace
     /// fires multiple events (rename, modify, delete on temp/.bak) and we don't want to thrash a
@@ -192,7 +196,7 @@ public sealed class BackupLogService : IDisposable
     private void OnLogFileChanged(object sender, FileSystemEventArgs e)
     {
         if (_disposed) return;
-        if (DateTime.UtcNow - _lastSelfWrite < SelfWriteCooldown) return;
+        if (DateTime.UtcNow.Ticks - Volatile.Read(ref _lastSelfWriteTicks) < SelfWriteCooldown.Ticks) return;
 
         // Cancel any pending reload and schedule a new one — coalesces the rename/write/delete
         // burst that File.Replace produces into a single ReloadFromDisk call. Cancel may race
@@ -420,7 +424,7 @@ public sealed class BackupLogService : IDisposable
         // Mark before the write begins, not after — the watcher event for our own write may fire
         // before File.Replace returns. Setting this first ensures the cooldown check on the
         // watcher callback path catches every event from our own write burst.
-        _lastSelfWrite = DateTime.UtcNow;
+        Volatile.Write(ref _lastSelfWriteTicks, DateTime.UtcNow.Ticks);
         try
         {
             var dir = Path.GetDirectoryName(LogPath)!;

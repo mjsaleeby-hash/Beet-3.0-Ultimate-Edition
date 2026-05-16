@@ -55,6 +55,12 @@ public partial class App : Application
         // Wire up global exception handlers FIRST so they cover both the UI path and the
         // headless --run-job path. Scheduled headless backups crash unattended, so they're
         // the case where having a crash_dump.log to read after the fact matters most.
+        //
+        // Headless caveat: DispatcherUnhandledException only fires for exceptions surfaced
+        // through Application.Run's message loop. The --run-job path below never calls Run
+        // (it does Task.Run(...).GetAwaiter().GetResult() then Environment.Exit), so for
+        // scheduled runs only AppDomain.UnhandledException and UnobservedTaskException are
+        // load-bearing — the dispatcher handler is wired here purely for the foreground app.
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
@@ -75,8 +81,20 @@ public partial class App : Application
             return;
         }
 
-        // Single-instance guard — if already running, signal the first instance to show its window
-        _singleInstanceMutex = new Mutex(true, "BeetsBackup_SingleInstance_Mutex", out bool createdNew);
+        // Single-instance guard — if already running, signal the first instance to show its window.
+        // AbandonedMutexException fires when a previous instance terminated without releasing the
+        // mutex (crash, kill, BSOD). The OS hands us ownership anyway, so treat it as if we won
+        // the createdNew race — otherwise a crash leaves the user unable to relaunch.
+        bool createdNew;
+        try
+        {
+            _singleInstanceMutex = new Mutex(true, "BeetsBackup_SingleInstance_Mutex", out createdNew);
+        }
+        catch (AbandonedMutexException)
+        {
+            _singleInstanceMutex = new Mutex(true, "BeetsBackup_SingleInstance_Mutex");
+            createdNew = true;
+        }
         if (!createdNew)
         {
             try

@@ -42,9 +42,12 @@ public sealed class SchedulerService : IDisposable
     private readonly HashSet<Guid> _dispatchedJobIds = new();
     private Task? _runTask;
 
-    /// <summary>UTC timestamp of the most recent self-initiated write to <c>scheduled_jobs.json</c>.
-    /// The cross-process watcher uses this to suppress reloads triggered by our own SaveJobs.</summary>
-    private DateTime _lastSelfWrite = DateTime.MinValue;
+    /// <summary>UTC ticks of the most recent self-initiated write to <c>scheduled_jobs.json</c>.
+    /// The cross-process watcher uses this to suppress reloads triggered by our own SaveJobs.
+    /// Stored as a long and accessed via Volatile.Read/Write so the watcher thread reliably
+    /// observes the writer's update — the .NET memory model does not promise cross-thread
+    /// visibility without a barrier.</summary>
+    private long _lastSelfWriteTicks;
 
     /// <summary>Window after a self-save during which file-change events are ignored. File.Replace
     /// fires multiple events; this avoids self-thrashing on the watcher.</summary>
@@ -138,6 +141,16 @@ public sealed class SchedulerService : IDisposable
     public IReadOnlyList<Guid> RunningJobLogIds
     {
         get { lock (_jobsLock) { return _pauseGates.Keys.ToList(); } }
+    }
+
+    /// <summary>
+    /// Lock-protected membership check that avoids the per-tick List allocation in
+    /// <see cref="RunningJobLogIds"/>. Use this from hot paths like progress-tick handlers;
+    /// reserve <see cref="RunningJobLogIds"/> for callers that genuinely need the full snapshot.
+    /// </summary>
+    public bool IsLogIdRunning(Guid logEntryId)
+    {
+        lock (_jobsLock) { return _pauseGates.ContainsKey(logEntryId); }
     }
 
     /// <summary>Pauses every scheduled job that is currently running. Used by the main
@@ -739,21 +752,59 @@ public sealed class SchedulerService : IDisposable
             {
                 lock (_jobsLock)
                 {
-                    // Replace, not append — this method is also the reload path for the file
-                    // watcher when another process updates scheduled_jobs.json.
+                    // Merge by Id rather than Clear+AddRange — in-flight ExecuteJobAsync tasks
+                    // hold references to existing ScheduledJob instances (captured as
+                    // originalJob) and mutate LastRun/NextRun in their finally blocks. If we
+                    // replaced the list outright, those references would no longer be in _jobs
+                    // when SaveJobs ran, and the headless process's NextRun update could be
+                    // clobbered. Mutating existing instances in place keeps every reference
+                    // pointing at a live entry.
+                    var existingById = _jobs.ToDictionary(j => j.Id);
                     _jobs.Clear();
-                    _jobs.AddRange(loaded);
+                    foreach (var incoming in loaded)
+                    {
+                        if (existingById.TryGetValue(incoming.Id, out var existing))
+                        {
+                            // Copy every field except Id, which is the merge key.
+                            existing.Name = incoming.Name;
+                            existing.SourcePaths = incoming.SourcePaths;
+                            existing.DestinationPath = incoming.DestinationPath;
+                            existing.StripPermissions = incoming.StripPermissions;
+                            existing.VerifyChecksums = incoming.VerifyChecksums;
+                            existing.TransferMode = incoming.TransferMode;
+                            existing.ExclusionFilters = incoming.ExclusionFilters;
+                            existing.ThrottleMBps = incoming.ThrottleMBps;
+                            existing.EnableVersioning = incoming.EnableVersioning;
+                            existing.MaxVersions = incoming.MaxVersions;
+                            existing.EnableCompression = incoming.EnableCompression;
+                            existing.IsRecurring = incoming.IsRecurring;
+                            existing.RecurInterval = incoming.RecurInterval;
+                            existing.NextRun = incoming.NextRun;
+                            existing.LastRun = incoming.LastRun;
+                            existing.IsEnabled = incoming.IsEnabled;
+                            _jobs.Add(existing);
+                        }
+                        else
+                        {
+                            _jobs.Add(incoming);
+                        }
+                    }
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Silent failure here used to disappear the user's entire schedule on a corrupt
+            // scheduled_jobs.json. Logging gives them (and us) a trail in operational.log.
+            FileLogger.LogException($"Failed to load scheduled jobs from {JobsPath}", ex);
+        }
     }
 
     private void SaveJobs()
     {
         // Mark before the write begins, not after — watcher events from this write may fire
         // before File.Replace returns, and we want every one of them to land inside the cooldown.
-        _lastSelfWrite = DateTime.UtcNow;
+        Volatile.Write(ref _lastSelfWriteTicks, DateTime.UtcNow.Ticks);
         try
         {
             var dir = Path.GetDirectoryName(JobsPath)!;
@@ -766,7 +817,10 @@ public sealed class SchedulerService : IDisposable
             else
                 File.Move(tmpPath, JobsPath);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            FileLogger.LogException($"Failed to save scheduled jobs to {JobsPath}", ex);
+        }
     }
 
     /// <summary>
@@ -804,7 +858,7 @@ public sealed class SchedulerService : IDisposable
     private void OnJobsFileChanged(object sender, FileSystemEventArgs e)
     {
         if (_disposed) return;
-        if (DateTime.UtcNow - _lastSelfWrite < SelfWriteCooldown) return;
+        if (DateTime.UtcNow.Ticks - Volatile.Read(ref _lastSelfWriteTicks) < SelfWriteCooldown.Ticks) return;
 
         // Cancel may race with Dispose; ObjectDisposedException is benign here.
         try { _reloadCts?.Cancel(); }

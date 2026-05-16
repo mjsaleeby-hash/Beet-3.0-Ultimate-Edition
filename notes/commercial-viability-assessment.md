@@ -103,53 +103,53 @@
 ### 14. Locked File Counter (VSS Alternative)
 - **Problem:** Locked files (Outlook `.ost`, databases) throw `IOException` and are silently skipped.
 - **Fix:** Catch locked-file `IOException` (HResult `0x80070020`), track `FilesLocked` counter in `TransferResult`, show prominently in completion message.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — `FilesLocked` lives on `TransferResult`, plumbed through `TransferService` and `BackupLogEntry`.
 
 ### 15. Crash Logger
 - **File:** `App.xaml.cs`
 - **Problem:** No `DispatcherUnhandledException`, `AppDomain.UnhandledException`, or `TaskScheduler.UnobservedTaskException` handlers.
 - **Fix:** Add all three; write to `%LocalAppData%\Beet's Backup\crash_log.txt`.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — `App.OnStartup` wires all three handlers; `FileLogger.WriteCrashDump` writes to `crash_dump.log`.
 
 ### 16. Operational Log File
 - **Problem:** No developer-facing trace of which files failed; no exception stack traces.
 - **Fix:** Add `FileLogger` service appending to `operational.log` (10 MB cap, single rotation).
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — `Services/FileLogger.cs` writes to `%LocalAppData%\Beet's Backup\operational.log`.
 
 ### 17. SettingsService Self-Serialization
 - **File:** `SettingsService.cs`, line 33
 - **Problem:** Serializes `this` — fragile if fields are ever added.
 - **Fix:** Extract a `SettingsData` record/POCO.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — `SettingsData` POCO at `Services/SettingsService.cs:9`; serializer reads/writes that type.
 
 ### 18. Replace WinForms FolderBrowserDialog
 - **File:** `ScheduleDialogViewModel.cs`, line 46
 - **Problem:** Uses `System.Windows.Forms.FolderBrowserDialog`, pulling in the entire WinForms assembly.
 - **Fix:** Use .NET 8's `Microsoft.Win32.OpenFolderDialog`.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — `UseWindowsForms` removed from csproj; `Microsoft.Win32.OpenFolderDialog` in use.
 
 ### 19. ClearLog Not Persisting
 - **File:** `LogDialog.xaml.cs`, line 22
 - **Problem:** `Entries.Clear()` does not save to disk afterward.
 - **Fix:** Call `Save()` after `Clear()`, or expose a `Clear()` method on `BackupLogService`.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — `BackupLogService.Clear()` calls `SaveNow()`; dialog calls the service method.
 
 ### 20. Assembly Version Metadata
 - **Problem:** No `AssemblyVersion`, `AssemblyFileVersion`, `AssemblyProduct`, etc.
 - **Fix:** Add attributes for Windows Properties dialog and installer metadata.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — version 3.0.0 attributes plus product/company metadata.
 
 ### 21. Navigate UI Thread Blocking
 - **File:** `MainViewModel.cs`, lines 222-224
 - **Problem:** `_fs.GetChildren(path)` enumerates directory synchronously on the UI thread.
 - **Fix:** Wrap in `Task.Run`, populate via dispatcher.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — `NavigateTop`/`NavigateBottom` wrap `_fs.GetChildren` in `await Task.Run(...)` with cancellation.
 
 ### 22. TransferService Directory Failure Count
 - **File:** `TransferService.cs`, lines 150, 164
 - **Problem:** Directory failures increment `FilesFailed` but `TotalFiles` only counts files, so the failure percentage can exceed 100%.
 - **Fix:** Track directory failures in a separate counter.
-- **Status:** Open
+- **Status:** RESOLVED (verified 2026-05-16) — separate `DirectoriesFailed` counter on `TransferResult` and `BackupLogEntry`.
 
 ---
 

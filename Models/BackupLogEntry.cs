@@ -113,8 +113,29 @@ public partial class BackupLogEntry : ObservableObject
     [NotifyPropertyChangedFor(nameof(SizeOrStatusDisplay))]
     private long _bytesTransferred;
 
-    /// <summary>Detailed per-file error records.</summary>
-    public List<FileError> FileErrors { get; set; } = new();
+    /// <summary>Hard upper bound on the number of file errors persisted per entry. The producer
+    /// (TransferResult) already caps at the same value, but this is the model-level safety net —
+    /// a future caller that bypasses the producer (or a hand-edited backup_log.json) can't grow
+    /// the JSON unbounded.</summary>
+    public const int MaxFileErrors = 200;
+
+    private List<FileError> _fileErrors = new();
+
+    /// <summary>Detailed per-file error records. Setter truncates oversized inputs at
+    /// <see cref="MaxFileErrors"/> entries.</summary>
+    public List<FileError> FileErrors
+    {
+        get => _fileErrors;
+        set
+        {
+            // Defensive truncate. The producer already caps; this catches the path where
+            // someone constructs a list externally and assigns it (e.g. JSON deserialization
+            // of a hand-edited file, or a future caller bypassing TransferResult.AddFileError).
+            _fileErrors = value == null
+                ? new List<FileError>()
+                : value.Count <= MaxFileErrors ? value : value.GetRange(0, MaxFileErrors);
+        }
+    }
 
     private DateTime _timestamp = DateTime.Now;
 

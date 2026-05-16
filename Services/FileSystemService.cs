@@ -84,12 +84,12 @@ public sealed class FileSystemService
     /// Uses Win32 <c>CopyFileEx</c> rather than <see cref="File.Copy(string,string,bool)"/> so the
     /// kernel handles sparse files, alternate data streams, and large-file optimisations directly.
     /// </remarks>
-    public void CopyFile(string source, string dest, bool stripPermissions)
+    public void CopyFile(string source, string dest, bool stripPermissions, Action<long, long>? onBytesProgress = null)
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
         var srcLastWrite = File.GetLastWriteTimeUtc(source);
 
-        CopyFileExNative(source, dest);
+        CopyFileExNative(source, dest, onBytesProgress);
         // CopyFileEx already mirrors timestamps, but the destination filesystem can normalise them
         // (e.g. FAT32 truncates to 2-second resolution). Re-stamp explicitly so a later
         // SkipExisting pass sees identical mtimes between source and dest.
@@ -104,24 +104,57 @@ public sealed class FileSystemService
 
     /// <summary>
     /// Wraps <c>CopyFileExW</c> with overwrite semantics matching <c>File.Copy(..., overwrite: true)</c>.
+    /// When <paramref name="onBytesProgress"/> is supplied, attaches a CopyProgressRoutine so callers
+    /// can surface within-file progress for multi-GB copies — without this hook a 50 GB ISO copy
+    /// reports nothing to the UI until it finishes.
     /// Throws <see cref="IOException"/> with the underlying Win32 error message on failure.
     /// </summary>
-    private static void CopyFileExNative(string source, string dest)
+    private static void CopyFileExNative(string source, string dest, Action<long, long>? onBytesProgress = null)
     {
         int cancel = 0;
-        // dwCopyFlags = 0 → allow overwrite, no restartable mode, buffered I/O.
-        // Pass null for the progress routine: this path doesn't report per-file progress
-        // (TransferService reports at file granularity from the parallel work loop).
-        // \\?\ prefix bypasses the MAX_PATH limit unconditionally — required because the
-        // raw Win32 API doesn't honour the longPathAware manifest in every host process
-        // (e.g. unit-test runners), and paths > 260 chars are common in deeply nested trees.
-        if (!CopyFileEx(ToExtendedPath(source), ToExtendedPath(dest),
-                lpProgressRoutine: IntPtr.Zero, lpData: IntPtr.Zero, ref cancel, dwCopyFlags: 0))
+        CopyProgressRoutine? routine = null;
+        IntPtr routinePtr = IntPtr.Zero;
+        GCHandle routineHandle = default;
+        if (onBytesProgress != null)
         {
-            int err = Marshal.GetLastWin32Error();
-            throw new IOException($"CopyFileEx failed copying '{source}' to '{dest}': {new Win32Exception(err).Message}", err);
+            // Capture the delegate in a local so the GC can't collect it while CopyFileEx is calling
+            // back into it. GCHandle.Alloc(routine) pins the managed object; the delegate-to-fnptr
+            // marshalling stays valid for the duration of the call. Free in the finally regardless.
+            routine = (total, transferred, _, _, _, _, _, _, _) =>
+            {
+                onBytesProgress(transferred, total);
+                return 0; // PROGRESS_CONTINUE
+            };
+            routineHandle = GCHandle.Alloc(routine);
+            routinePtr = Marshal.GetFunctionPointerForDelegate(routine);
+        }
+        try
+        {
+            // dwCopyFlags = 0 → allow overwrite, no restartable mode, buffered I/O.
+            // \\?\ prefix bypasses the MAX_PATH limit unconditionally — required because the
+            // raw Win32 API doesn't honour the longPathAware manifest in every host process
+            // (e.g. unit-test runners), and paths > 260 chars are common in deeply nested trees.
+            if (!CopyFileEx(ToExtendedPath(source), ToExtendedPath(dest),
+                    lpProgressRoutine: routinePtr, lpData: IntPtr.Zero, ref cancel, dwCopyFlags: 0))
+            {
+                int err = Marshal.GetLastWin32Error();
+                throw new IOException($"CopyFileEx failed copying '{source}' to '{dest}': {new Win32Exception(err).Message}", err);
+            }
+        }
+        finally
+        {
+            if (routineHandle.IsAllocated) routineHandle.Free();
+            GC.KeepAlive(routine);
         }
     }
+
+    /// <summary>Win32 CopyProgressRoutine — fired by CopyFileEx as bytes stream to the destination.</summary>
+    private delegate uint CopyProgressRoutine(
+        long totalFileSize, long totalBytesTransferred,
+        long streamSize, long streamBytesTransferred,
+        uint streamNumber, uint callbackReason,
+        IntPtr sourceFile, IntPtr destinationFile,
+        IntPtr data);
 
     /// <summary>
     /// Returns the path in Win32 extended-length form (<c>\\?\</c> prefix) so <c>CopyFileEx</c>
@@ -220,6 +253,10 @@ public sealed class FileSystemService
 
     /// <summary>
     /// Removes explicit NTFS permissions from a file so it inherits from its parent folder.
+    /// Permission stripping is best-effort: a failure here must not fail an otherwise-successful
+    /// copy. Beyond UnauthorizedAccessException we also see IOException (file deleted between
+    /// copy and reset) and InvalidOperationException (NTFS-only API hitting a FAT32 destination);
+    /// any of these used to propagate up and inflate FilesFailed.
     /// </summary>
     private static void ResetFilePermissions(string path)
     {
@@ -230,7 +267,10 @@ public sealed class FileSystemService
             security.SetAccessRuleProtection(false, false);
             fileInfo.SetAccessControl(security);
         }
-        catch (UnauthorizedAccessException) { }
+        catch (Exception ex)
+        {
+            FileLogger.Warn($"Could not reset permissions on {path}: {ex.Message}");
+        }
     }
 
     /// <summary>Sends the file or directory at the given path to the Recycle Bin.</summary>
