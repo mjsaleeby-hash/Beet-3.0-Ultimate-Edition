@@ -22,6 +22,18 @@ public sealed class FileSystemService
         RecurseSubdirectories = false
     };
 
+    /// <summary>Enumeration options used by <see cref="CopyDirectory"/>. Skips reparse points
+    /// (NTFS junctions and symbolic links) so a pane drag-drop copy of e.g. C:\Users\Owner
+    /// doesn't follow the All-Users junction into C:\Users\Public, blow up to many GB, or
+    /// infinite-loop on a user-created symlink. <see cref="EnumOptions"/> keeps reparse
+    /// points visible for <see cref="GetChildren"/> because the file pane needs to show them.</summary>
+    private static readonly EnumerationOptions CopyEnumOptions = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = true,
+        RecurseSubdirectories = false
+    };
+
     /// <summary>Returns all ready drives on the system as <see cref="DriveItem"/> instances.</summary>
     public IEnumerable<DriveItem> GetDrives()
     {
@@ -243,12 +255,13 @@ public sealed class FileSystemService
     {
         Directory.CreateDirectory(dest);
 
-        foreach (var file in Directory.EnumerateFiles(source, "*", EnumOptions))
+        // CopyEnumOptions skips reparse points — see field-level comment.
+        foreach (var file in Directory.EnumerateFiles(source, "*", CopyEnumOptions))
         {
             CopyFile(file, Path.Combine(dest, Path.GetFileName(file)), stripPermissions);
         }
 
-        foreach (var dir in Directory.EnumerateDirectories(source, "*", EnumOptions))
+        foreach (var dir in Directory.EnumerateDirectories(source, "*", CopyEnumOptions))
         {
             var dirAttr = File.GetAttributes(dir);
             CopyDirectory(dir, Path.Combine(dest, Path.GetFileName(dir)), stripPermissions, dirAttr.HasFlag(FileAttributes.Hidden));

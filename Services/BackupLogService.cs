@@ -198,14 +198,19 @@ public sealed class BackupLogService : IDisposable
         if (_disposed) return;
         if (DateTime.UtcNow.Ticks - Volatile.Read(ref _lastSelfWriteTicks) < SelfWriteCooldown.Ticks) return;
 
-        // Cancel any pending reload and schedule a new one — coalesces the rename/write/delete
-        // burst that File.Replace produces into a single ReloadFromDisk call. Cancel may race
-        // with Dispose; ObjectDisposedException is benign (the work we'd cancel is already gone).
-        try { _reloadCts?.Cancel(); }
-        catch (ObjectDisposedException) { return; }
-        if (_disposed) return;
+        // Atomically swap in a new reload CTS and retire the previous one. FileSystemWatcher
+        // fires its callbacks on thread-pool workers and can deliver multiple events for one
+        // File.Replace burst concurrently — a plain `_reloadCts?.Cancel(); _reloadCts = cts;`
+        // races and either orphans a CTS (never disposed, leaks WaitHandle + Timer) or breaks
+        // coalescing (the new reload Task gets a CTS that no later watcher event can cancel).
+        // Interlocked.Exchange makes the swap atomic.
         var cts = new CancellationTokenSource();
-        _reloadCts = cts;
+        var prev = Interlocked.Exchange(ref _reloadCts, cts);
+        try { prev?.Cancel(); }
+        catch (ObjectDisposedException) { /* prior CTS already disposed by Dispose() — benign */ }
+        prev?.Dispose();
+        if (_disposed) { cts.Dispose(); return; }
+
         _ = Task.Run(async () =>
         {
             try

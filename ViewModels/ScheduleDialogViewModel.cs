@@ -149,6 +149,9 @@ public partial class ScheduleDialogViewModel : ObservableObject
             ExclusionFilters.Remove(SelectedExclusion);
     }
 
+    /// <summary>Tracks the in-flight EstimateSize task so a re-click cancels the prior run.</summary>
+    private CancellationTokenSource? _estimateCts;
+
     /// <summary>Calculates and displays the estimated total size and file count for the selected sources.</summary>
     [RelayCommand]
     private async Task EstimateSize()
@@ -158,6 +161,17 @@ public partial class ScheduleDialogViewModel : ObservableObject
             SizeEstimate = "Add source folders first.";
             return;
         }
+
+        // Cancel + replace any in-flight estimation. Without this, rapid clicks (or a click
+        // while a prior estimation is still running because the user edited exclusions/sources)
+        // produce two background tasks racing to write the same VM properties — whichever
+        // finishes last wins, and the displayed preview may not match the current selections.
+        // Schedule_Click consults LastDiskSpacePreview when committing, so a stale write here
+        // can mislead the disk-space confirmation at save time.
+        var prevCts = Interlocked.Exchange(ref _estimateCts, new CancellationTokenSource());
+        prevCts?.Cancel();
+        prevCts?.Dispose();
+        var ct = _estimateCts!.Token;
 
         IsEstimating = true;
         SizeEstimate = "Calculating...";
@@ -171,28 +185,43 @@ public partial class ScheduleDialogViewModel : ObservableObject
         var destination = DestinationPath;
         var willCompress = EnableCompression;
 
-        // Count + preview in one background pass so we don't double-enumerate the source tree.
-        var (preview, fileCount) = await Task.Run(() =>
+        try
         {
-            var p = DiskSpaceService.Preview(sources, destination, exclusions, willCompress);
-            return (p, CountFiles(sources, exclusions));
-        });
+            // Count + preview in one background pass so we don't double-enumerate the source tree.
+            var (preview, fileCount) = await Task.Run(() =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var p = DiskSpaceService.Preview(sources, destination, exclusions, willCompress);
+                ct.ThrowIfCancellationRequested();
+                return (p, CountFiles(sources, exclusions));
+            }, ct).ConfigureAwait(true);
 
-        LastDiskSpacePreview = preview;
-        SizeEstimate = $"{preview.RequiredDisplay} across {fileCount:N0} files";
+            // A later re-entry may have superseded us between the await and here.
+            if (ct.IsCancellationRequested) return;
 
-        // Only surface the disk-space message when the destination is known — while the user is
-        // still editing the dialog the destination may be blank, and showing "check skipped" on
-        // every keystroke would be noisy.
-        if (!string.IsNullOrWhiteSpace(destination))
-        {
-            DiskSpaceMessage = preview.Summary;
-            HasDiskSpaceMessage = !string.IsNullOrEmpty(DiskSpaceMessage);
-            IsInsufficientSpace = preview.Status == DiskSpaceStatus.Insufficient;
-            IsTightSpace = preview.Status == DiskSpaceStatus.Tight;
+            LastDiskSpacePreview = preview;
+            SizeEstimate = $"{preview.RequiredDisplay} across {fileCount:N0} files";
+
+            // Only surface the disk-space message when the destination is known — while the user is
+            // still editing the dialog the destination may be blank, and showing "check skipped" on
+            // every keystroke would be noisy.
+            if (!string.IsNullOrWhiteSpace(destination))
+            {
+                DiskSpaceMessage = preview.Summary;
+                HasDiskSpaceMessage = !string.IsNullOrEmpty(DiskSpaceMessage);
+                IsInsufficientSpace = preview.Status == DiskSpaceStatus.Insufficient;
+                IsTightSpace = preview.Status == DiskSpaceStatus.Tight;
+            }
         }
-
-        IsEstimating = false;
+        catch (OperationCanceledException)
+        {
+            // Superseded by a later call — the newer invocation will set the final state.
+        }
+        finally
+        {
+            // Only clear IsEstimating if we're still the current estimation.
+            if (!ct.IsCancellationRequested) IsEstimating = false;
+        }
     }
 
     /// <summary>Counts total files across all source paths, respecting exclusion filters.</summary>

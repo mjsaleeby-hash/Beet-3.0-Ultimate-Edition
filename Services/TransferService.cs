@@ -1055,8 +1055,22 @@ public sealed class TransferService
         IReadOnlyList<string>? exclusions,
         IProgress<string>? progress, TransferResult result, CancellationToken ct)
     {
+        // Enumerate defensively. Mirror destinations are often external drives carrying ACLs
+        // from another machine, network shares, or restored backups — one access-denied or
+        // disconnected folder used to abort the entire cleanup pass, leaving the user with
+        // a half-mirrored destination (copy ran, but the "delete extras" promise was only
+        // partially applied). Materialize to an array so a mid-enumeration throw doesn't
+        // strand the work, and log + skip on failure rather than propagating.
+        IEnumerable<string> destFiles;
+        try { destFiles = Directory.EnumerateFiles(destDir, "*", ShallowEnumOptions).ToArray(); }
+        catch (Exception ex)
+        {
+            FileLogger.Warn($"Mirror cleanup: cannot enumerate files in {destDir} — {ex.Message}");
+            destFiles = Array.Empty<string>();
+        }
+
         // Delete destination files that don't exist in source
-        foreach (var destFile in Directory.EnumerateFiles(destDir, "*", ShallowEnumOptions))
+        foreach (var destFile in destFiles)
         {
             ct.ThrowIfCancellationRequested();
             var name = Path.GetFileName(destFile);
@@ -1084,8 +1098,16 @@ public sealed class TransferService
             }
         }
 
-        // Recurse into subdirectories, then delete empty ones not in source
-        foreach (var destSub in Directory.EnumerateDirectories(destDir, "*", ShallowEnumOptions))
+        // Recurse into subdirectories, then delete empty ones not in source. Same defensive
+        // enumeration as the file loop above.
+        IEnumerable<string> destSubs;
+        try { destSubs = Directory.EnumerateDirectories(destDir, "*", ShallowEnumOptions).ToArray(); }
+        catch (Exception ex)
+        {
+            FileLogger.Warn($"Mirror cleanup: cannot enumerate subdirectories in {destDir} — {ex.Message}");
+            destSubs = Array.Empty<string>();
+        }
+        foreach (var destSub in destSubs)
         {
             ct.ThrowIfCancellationRequested();
             var name = Path.GetFileName(destSub);

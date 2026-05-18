@@ -848,12 +848,18 @@ public sealed class SchedulerService : IDisposable
         if (_disposed) return;
         if (DateTime.UtcNow.Ticks - Volatile.Read(ref _lastSelfWriteTicks) < SelfWriteCooldown.Ticks) return;
 
-        // Cancel may race with Dispose; ObjectDisposedException is benign here.
-        try { _reloadCts?.Cancel(); }
-        catch (ObjectDisposedException) { return; }
-        if (_disposed) return;
+        // Atomically swap in a new reload CTS and retire the previous one. FileSystemWatcher
+        // fires its callbacks on thread-pool workers and can deliver multiple events for one
+        // File.Replace burst concurrently — a plain read-cancel-replace races and either
+        // orphans a CTS or breaks coalescing. See BackupLogService.OnLogFileChanged for the
+        // matching write-up.
         var cts = new CancellationTokenSource();
-        _reloadCts = cts;
+        var prev = Interlocked.Exchange(ref _reloadCts, cts);
+        try { prev?.Cancel(); }
+        catch (ObjectDisposedException) { /* prior CTS already disposed by Dispose() — benign */ }
+        prev?.Dispose();
+        if (_disposed) { cts.Dispose(); return; }
+
         _ = Task.Run(async () =>
         {
             try

@@ -1,6 +1,7 @@
 using BeetsBackup.Models;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 
 namespace BeetsBackup.Services;
 
@@ -210,13 +211,37 @@ public static class WindowsTaskSchedulerService
         using var proc = Process.Start(psi);
         if (proc == null) return false;
 
-        proc.WaitForExit(15_000);
+        // Drain stdout/stderr asynchronously while the child runs. Reading them only after
+        // WaitForExit deadlocks if schtasks writes more than the OS pipe buffer (~64 KB) —
+        // localised error messages plus its help banner can exceed that, and schtasks then
+        // blocks on WriteFile forever. The async readers prevent that.
+        var stdout = new StringBuilder();
+        var stderr = new StringBuilder();
+        proc.OutputDataReceived += (_, e) => { if (e.Data != null) lock (stdout) stdout.AppendLine(e.Data); };
+        proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) lock (stderr) stderr.AppendLine(e.Data); };
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
+
+        // Capture the WaitForExit return value: ignoring it lets a timed-out process flow
+        // into proc.ExitCode, which throws InvalidOperationException — the outer Register /
+        // Unregister catches and reports that as a generic exception, hiding the real cause.
+        if (!proc.WaitForExit(15_000))
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { /* already exited or denied */ }
+            FileLogger.Warn("schtasks timed out after 15s; killed.");
+            return false;
+        }
+        // Flush the async readers — WaitForExit(int) returns once the process exits but the
+        // OutputDataReceived/ErrorDataReceived callbacks may still be draining. The
+        // parameterless overload waits for the read pumps to finish.
+        proc.WaitForExit();
 
         if (proc.ExitCode != 0)
         {
-            var stderr = proc.StandardError.ReadToEnd();
-            var stdout = proc.StandardOutput.ReadToEnd();
-            FileLogger.Warn($"schtasks exited with code {proc.ExitCode}: {stderr.Trim()} {stdout.Trim()}");
+            string err, outp;
+            lock (stderr) err = stderr.ToString().Trim();
+            lock (stdout) outp = stdout.ToString().Trim();
+            FileLogger.Warn($"schtasks exited with code {proc.ExitCode}: {err} {outp}");
             return false;
         }
         return true;

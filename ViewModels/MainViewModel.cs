@@ -606,8 +606,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// manual-transfer flag true. Does not touch scheduled-job state.</summary>
     private void BeginTransfer()
     {
-        _transferCts?.Cancel();
+        // Capture-cancel-dispose the prior CTS, matching the pause-gate handling below.
+        // The previous version cancelled but never disposed, which left the WaitHandle and
+        // Timer registrations on every cancelled CTS until finalization — across a long
+        // session of repeated drag-drop copies that finalizer pressure contributed to the
+        // "zombie Beet" shutdown the watchdog had to kill.
+        var oldCts = _transferCts;
         _transferCts = new CancellationTokenSource();
+        oldCts?.Cancel();
+        oldCts?.Dispose();
         // Create a fresh pause gate per transfer to avoid ObjectDisposedException
         // and prevent a cancelled transfer from briefly resuming
         var oldGate = _pauseGate;

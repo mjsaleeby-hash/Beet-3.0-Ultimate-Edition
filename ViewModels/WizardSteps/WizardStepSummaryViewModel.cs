@@ -27,6 +27,9 @@ public partial class WizardStepSummaryViewModel : ObservableObject
     /// <summary>The last computed preview, so callers (wizard Finish) can consult it without re-running.</summary>
     public DiskSpacePreview? LastPreview { get; private set; }
 
+    /// <summary>Tracks the in-flight estimation so a re-entry (user navigates back, edits, returns) cancels the prior run.</summary>
+    private CancellationTokenSource? _estimateCts;
+
     /// <summary>
     /// Asynchronously estimates the total backup size and runs the pre-flight disk-space check,
     /// updating <see cref="SizeEstimate"/> plus the disk-space message properties.
@@ -37,6 +40,15 @@ public partial class WizardStepSummaryViewModel : ObservableObject
         IReadOnlyList<string>? exclusions = null,
         bool willCompress = false)
     {
+        // Cancel + replace any in-flight estimation. PopulateSummary fires this every time the
+        // user enters the summary step; Back → edit → Next produces two concurrent estimations,
+        // and a stale "winner" could leave LastPreview pointing at pre-edit data that the
+        // wizard's Finish path then consults for the insufficient-space confirmation.
+        var prevCts = Interlocked.Exchange(ref _estimateCts, new CancellationTokenSource());
+        prevCts?.Cancel();
+        prevCts?.Dispose();
+        var ct = _estimateCts!.Token;
+
         IsEstimating = true;
         SizeEstimate = "Calculating...";
         DiskSpaceMessage = string.Empty;
@@ -48,7 +60,13 @@ public partial class WizardStepSummaryViewModel : ObservableObject
         try
         {
             var preview = await Task.Run(() =>
-                DiskSpaceService.Preview(sourcePaths, destinationPath, exclusions, willCompress));
+            {
+                ct.ThrowIfCancellationRequested();
+                return DiskSpaceService.Preview(sourcePaths, destinationPath, exclusions, willCompress);
+            }, ct).ConfigureAwait(true);
+
+            // A later re-entry may have superseded us between the await and here.
+            if (ct.IsCancellationRequested) return;
 
             LastPreview = preview;
             SizeEstimate = preview.RequiredDisplay;
@@ -60,13 +78,17 @@ public partial class WizardStepSummaryViewModel : ObservableObject
             IsInsufficientSpace = preview.Status == DiskSpaceStatus.Insufficient;
             IsTightSpace = preview.Status == DiskSpaceStatus.Tight;
         }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a later call — the newer invocation will set the final state.
+        }
         catch
         {
-            SizeEstimate = "Unable to estimate";
+            if (!ct.IsCancellationRequested) SizeEstimate = "Unable to estimate";
         }
         finally
         {
-            IsEstimating = false;
+            if (!ct.IsCancellationRequested) IsEstimating = false;
         }
     }
 }
