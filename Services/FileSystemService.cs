@@ -122,7 +122,14 @@ public sealed class FileSystemService
             // marshalling stays valid for the duration of the call. Free in the finally regardless.
             routine = (total, transferred, _, _, _, _, _, _, _) =>
             {
-                onBytesProgress(transferred, total);
+                // The kernel calls back into this delegate during the copy. Letting an
+                // exception escape across the unmanaged→managed return edge is undefined
+                // behavior in .NET 8 (ExecutionEngineException / SEH chain corruption,
+                // depending on Windows build). Progress reporting is advisory; if the
+                // caller's callback throws (e.g. IProgress<string>.Report touching a
+                // disposing dispatcher), swallow it and keep the copy running.
+                try { onBytesProgress(transferred, total); }
+                catch { /* never let an exception cross the P/Invoke boundary */ }
                 return 0; // PROGRESS_CONTINUE
             };
             routineHandle = GCHandle.Alloc(routine);

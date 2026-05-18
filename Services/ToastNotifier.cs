@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using Application = System.Windows.Application;
 
 namespace BeetsBackup.Services;
 
@@ -39,6 +40,20 @@ public static class ToastNotifier
     {
         var icon = TrayIcon;
         if (icon == null) return;
+
+        // NotifyIcon is a WinForms control and inherits the rule that all calls must happen
+        // on the thread that created it (the WPF UI thread; MainWindow.InitializeTrayIcon
+        // assigns TrayIcon during construction). SchedulerService.ExecuteJobAsync fires
+        // success/cancellation/error toasts from a thread-pool worker — that call must hop
+        // back to the dispatcher first, or NotifyIcon's internal state corrupts and the tray
+        // icon disappears for the rest of the session. Headless --run-job never assigns
+        // TrayIcon, so the null guard above already handles the no-dispatcher case.
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+        {
+            dispatcher.BeginInvoke(() => Notify(title, message, kind, timeoutMs));
+            return;
+        }
 
         var toolTipIcon = kind switch
         {

@@ -100,6 +100,34 @@ public sealed class ScheduledJob
                 NextRun = NextRun.Add(RecurInterval.Value);
         }
     }
+
+    /// <summary>
+    /// Copies every persisted field from <paramref name="src"/> onto this instance, except for
+    /// <see cref="Id"/> which is treated as the immutable identity. Used by SchedulerService's
+    /// LoadJobs (cross-process watcher reload) and UpdateJob (edits) so that in-flight
+    /// ExecuteJobAsync tasks holding a reference to the existing instance see the merged
+    /// state instead of being orphaned by a list-slot replacement.
+    /// Add new persisted properties here too, otherwise merges silently drop them.
+    /// </summary>
+    public void CopyFieldsFrom(ScheduledJob src)
+    {
+        Name = src.Name;
+        SourcePaths = src.SourcePaths;
+        DestinationPath = src.DestinationPath;
+        StripPermissions = src.StripPermissions;
+        VerifyChecksums = src.VerifyChecksums;
+        TransferMode = src.TransferMode;
+        ExclusionFilters = src.ExclusionFilters;
+        ThrottleMBps = src.ThrottleMBps;
+        EnableVersioning = src.EnableVersioning;
+        MaxVersions = src.MaxVersions;
+        EnableCompression = src.EnableCompression;
+        IsRecurring = src.IsRecurring;
+        RecurInterval = src.RecurInterval;
+        NextRun = src.NextRun;
+        LastRun = src.LastRun;
+        IsEnabled = src.IsEnabled;
+    }
 }
 
 /// <summary>

@@ -507,9 +507,15 @@ public sealed class TransferService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    var failedBefore = result.FilesFailed + result.DiskFullErrors + result.FilesLocked;
+                    // DirectoriesFailed has to be in the gate: a failed CreateDirectory at the
+                    // destination skips every file under that subtree without copying them.
+                    // FilesFailed stays at 0 in that scenario (the files were never attempted),
+                    // so without DirectoriesFailed here the source would be deleted with the
+                    // never-copied subtree silently lost. Move's contract is "source survives
+                    // if any byte didn't land at the destination" — directory failures count.
+                    var failedBefore = result.FilesFailed + result.DiskFullErrors + result.FilesLocked + result.DirectoriesFailed;
                     CopyItem(source, destinationDir, stripPermissions, mode, progress, progressPercent, result, cancellationToken, pauseToken, verifyChecksums, throttleBytesPerSec: throttleBytesPerSec, vss: vssSession);
-                    var failedDuring = (result.FilesFailed + result.DiskFullErrors + result.FilesLocked) - failedBefore;
+                    var failedDuring = (result.FilesFailed + result.DiskFullErrors + result.FilesLocked + result.DirectoriesFailed) - failedBefore;
                     if (failedDuring == 0)
                         _fs.DeleteItem(source);
                     else

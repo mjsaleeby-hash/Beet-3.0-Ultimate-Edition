@@ -357,7 +357,11 @@ public sealed class SchedulerService : IDisposable
             }
             else
             {
-                _jobs[idx] = updated;
+                // Mutate the existing instance in place rather than replacing the list slot.
+                // An ExecuteJobAsync task that's already in flight captured this reference as
+                // originalJob and writes LastRun/NextRun to it in its finally block. Replacing
+                // the slot would orphan that reference and lose the run's bookkeeping.
+                _jobs[idx].CopyFieldsFrom(updated);
             }
             SaveJobs();
         }
@@ -765,23 +769,7 @@ public sealed class SchedulerService : IDisposable
                     {
                         if (existingById.TryGetValue(incoming.Id, out var existing))
                         {
-                            // Copy every field except Id, which is the merge key.
-                            existing.Name = incoming.Name;
-                            existing.SourcePaths = incoming.SourcePaths;
-                            existing.DestinationPath = incoming.DestinationPath;
-                            existing.StripPermissions = incoming.StripPermissions;
-                            existing.VerifyChecksums = incoming.VerifyChecksums;
-                            existing.TransferMode = incoming.TransferMode;
-                            existing.ExclusionFilters = incoming.ExclusionFilters;
-                            existing.ThrottleMBps = incoming.ThrottleMBps;
-                            existing.EnableVersioning = incoming.EnableVersioning;
-                            existing.MaxVersions = incoming.MaxVersions;
-                            existing.EnableCompression = incoming.EnableCompression;
-                            existing.IsRecurring = incoming.IsRecurring;
-                            existing.RecurInterval = incoming.RecurInterval;
-                            existing.NextRun = incoming.NextRun;
-                            existing.LastRun = incoming.LastRun;
-                            existing.IsEnabled = incoming.IsEnabled;
+                            existing.CopyFieldsFrom(incoming);
                             _jobs.Add(existing);
                         }
                         else
