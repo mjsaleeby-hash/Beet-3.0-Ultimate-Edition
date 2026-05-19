@@ -80,4 +80,39 @@ public static class TransferReporter
         var kind = totalFailed > 0 ? ToastKind.Warning : ToastKind.Success;
         ToastNotifier.Notify(title, body, kind);
     }
+
+    /// <summary>
+    /// Stats string for a <see cref="BackupLogEntry"/> row, displayed in the Log dialog after
+    /// a backup completes. Shares wording with <see cref="FormatSummary"/> so the user sees
+    /// the same phrasing in the toast, the status bar, and the persisted log row — previously
+    /// these had already drifted ("checksum mismatches!" vs "checksum mismatches"; "disk full
+    /// errors" vs "disk-full"). Appends the formatted bytes-transferred at the end since the
+    /// log row carries that information and the row layout has space.
+    /// </summary>
+    public static string FormatLogEntryStats(BackupLogEntry entry)
+    {
+        if (entry.Status != BackupStatus.Complete) return string.Empty;
+
+        var totalFailed = entry.FilesFailed + entry.DirectoriesFailed +
+                          entry.DiskFullErrors + entry.FilesLocked + entry.ChecksumMismatches;
+        bool nothingChanged = entry.FilesCopied == 0 && entry.FilesCopiedViaVss == 0 && totalFailed == 0;
+        if (nothingChanged)
+        {
+            return entry.FilesSkipped > 0
+                ? $"Up to date — {entry.FilesSkipped} verified"
+                : "Up to date";
+        }
+
+        var parts = new List<string>();
+        if (entry.FilesCopied > 0) parts.Add($"{entry.FilesCopied} copied");
+        if (entry.FilesCopiedViaVss > 0) parts.Add($"{entry.FilesCopiedViaVss} via shadow copy");
+        if (entry.FilesSkipped > 0) parts.Add($"{entry.FilesSkipped} skipped");
+        if (entry.FilesFailed > 0) parts.Add($"{entry.FilesFailed} failed");
+        if (entry.DirectoriesFailed > 0) parts.Add($"{entry.DirectoriesFailed} folders failed");
+        if (entry.FilesLocked > 0) parts.Add($"{entry.FilesLocked} locked");
+        if (entry.DiskFullErrors > 0) parts.Add($"{entry.DiskFullErrors} disk full errors");
+        if (entry.ChecksumMismatches > 0) parts.Add($"{entry.ChecksumMismatches} checksum mismatches!");
+        parts.Add(FileSystemItem.FormatBytes(entry.BytesTransferred));
+        return string.Join(", ", parts);
+    }
 }

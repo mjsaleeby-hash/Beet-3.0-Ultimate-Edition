@@ -1,3 +1,4 @@
+using BeetsBackup.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
@@ -104,16 +105,6 @@ public class DriveDisplayItem
             ? $"{d.RootDirectory} ({d.DriveType})"
             : $"{d.VolumeLabel} ({d.RootDirectory})";
         AvailableBytes = d.AvailableFreeSpace;
-        FreeSpace = FormatBytes(d.AvailableFreeSpace) + " free";
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.#} {suffixes[i]}";
+        FreeSpace = FileSystemItem.FormatBytes(d.AvailableFreeSpace) + " free";
     }
 }

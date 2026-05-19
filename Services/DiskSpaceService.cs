@@ -1,3 +1,4 @@
+using BeetsBackup.Models;
 using System.IO;
 
 namespace BeetsBackup.Services;
@@ -30,10 +31,10 @@ public sealed record DiskSpacePreview(
     string? Note)
 {
     /// <summary>Human-readable required size (e.g. "4.7 GB").</summary>
-    public string RequiredDisplay => FormatBytes(RequiredBytes);
+    public string RequiredDisplay => FileSystemItem.FormatBytes(RequiredBytes);
 
     /// <summary>Human-readable available free space (e.g. "12.1 GB").</summary>
-    public string AvailableDisplay => AvailableBytes > 0 ? FormatBytes(AvailableBytes) : "unknown";
+    public string AvailableDisplay => AvailableBytes > 0 ? FileSystemItem.FormatBytes(AvailableBytes) : "unknown";
 
     /// <summary>Short one-line summary suitable for showing next to the destination in the summary step.</summary>
     public string Summary => Status switch
@@ -44,16 +45,6 @@ public sealed record DiskSpacePreview(
         DiskSpaceStatus.Sufficient => $"{RequiredDisplay} needed, {AvailableDisplay} free on {DriveRoot}.",
         _ => string.Empty
     };
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.#} {suffixes[i]}";
-    }
 }
 
 /// <summary>

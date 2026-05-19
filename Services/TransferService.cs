@@ -24,20 +24,10 @@ public sealed class InsufficientSpaceException : Exception
     /// Creates a new insufficient space exception with human-readable byte sizes in the message.
     /// </summary>
     public InsufficientSpaceException(long required, long available)
-        : base($"Not enough disk space. Required: {FormatBytes(required)}, Available: {FormatBytes(available)}")
+        : base($"Not enough disk space. Required: {FileSystemItem.FormatBytes(required)}, Available: {FileSystemItem.FormatBytes(available)}")
     {
         RequiredBytes = required;
         AvailableBytes = available;
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.#} {suffixes[i]}";
     }
 }
 
@@ -110,8 +100,8 @@ public sealed class TransferService
             // Phase 1 — enumerate. One walk of the source tree produces a frozen plan: every
             // directory we'll need at the destination, every file with its action already decided.
             // Workers consume the plan; they don't recurse, don't re-stat, don't race on KeepBoth
-            // uniqueness. This replaces the old depth-first recursive CopyItem orchestration for
-            // CopyAsync (MoveAsync still calls CopyItem directly — Stage 3 didn't touch that path).
+            // uniqueness. MoveAsync still calls CopyItem directly — the parallel orchestrator is
+            // only the CopyAsync path.
             progress?.Report("Scanning source...");
             var plan = EnumerateWorkItems(sourceList, destinationDir, mode, excludeSet, cancellationToken);
             result.TotalFiles = plan.Files.Count;
@@ -142,8 +132,8 @@ public sealed class TransferService
 
             // Phase 3 — copy files in parallel, bounded by drive-type-aware concurrency. Workers
             // consume the frozen plan independently; counter mutators on TransferResult are
-            // atomic (Stage 1) and VSS snapshot creation is locked (parallelism-safety patch
-            // applied to VssSnapshotService for this stage).
+            // atomic, and VSS snapshot creation is locked inside VssSnapshotService so concurrent
+            // workers requesting the same volume share one snapshot.
             var parallelOpts = new ParallelOptions
             {
                 MaxDegreeOfParallelism = workerCount,
@@ -1352,11 +1342,6 @@ public sealed class TransferService
     /// to create and every file to copy / skip / replace. Honors exclusions, transfer mode, and
     /// KeepBoth uniqueness up-front. Pure planning — no I/O writes are performed here, only reads.
     /// </summary>
-    /// <remarks>
-    /// Not yet wired into <see cref="CopyAsync"/>; lives here as the foundation for the parallel
-    /// copy engine. The single-threaded recursive <c>CopyItem</c> path is still the active code
-    /// path until Stage 3b lands.
-    /// </remarks>
     internal EnumerationPlan EnumerateWorkItems(
         IEnumerable<string> sourcePaths,
         string destinationDir,

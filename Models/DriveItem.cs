@@ -44,20 +44,11 @@ public sealed class DriveItem
     public double UsagePercent => TotalSize > 0 ? (double)UsedSpace / TotalSize * 100.0 : 0;
 
     /// <summary>Human-readable total size (e.g. "465.76 GB").</summary>
-    public string TotalSizeDisplay => FormatBytes(TotalSize);
+    public string TotalSizeDisplay => FileSystemItem.FormatBytes(TotalSize);
 
     /// <summary>Human-readable used space.</summary>
-    public string UsedSpaceDisplay => FormatBytes(UsedSpace);
+    public string UsedSpaceDisplay => FileSystemItem.FormatBytes(UsedSpace);
 
     /// <summary>Human-readable free space.</summary>
-    public string FreeSpaceDisplay => FormatBytes(FreeSpace);
-
-    private static string FormatBytes(long bytes)
-    {
-        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.##} {suffixes[i]}";
-    }
+    public string FreeSpaceDisplay => FileSystemItem.FormatBytes(FreeSpace);
 }

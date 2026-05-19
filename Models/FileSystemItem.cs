@@ -133,9 +133,11 @@ public sealed class FileSystemItem : INotifyPropertyChanged
 
     /// <summary>
     /// Formats a byte count into a human-readable string with appropriate unit suffix.
-    /// Shared across multiple display properties and other classes.
+    /// Canonical project-wide helper — other classes route here rather than maintaining
+    /// their own copies (which had already drifted on edge cases like the zero-input).
+    /// Public so services and viewmodels outside the Models namespace can reach it.
     /// </summary>
-    internal static string FormatBytes(long bytes)
+    public static string FormatBytes(long bytes)
     {
         string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
         double value = bytes;

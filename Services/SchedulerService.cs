@@ -459,36 +459,14 @@ public sealed class SchedulerService : IDisposable
     /// </summary>
     private async Task ExecuteJobAsync(ScheduledJob snapshot, ScheduledJob originalJob)
     {
-        // Cross-process per-job lock. The same job can race two ways:
-        //   1. Windows Task Scheduler launches `BeetsBackup.exe --run-job` while the
-        //      foreground app is already open, and that app's in-process minute-tick
-        //      ticker also fires the job before its file watcher picks up the headless
-        //      process's NextRun update.
-        //   2. Two foreground threads dispatch a Task.Run for the same job back-to-back.
-        // A named mutex (Global\ scope so it spans sessions) lets the first runner win
-        // and the second exit immediately without doing duplicate work.
-        var mutexName = $@"Global\BeetsBackup_Job_{snapshot.Id:N}";
-        Mutex? jobMutex = null;
-        bool gotLock = false;
-        try
-        {
-            jobMutex = new Mutex(initiallyOwned: false, name: mutexName);
-            try { gotLock = jobMutex.WaitOne(TimeSpan.Zero); }
-            catch (AbandonedMutexException) { gotLock = true; } // prior holder crashed; safe to take
-        }
-        catch (Exception ex)
-        {
-            // If creating the mutex itself fails (extremely rare — out of handles, ACL issue),
-            // fall through and run anyway. Better a possible duplicate run than a missed run.
-            FileLogger.LogException($"Could not create job mutex for '{snapshot.Name}'; running without cross-process lock", ex);
-            jobMutex?.Dispose();
-            jobMutex = null;
-        }
-
-        if (jobMutex != null && !gotLock)
+        // Cross-process per-job lock. See JobMutex for the rationale (Task Scheduler
+        // + in-process minute-tick + foreground "Back up now" can all race on the
+        // same job). The lease releases the kernel mutex on Dispose at end of method.
+        var jobLock = JobMutex.TryAcquire(snapshot.Id, snapshot.Name);
+        if (jobLock.WasBusy)
         {
             FileLogger.Info($"Skipping '{snapshot.Name}' — another process or thread is already running this job.");
-            jobMutex.Dispose();
+            jobLock.Dispose();
             // Mutex-skip path bypasses the main try-finally, so release the dispatch claim here
             // ourselves — otherwise the next tick would still see this job as "dispatched".
             lock (_jobsLock) { _dispatchedJobIds.Remove(originalJob.Id); }
@@ -531,7 +509,7 @@ public sealed class SchedulerService : IDisposable
 
             var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(snapshot.SourcePaths, exclusions), runCts.Token).ConfigureAwait(false);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Running, "Backup in progress");
-            FileLogger.Info($"Estimated size for '{snapshot.Name}': {FormatBytes(estimatedSize)}");
+            FileLogger.Info($"Estimated size for '{snapshot.Name}': {FileSystemItem.FormatBytes(estimatedSize)}");
 
             var percentProgress = new Progress<int>(pct =>
                 _log.UpdateProgress(logEntry.Id, pct));
@@ -615,11 +593,7 @@ public sealed class SchedulerService : IDisposable
                 SaveJobs();
             }
             RunningJobChanged?.Invoke(SnapshotRunningState());
-            if (jobMutex != null)
-            {
-                try { jobMutex.ReleaseMutex(); } catch { /* never owned, or already released */ }
-                jobMutex.Dispose();
-            }
+            jobLock.Dispose();
         }
     }
 
@@ -882,16 +856,6 @@ public sealed class SchedulerService : IDisposable
         safe = safe.TrimEnd(' ', '.', '\t');
         if (string.IsNullOrWhiteSpace(safe)) safe = "backup";
         return $"{safe}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.zip";
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.##} {suffixes[i]}";
     }
 
     public void Dispose()

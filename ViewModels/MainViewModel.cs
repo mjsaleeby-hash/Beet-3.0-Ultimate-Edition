@@ -788,21 +788,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         GoUpBottomCommand.NotifyCanExecuteChanged();
     }
 
-    /// <summary>Calculates folder sizes in parallel for all directory items in the collection.</summary>
-    private static async Task CalculateFolderSizesAsync(ObservableCollection<FileSystemItem> items, CancellationToken cancellationToken)
-    {
-        var directories = items.Where(i => i.IsDirectory).ToList();
-        var parallelOptions = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = Environment.ProcessorCount,
-            CancellationToken = cancellationToken
-        };
-        await Parallel.ForEachAsync(directories, parallelOptions, async (dir, ct) =>
-        {
-            await dir.CalculateDirectorySizeAsync(ct);
-        });
-    }
-
     /// <summary>
     /// Calculates folder sizes in parallel and periodically rebuilds pie chart slices
     /// while computation is in progress.
@@ -1320,10 +1305,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 pauseToken: _pauseGate,
                 progress: progress,
                 progressPercent: progressPercent);
-            var summary = FormatTransferResult(result);
+            var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Archive Now completed: {summary}");
             EndTransfer($"Archive saved: {archiveName} — {summary}");
-            NotifyTransferCompletion("Archive complete", result);
+            TransferReporter.Notify("Archive complete", result);
         }
         catch (OperationCanceledException)
         {
@@ -1429,10 +1414,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 pauseToken: _pauseGate,
                 progress: progress,
                 progressPercent: progressPercent);
-            var summary = FormatTransferResult(result);
+            var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Extract completed: {summary}");
             EndTransfer($"Extracted to {destDir} — {summary}");
-            NotifyTransferCompletion("Extract complete", result);
+            TransferReporter.Notify("Extract complete", result);
             // If the destination's parent is the current top-pane folder, re-navigate to refresh
             // the listing so the extracted folder appears without the user manually hitting F5.
             var parentOfDest = Path.GetDirectoryName(destDir);
@@ -1466,10 +1451,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, throttleBytesPerSec: ThrottleValue);
             await NavigateBottom(BottomCurrentPath);
-            var summary = FormatTransferResult(result);
+            var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Copy completed: {summary}");
             EndTransfer(summary);
-            NotifyTransferCompletion("Copy complete", result);
+            TransferReporter.Notify("Copy complete", result);
         }
         catch (OperationCanceledException)
         {
@@ -1502,10 +1487,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var result = await _transfer.CopyAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, throttleBytesPerSec: ThrottleValue);
             await NavigateTop(TopCurrentPath);
-            var summary = FormatTransferResult(result);
+            var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Copy completed: {summary}");
             EndTransfer(summary);
-            NotifyTransferCompletion("Copy complete", result);
+            TransferReporter.Notify("Copy complete", result);
         }
         catch (OperationCanceledException)
         {
@@ -1539,10 +1524,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), BottomCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, ThrottleValue);
             await NavigateTop(TopCurrentPath);
             await NavigateBottom(BottomCurrentPath);
-            var summary = FormatTransferResult(result);
+            var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Move completed: {summary}");
             EndTransfer(summary);
-            NotifyTransferCompletion("Move complete", result);
+            TransferReporter.Notify("Move complete", result);
         }
         catch (OperationCanceledException)
         {
@@ -1576,10 +1561,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var result = await _transfer.MoveAsync(items.Select(i => i.FullPath), TopCurrentPath, RemovePermissions, mode.Value, progress, progressPercent, _transferCts!.Token, _pauseGate, VerifyChecksums, ThrottleValue);
             await NavigateTop(TopCurrentPath);
             await NavigateBottom(BottomCurrentPath);
-            var summary = FormatTransferResult(result);
+            var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Move completed: {summary}");
             EndTransfer(summary);
-            NotifyTransferCompletion("Move complete", result);
+            TransferReporter.Notify("Move complete", result);
         }
         catch (OperationCanceledException)
         {
@@ -1607,31 +1592,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         // Cross-process per-job lock — same Global\BeetsBackup_Job_{id} name SchedulerService
         // uses in ExecuteJobAsync. Without this, a user clicking Back Up Now while Windows Task
-        // Scheduler also fires the same job at its scheduled minute races: both run, and a
-        // compressed job's archive name (built from DateTime.Now to second resolution) collides
-        // — one wins, the other lands as "name (2).zip". Acquire here; release after the run.
-        var mutexName = $@"Global\BeetsBackup_Job_{job.Id:N}";
-        Mutex? jobMutex = null;
-        bool gotLock = false;
-        try
-        {
-            jobMutex = new Mutex(initiallyOwned: false, name: mutexName);
-            try { gotLock = jobMutex.WaitOne(TimeSpan.Zero); }
-            catch (AbandonedMutexException) { gotLock = true; }
-        }
-        catch (Exception ex)
-        {
-            // Mutex creation failure (out of handles, ACL issue) is rare — fall through and run
-            // without the cross-process guard, matching SchedulerService's policy.
-            FileLogger.LogException($"Could not create job mutex for '{job.Name}'; running without cross-process lock", ex);
-            jobMutex?.Dispose();
-            jobMutex = null;
-        }
-        if (jobMutex != null && !gotLock)
+        // Scheduler also fires the same compressed job races: a compressed job's archive name
+        // (DateTime.Now at second resolution) can collide and one lands as "name (2).zip".
+        // The lease releases the kernel mutex on Dispose in the outer finally.
+        var jobLock = JobMutex.TryAcquire(job.Id, job.Name);
+        if (jobLock.WasBusy)
         {
             FileLogger.Info($"Back up now: skipping '{job.Name}' — already running in another process or thread.");
             ToastNotifier.Notify($"Backup already running: {job.Name}", "Another process or thread is already running this job.", ToastKind.Warning);
-            jobMutex.Dispose();
+            jobLock.Dispose();
             return false;
         }
 
@@ -1669,10 +1638,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     throttleBytesPerSec: throttle,
                     versioning: versioning);
             }
-            var summary = FormatTransferResult(result);
+            var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Backup completed: {summary}");
             EndTransfer(summary);
-            NotifyTransferCompletion($"Backup complete: {job.Name}", result);
+            TransferReporter.Notify($"Backup complete: {job.Name}", result);
             return true;
         }
         catch (OperationCanceledException)
@@ -1692,11 +1661,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            if (jobMutex != null)
-            {
-                if (gotLock) { try { jobMutex.ReleaseMutex(); } catch { /* never owned, or already released */ } }
-                jobMutex.Dispose();
-            }
+            jobLock.Dispose();
         }
     }
 
@@ -1822,16 +1787,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         safe = safe.TrimEnd(' ', '.', '\t');
         return string.IsNullOrWhiteSpace(safe) ? "backup" : safe;
     }
-
-    /// <summary>Routes through <see cref="TransferReporter"/> so manual and scheduled flows
-    /// surface identical toast wording.</summary>
-    private static void NotifyTransferCompletion(string title, TransferResult result) =>
-        TransferReporter.Notify(title, result);
-
-    /// <summary>Routes through <see cref="TransferReporter"/> so manual and scheduled flows
-    /// surface identical status-line wording.</summary>
-    internal static string FormatTransferResult(TransferResult result) =>
-        TransferReporter.FormatSummary(result);
 
     // --- Pie chart (data distribution) ---
 

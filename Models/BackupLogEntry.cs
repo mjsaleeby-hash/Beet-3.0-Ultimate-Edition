@@ -1,3 +1,4 @@
+using BeetsBackup.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace BeetsBackup.Models;
@@ -161,57 +162,16 @@ public partial class BackupLogEntry : ObservableObject
     public string TimestampDisplay => Timestamp.ToString("yyyy-MM-dd  HH:mm:ss");
 
     /// <summary>Summary of transfer statistics, shown only when the backup is complete.
-    /// Surfaces locked / directory / disk-full / checksum counters separately so the user can
-    /// distinguish lock contention from genuine errors. When the backup didn't actually
-    /// change anything (every file already up-to-date), reads "Up to date — N verified"
-    /// instead of "0 copied, N skipped" so the user doesn't read the row as a failed run.</summary>
-    public string StatsDisplay
-    {
-        get
-        {
-            if (Status != BackupStatus.Complete) return string.Empty;
-
-            var totalFailed = FilesFailed + DirectoriesFailed + DiskFullErrors + FilesLocked + ChecksumMismatches;
-            bool nothingChanged = FilesCopied == 0 && FilesCopiedViaVss == 0 && totalFailed == 0;
-            if (nothingChanged)
-            {
-                return FilesSkipped > 0
-                    ? $"Up to date — {FilesSkipped} verified"
-                    : "Up to date";
-            }
-
-            var parts = new List<string>();
-            if (FilesCopied > 0) parts.Add($"{FilesCopied} copied");
-            if (FilesCopiedViaVss > 0) parts.Add($"{FilesCopiedViaVss} via shadow copy");
-            if (FilesSkipped > 0) parts.Add($"{FilesSkipped} skipped");
-            if (FilesFailed > 0) parts.Add($"{FilesFailed} failed");
-            if (FilesLocked > 0) parts.Add($"{FilesLocked} locked");
-            if (DirectoriesFailed > 0) parts.Add($"{DirectoriesFailed} folders failed");
-            if (DiskFullErrors > 0) parts.Add($"{DiskFullErrors} disk-full");
-            if (ChecksumMismatches > 0) parts.Add($"{ChecksumMismatches} checksum mismatches");
-            parts.Add(FormatBytes(BytesTransferred));
-            return string.Join(", ", parts);
-        }
-    }
+    /// Delegates to <see cref="TransferReporter.FormatLogEntryStats"/> so the wording stays
+    /// in lockstep with the toast/status surfaces (previously these had drifted on edge
+    /// cases like "disk-full" vs "disk full errors").</summary>
+    public string StatsDisplay => TransferReporter.FormatLogEntryStats(this);
 
     /// <summary>Human-readable bytes transferred (e.g. "7.41 GB").</summary>
-    public string BytesTransferredDisplay => FormatBytes(BytesTransferred);
+    public string BytesTransferredDisplay => FileSystemItem.FormatBytes(BytesTransferred);
 
     /// <summary>Shows transferred bytes for complete entries, status text otherwise — used by the Recent Backups card.</summary>
     public string SizeOrStatusDisplay => Status == BackupStatus.Complete
-        ? FormatBytes(BytesTransferred)
+        ? FileSystemItem.FormatBytes(BytesTransferred)
         : Status.ToString();
-
-    /// <summary>
-    /// Formats a byte count into a human-readable string with appropriate unit suffix.
-    /// </summary>
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.##} {suffixes[i]}";
-    }
 }

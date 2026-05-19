@@ -347,8 +347,7 @@ public partial class App : Application
                 var app = (App)state!;
                 app.Dispatcher.BeginInvoke(() =>
                 {
-                    var mainWindow = app.Windows.OfType<MainWindow>().FirstOrDefault();
-                    if (mainWindow != null)
+                    if (app.Windows.OfType<MainWindow>().FirstOrDefault() is { } mainWindow)
                     {
                         mainWindow.Show();
                         mainWindow.WindowState = System.Windows.WindowState.Normal;
@@ -368,8 +367,7 @@ public partial class App : Application
         {
             // Small delay so the UI has time to fully load
             await Task.Delay(3000);
-            var vm = mainWindow.DataContext as MainViewModel;
-            if (vm != null)
+            if (mainWindow.DataContext is MainViewModel vm)
                 await vm.CheckForUpdatesCommand.ExecuteAsync(null);
         }
         catch (Exception ex)

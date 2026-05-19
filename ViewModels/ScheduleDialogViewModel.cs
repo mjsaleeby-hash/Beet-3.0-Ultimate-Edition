@@ -268,17 +268,6 @@ public partial class ScheduleDialogViewModel : ObservableObject
         return false;
     }
 
-    /// <summary>Formats a byte count into a human-readable string (e.g. "1.5 GB").</summary>
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.##} {suffixes[i]}";
-    }
-
     /// <summary>Opens a folder picker for the backup destination.</summary>
     [RelayCommand]
     private void BrowseDestination()

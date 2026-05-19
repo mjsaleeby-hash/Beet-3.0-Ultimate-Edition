@@ -53,7 +53,7 @@ public class MainViewModelTests
         // had completed and moved nothing — confusing. The reporter now distinguishes
         // genuinely-empty input from "everything already up to date".
         var result = new TransferResult();
-        MainViewModel.FormatTransferResult(result).Should().Be("Done — nothing to do");
+        TransferReporter.FormatSummary(result).Should().Be("Done — nothing to do");
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class MainViewModelTests
     public void FormatTransferResult_FilesCopied_IncludesCopiedCount()
     {
         var result = new TransferResult { FilesCopied = 3 };
-        MainViewModel.FormatTransferResult(result).Should().Contain("3 copied");
+        TransferReporter.FormatSummary(result).Should().Contain("3 copied");
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class MainViewModelTests
     public void FormatTransferResult_ChecksumMismatches_IncludesExclamation()
     {
         var result = new TransferResult { ChecksumMismatches = 2 };
-        MainViewModel.FormatTransferResult(result).Should().Contain("2 checksum mismatches!");
+        TransferReporter.FormatSummary(result).Should().Contain("2 checksum mismatches!");
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class MainViewModelTests
             DiskFullErrors = 1,
             ChecksumMismatches = 1
         };
-        var output = MainViewModel.FormatTransferResult(result);
+        var output = TransferReporter.FormatSummary(result);
 
         output.Should().Contain("5 copied");
         output.Should().Contain("2 skipped");

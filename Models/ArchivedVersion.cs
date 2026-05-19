@@ -15,15 +15,5 @@ public sealed record ArchivedVersion(string ArchivedPath, string OriginalPath, S
     public string DisplayTimestamp => ArchivedAt.ToString("MMM d, yyyy h:mm:ss tt");
 
     /// <summary>Human-readable size shown in the Previous Versions list.</summary>
-    public string DisplaySize => FormatBytes(Size);
-
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.##} {suffixes[i]}";
-    }
+    public string DisplaySize => FileSystemItem.FormatBytes(Size);
 }
