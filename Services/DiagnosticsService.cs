@@ -23,14 +23,14 @@ public static class DiagnosticsService
             Directory.CreateDirectory(FileLogger.LogDirectory);
             File.WriteAllText(SentinelPath, DateTime.Now.ToString("o"));
         }
-        catch { }
+        catch { /* sentinel is best-effort diagnostics — startup must continue regardless */ }
     }
 
     /// <summary>Removes the running sentinel. Call from <c>OnExit</c> on the clean-shutdown path.</summary>
     public static void MarkExitedCleanly()
     {
         try { if (File.Exists(SentinelPath)) File.Delete(SentinelPath); }
-        catch { }
+        catch { /* if we can't delete the sentinel, next launch will misreport an unclean shutdown — harmless */ }
     }
 
     /// <summary>

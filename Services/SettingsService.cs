@@ -94,12 +94,25 @@ public sealed class SettingsService
                     Data = loaded;
             }
         }
-        catch { /* use defaults if file is corrupt */ }
+        catch (Exception ex)
+        {
+            // Corrupt JSON or filesystem error — fall back to defaults rather than crashing
+            // startup, but surface the cause so we can see it in operational.log if the user
+            // ever loses their preferences mysteriously.
+            FileLogger.LogException("Settings load failed; falling back to defaults", ex);
+        }
 
         // One-time migration: delete the old .lnk and create the task in its place.
         if (File.Exists(_legacyShortcutPath))
         {
-            try { File.Delete(_legacyShortcutPath); } catch { }
+            try { File.Delete(_legacyShortcutPath); }
+            catch (Exception ex)
+            {
+                // Best-effort migration — if we can't delete the .lnk the worst case is the
+                // user gets the UAC prompt on next boot until they remove it manually. Log
+                // so we know it happened.
+                FileLogger.Warn($"Could not delete legacy startup shortcut at {_legacyShortcutPath}: {ex.Message}");
+            }
             if (Data.LaunchAtStartup)
                 WindowsTaskSchedulerService.RegisterStartupTask();
         }
@@ -122,6 +135,13 @@ public sealed class SettingsService
             else
                 File.Move(tmpPath, SettingsPath);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Settings save failure used to be silent — a user toggling a preference would
+            // see no UI feedback, the toggle would appear to stick in-memory, and the next
+            // launch would silently revert. Surface this so it shows up in operational.log
+            // and we have a clue when "my settings keep resetting" gets reported.
+            FileLogger.LogException($"Settings save failed for {SettingsPath}", ex);
+        }
     }
 }

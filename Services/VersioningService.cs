@@ -245,7 +245,11 @@ public static class VersioningService
             if (!string.IsNullOrEmpty(targetDir))
                 Directory.CreateDirectory(targetDir);
 
-            File.Copy(version.ArchivedPath, version.OriginalPath, overwrite: false);
+            // overwrite:true even though we explicitly delete above — if the delete silently
+            // no-ops (handle still open, antivirus quarantine, filesystem caching) the copy
+            // would otherwise throw with a confusing "file exists" error. ArchiveBeforeOverwrite
+            // already preserved the prior live copy in .versions, so destruction here is safe.
+            File.Copy(version.ArchivedPath, version.OriginalPath, overwrite: true);
             FileLogger.Info($"Restored version {version.ArchivedAt:yyyy-MM-dd HH:mm:ss} → {version.OriginalPath}");
             return true;
         }

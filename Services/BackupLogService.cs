@@ -19,7 +19,14 @@ public sealed class BackupLogService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Beet's Backup", "backup_log.json");
 
-    /// <summary>Whether a deferred save is already queued on the dispatcher.</summary>
+    /// <summary>Whether a deferred save is already queued on the dispatcher. Read/written
+    /// without synchronization because every touch happens on the UI thread via
+    /// <see cref="RunOnUiThread"/> — the dispatcher serializes all mutations.
+    /// HEADLESS NOTE: the headless branch in <see cref="Save"/> takes the early-return
+    /// <see cref="SaveNow"/> path *without* touching this field, so the headless process
+    /// never participates in the debounce-pending state and the UI-thread assumption holds.
+    /// If you add a code path that mutates this field outside the dispatcher, you'll need
+    /// to either gate it on the same lock or upgrade the field to Volatile.</summary>
     private bool _savePending;
 
     /// <summary>UTC timestamp of the last completed disk write.</summary>
@@ -43,6 +50,15 @@ public sealed class BackupLogService : IDisposable
     /// fires multiple events (rename, modify, delete on temp/.bak) and we don't want to thrash a
     /// pointless reload while our own write is settling.</summary>
     private static readonly TimeSpan SelfWriteCooldown = TimeSpan.FromSeconds(2);
+
+    /// <summary>Quiet-period the watcher waits before reloading on external writes. Long enough to
+    /// coalesce the multi-event burst File.Replace produces, short enough that the foreground
+    /// dashboard reflects the headless run within a quarter second.</summary>
+    private static readonly TimeSpan WatcherCoalesceDelay = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Maximum number of log entries retained. Older entries fall off the bottom of
+    /// the Add path; the JSON file caps at roughly this many entries × the per-entry size.</summary>
+    private const int MaxLogEntries = 500;
 
     /// <summary>Coalesces a burst of file-change events into a single reload after the watcher quiets.</summary>
     private CancellationTokenSource? _reloadCts;
@@ -233,7 +249,7 @@ public sealed class BackupLogService : IDisposable
         {
             try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(250), cts.Token).ConfigureAwait(false);
+                await Task.Delay(WatcherCoalesceDelay, cts.Token).ConfigureAwait(false);
                 ReloadFromDisk(applyHousekeeping: false);
             }
             catch (OperationCanceledException) { }
@@ -260,15 +276,14 @@ public sealed class BackupLogService : IDisposable
     }
 
     /// <summary>
-    /// Adds a new entry to the front of the log, capping at 500 entries.
+    /// Adds a new entry to the front of the log, capping at <see cref="MaxLogEntries"/>.
     /// </summary>
     public void Add(BackupLogEntry entry)
     {
         RunOnUiThread(() =>
         {
             Entries.Insert(0, entry);
-            // Cap log at 500 entries
-            while (Entries.Count > 500)
+            while (Entries.Count > MaxLogEntries)
                 Entries.RemoveAt(Entries.Count - 1);
             Save();
         });

@@ -247,26 +247,20 @@ public partial class ScheduleDialogViewModel : ObservableObject
                         count++;
                 }
             }
-            catch { }
+            catch
+            {
+                // Size estimation is advisory — a denied or disconnected source contributes
+                // zero to the count and the preview shrinks slightly. Don't disturb the user
+                // with errors mid-typing; the real transfer will surface failures explicitly.
+            }
         }
         return count;
     }
 
-    /// <summary>Returns <c>true</c> if the file name matches any exclusion pattern (extension or exact name).</summary>
+    // Delegates to the shared matcher so this preview can't disagree with the actual
+    // TransferService exclusion behavior. See ExclusionMatcher for pattern semantics.
     private static bool IsExcluded(string name, List<string> exclusions)
-    {
-        foreach (var pattern in exclusions)
-        {
-            if (pattern.StartsWith("*."))
-            {
-                if (name.EndsWith(pattern.Substring(1), StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            else if (name.Equals(pattern, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
+        => ExclusionMatcher.IsExcluded(name, exclusions);
 
     /// <summary>Opens a folder picker for the backup destination.</summary>
     [RelayCommand]

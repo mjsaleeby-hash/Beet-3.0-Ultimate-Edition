@@ -44,6 +44,20 @@ public partial class App : Application
     /// </summary>
     private const string AppUserModelId = "BeetSoftware.BeetsBackup";
 
+    /// <summary>How long the OnExit watchdog waits before force-terminating the process.
+    /// Sized to comfortably exceed <see cref="ServiceDisposeTimeout"/> plus the show-signal
+    /// unregister-while-callback-runs path, with a few seconds of slack so a legitimate
+    /// slow shutdown doesn't trip the watchdog. Reduced from 15s once the M2 dispose-order
+    /// fix landed and scheduled jobs cancel cleanly within the dispose budget.</summary>
+    private static readonly TimeSpan ShutdownWatchdogTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>Bound on how long service Dispose can take inside OnExit.</summary>
+    private static readonly TimeSpan ServiceDisposeTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>Delay between MainWindow.Show and the background update check, so the UI has
+    /// a moment to lay out before a network request kicks off and steals CPU.</summary>
+    private static readonly TimeSpan UpdateCheckStartupDelay = TimeSpan.FromSeconds(3);
+
     /// <summary>
     /// Initializes the application: enforces single-instance, registers services,
     /// loads settings, handles missed backups, and starts the scheduler.
@@ -285,14 +299,14 @@ public partial class App : Application
         // Arm the watchdog before we start disposing anything. If Environment.Exit hangs at the
         // bottom of this method (stuck finalizer, COM RCW release blocking), the watchdog kills
         // the process so the user never sees an invisible zombie Beet in Task Manager.
-        ArmShutdownWatchdog(TimeSpan.FromSeconds(15), "OnExit");
+        ArmShutdownWatchdog(ShutdownWatchdogTimeout, "OnExit");
         // Dispose services on a background thread with a timeout to avoid
         // deadlocking the UI thread if a scheduler job is in progress
         try
         {
             var disposeTask = Task.Run(() => (Services as IDisposable)?.Dispose());
-            if (!disposeTask.Wait(TimeSpan.FromSeconds(5)))
-                FileLogger.Warn("Service disposal timed out after 5 seconds");
+            if (!disposeTask.Wait(ServiceDisposeTimeout))
+                FileLogger.Warn($"Service disposal timed out after {ServiceDisposeTimeout.TotalSeconds}s");
         }
         catch (Exception ex) { FileLogger.LogException("Error disposing services", ex); }
         // Unregister before disposing the event: a callback in flight after disposal
@@ -365,14 +379,16 @@ public partial class App : Application
     {
         try
         {
-            // Small delay so the UI has time to fully load
-            await Task.Delay(3000);
+            // Small delay so the UI has time to fully load before we hit the network.
+            await Task.Delay(UpdateCheckStartupDelay);
             if (mainWindow.DataContext is MainViewModel vm)
                 await vm.CheckForUpdatesCommand.ExecuteAsync(null);
         }
         catch (Exception ex)
         {
-            FileLogger.Info($"Background update check failed: {ex.Message}");
+            // A failed update check is unexpected, not routine — log at Warn so it shows
+            // up in operational.log without filtering. The check is non-fatal regardless.
+            FileLogger.Warn($"Background update check failed: {ex.Message}");
         }
     }
 

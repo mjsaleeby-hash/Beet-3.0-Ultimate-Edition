@@ -53,6 +53,13 @@ public sealed class SchedulerService : IDisposable
     /// fires multiple events; this avoids self-thrashing on the watcher.</summary>
     private static readonly TimeSpan SelfWriteCooldown = TimeSpan.FromSeconds(2);
 
+    /// <summary>Quiet-period the watcher waits before reloading on external writes — same
+    /// rationale as BackupLogService.WatcherCoalesceDelay.</summary>
+    private static readonly TimeSpan WatcherCoalesceDelay = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>How long Dispose waits for the scheduler tick loop to exit before abandoning.</summary>
+    private static readonly TimeSpan SchedulerLoopShutdownTimeout = TimeSpan.FromSeconds(3);
+
     /// <summary>Coalesces a burst of file-change events into a single reload after the watcher quiets.</summary>
     private CancellationTokenSource? _reloadCts;
 
@@ -256,6 +263,15 @@ public sealed class SchedulerService : IDisposable
     /// persisted timing reflects when the run actually ended, not when it was queued.</summary>
     public void RunMissedJobs(List<ScheduledJob> jobs)
     {
+        // Fire JobsChanged BEFORE the Task.Run launches so the foreground UI sees the
+        // "scheduled jobs are about to run" state before any RunningJobChanged event
+        // arrives from the worker thread. The previous order produced a brief toolbar
+        // flicker on startup (off → on from the worker, then off again when JobsChanged
+        // synchronously fired with a stale snapshot, then on again when the next event
+        // landed). Empty jobs list still fires it — consumers that care about "did
+        // anything need to run" can re-query IsRunningAnyJob themselves.
+        if (jobs.Count > 0) JobsChanged?.Invoke();
+
         foreach (var job in jobs)
         {
             FileLogger.Info($"Running missed job: '{job.Name}'");
@@ -267,7 +283,6 @@ public sealed class SchedulerService : IDisposable
                 catch (Exception ex) { FileLogger.LogException($"Missed job failed: '{job.Name}'", ex); }
             });
         }
-        JobsChanged?.Invoke();
     }
 
     /// <summary>Advances the next-run time for a missed job without executing it.</summary>
@@ -669,6 +684,21 @@ public sealed class SchedulerService : IDisposable
     {
         if (failedEntry.SourcePaths.Count == 0) return;
 
+        // Take the cross-process per-job lock so a user clicking Retry in the LogDialog while
+        // Windows Task Scheduler fires the same JobId can't race. JobId may be Guid.Empty for
+        // pre-JobId log entries — in that case fall through without the lock (matching the
+        // mutex-creation-failure policy).
+        var jobLock = failedEntry.JobId != Guid.Empty
+            ? JobMutex.TryAcquire(failedEntry.JobId, failedEntry.JobName)
+            : null;
+        if (jobLock?.WasBusy == true)
+        {
+            FileLogger.Info($"Retry skipped: '{failedEntry.JobName}' — already running in another process or thread.");
+            ToastNotifier.Notify($"Retry skipped: {failedEntry.JobName}", "Another process or thread is already running this job.", ToastKind.Warning);
+            jobLock.Dispose();
+            return;
+        }
+
         var logEntry = new BackupLogEntry
         {
             JobId = failedEntry.JobId,
@@ -708,6 +738,10 @@ public sealed class SchedulerService : IDisposable
         {
             FileLogger.LogException($"Retry failed: '{logEntry.JobName}'", ex);
             _log.UpdateStatus(logEntry.Id, BackupStatus.Failed, ex.Message);
+        }
+        finally
+        {
+            jobLock?.Dispose();
         }
     }
 
@@ -830,7 +864,7 @@ public sealed class SchedulerService : IDisposable
         {
             try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(250), cts.Token).ConfigureAwait(false);
+                await Task.Delay(WatcherCoalesceDelay, cts.Token).ConfigureAwait(false);
                 LoadJobs();
                 JobsChanged?.Invoke();
             }
@@ -839,16 +873,10 @@ public sealed class SchedulerService : IDisposable
         });
     }
 
-    /// <summary>Builds a timestamped archive filename for a compressed scheduled job run.</summary>
-    private static string BuildArchiveName(string jobName)
-    {
-        var safe = string.Concat(jobName.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-        // Windows rejects filenames ending in '.' or whitespace — strip those before appending the
-        // timestamp so a job like "Nightly ." doesn't produce a path Explorer can't open.
-        safe = safe.TrimEnd(' ', '.', '\t');
-        if (string.IsNullOrWhiteSpace(safe)) safe = "backup";
-        return $"{safe}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.zip";
-    }
+    // Archive name builder lives in NameSanitizer so the manual ("Back up now") path and
+    // the scheduled-run path share the same sanitisation rules. Method-form alias kept so
+    // call sites read naturally.
+    private static string BuildArchiveName(string jobName) => NameSanitizer.BuildArchiveName(jobName);
 
     public void Dispose()
     {
@@ -891,8 +919,8 @@ public sealed class SchedulerService : IDisposable
         // as that can deadlock when Dispose is called from the UI thread
         if (_runTask != null)
         {
-            if (!_runTask.Wait(TimeSpan.FromSeconds(3)))
-                FileLogger.Warn("Scheduler task did not exit within 3 seconds — abandoning wait");
+            if (!_runTask.Wait(SchedulerLoopShutdownTimeout))
+                FileLogger.Warn($"Scheduler task did not exit within {SchedulerLoopShutdownTimeout.TotalSeconds}s — abandoning wait");
         }
 
         // Now that workers have had their cancellation window, dispose their resources.

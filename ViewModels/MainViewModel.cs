@@ -86,6 +86,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>How many results the deep-search batches up before flushing to the UI. 50 is a
+    /// compromise: small enough that results start landing visibly quickly on huge trees, large
+    /// enough that the dispatcher isn't being scheduled per-file under heavy load.</summary>
+    private const int SearchBatchSize = 50;
+
+    /// <summary>How often the pane's "size pie" rebuilds while folder-size computation is in
+    /// progress. 800 ms feels live without thrashing the dispatcher mid-walk.</summary>
+    private static readonly TimeSpan PieRefreshInterval = TimeSpan.FromMilliseconds(800);
+
     // --- Deep search (top pane) ---
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private string _deepSearchQuery = string.Empty;
@@ -813,7 +822,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (cancellationToken.IsCancellationRequested) return;
             if ((isTop && IsTopVisualMode) || (!isTop && IsBottomVisualMode))
                 System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => BuildPieSlices(items, isTop));
-        }, null, TimeSpan.FromMilliseconds(800), TimeSpan.FromMilliseconds(800));
+        }, null, PieRefreshInterval, PieRefreshInterval);
 
         try
         {
@@ -985,7 +994,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 if (matches)
                 {
                     batch.Add(new FileSystemItem(new FileInfo(filePath)));
-                    if (batch.Count >= 50)
+                    if (batch.Count >= SearchBatchSize)
                     {
                         var items = batch.ToList();
                         batch.Clear();
@@ -1018,7 +1027,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     if (dirName.Contains(query, StringComparison.OrdinalIgnoreCase))
                     {
                         batch.Add(new FileSystemItem(new DirectoryInfo(dirPath)));
-                        if (batch.Count >= 50)
+                        if (batch.Count >= SearchBatchSize)
                         {
                             var items = batch.ToList();
                             batch.Clear();
@@ -1143,7 +1152,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 if (matches)
                 {
                     batch.Add(new FileSystemItem(new FileInfo(filePath)));
-                    if (batch.Count >= 50)
+                    if (batch.Count >= SearchBatchSize)
                     {
                         var items = batch.ToList();
                         batch.Clear();
@@ -1174,7 +1183,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     if (dirName.Contains(query, StringComparison.OrdinalIgnoreCase))
                     {
                         batch.Add(new FileSystemItem(new DirectoryInfo(dirPath)));
-                        if (batch.Count >= 50)
+                        if (batch.Count >= SearchBatchSize)
                         {
                             var items = batch.ToList();
                             batch.Clear();
@@ -1621,7 +1630,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 result = await _transfer.CompressAsync(
                     job.SourcePaths, job.DestinationPath,
-                    archiveName: $"{SanitizeName(job.Name)}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.zip",
+                    archiveName: NameSanitizer.BuildArchiveName(job.Name),
                     exclusions: job.ExclusionFilters.Count > 0 ? job.ExclusionFilters : null,
                     cancellationToken: _transferCts!.Token,
                     pauseToken: _pauseGate,
@@ -1777,15 +1786,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         };
         if (dialog.ShowDialog() == true && dialog.Result != null && dialog.RunNow)
             await RunWizardBackupAsync(dialog.Result);
-    }
-
-    /// <summary>Strips invalid filename characters from a job name so it can be embedded in an archive filename.</summary>
-    private static string SanitizeName(string name)
-    {
-        var safe = string.Concat(name.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-        // Windows rejects filenames ending in '.' or whitespace — strip those too.
-        safe = safe.TrimEnd(' ', '.', '\t');
-        return string.IsNullOrWhiteSpace(safe) ? "backup" : safe;
     }
 
     // --- Pie chart (data distribution) ---

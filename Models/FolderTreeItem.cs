@@ -168,6 +168,12 @@ public sealed class FolderTreeItem : INotifyPropertyChanged
             foreach (var dir in dirs)
                 Children.Add(new FolderTreeItem(dir));
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Tree expansion is best-effort — a transient enumeration failure shouldn't
+            // crash the UI thread. Log so a persistent issue (denied share, disconnected
+            // network drive) leaves a trail.
+            BeetsBackup.Services.FileLogger.Warn($"LoadChildrenAsync failed for {FullPath}: {ex.Message}");
+        }
     }
 }

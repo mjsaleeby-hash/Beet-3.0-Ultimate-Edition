@@ -1261,25 +1261,10 @@ public sealed class TransferService
         return total;
     }
 
+    // Delegates to the shared matcher so the size-estimate previews and the actual transfer
+    // can't disagree on what's excluded. See ExclusionMatcher for pattern semantics.
     private static bool IsExcluded(string name, IReadOnlyList<string> exclusions)
-    {
-        foreach (var pattern in exclusions)
-        {
-            if (pattern.StartsWith("*."))
-            {
-                // Extension match: *.tmp, *.log
-                var ext = pattern.Substring(1); // ".tmp"
-                if (name.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            else if (name.Equals(pattern, StringComparison.OrdinalIgnoreCase))
-            {
-                // Exact name match: Thumbs.db, node_modules
-                return true;
-            }
-        }
-        return false;
-    }
+        => ExclusionMatcher.IsExcluded(name, exclusions);
 
     public static long EstimateTotalSize(IEnumerable<string> sourcePaths, IReadOnlyList<string>? exclusions = null)
     {
