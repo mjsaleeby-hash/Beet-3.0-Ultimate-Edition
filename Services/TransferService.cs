@@ -878,7 +878,8 @@ public sealed class TransferService
 
         if (throttleBytesPerSec > 0)
         {
-            var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec, computeHash: verifyChecksums, pauseToken, ct);
+            var sourceHash = ThrottledCopy(source, dest, stripPermissions, throttleBytesPerSec,
+                computeHash: verifyChecksums, progress: progress, pauseToken: pauseToken, ct: ct);
             result.IncrementFilesCopied();
             result.AddBytesTransferred(fileSize);
 
@@ -952,12 +953,15 @@ public sealed class TransferService
     /// <param name="stripPermissions">When <c>true</c>, resets NTFS ACLs to inherit from parent.</param>
     /// <param name="bytesPerSec">Maximum throughput in bytes per second.</param>
     /// <param name="computeHash">When <c>true</c>, computes SHA-256 of the source bytes during copy.</param>
+    /// <param name="progress">Optional progress channel for "Copying foo.iso: 23%" status updates
+    /// on files at or above <see cref="LargeFileProgressThresholdBytes"/> — without this a
+    /// throttled multi-GB copy looked frozen until completion.</param>
     /// <param name="pauseToken">Optional pause gate checked between chunks.</param>
     /// <param name="ct">Cancellation token; also used to break throttle sleeps immediately.</param>
     /// <returns>The SHA-256 hash if <paramref name="computeHash"/> is <c>true</c>; otherwise <c>null</c>.</returns>
     private static byte[]? ThrottledCopy(string source, string dest, bool stripPermissions,
-        long bytesPerSec, bool computeHash, ManualResetEventSlim? pauseToken = null,
-        CancellationToken ct = default)
+        long bytesPerSec, bool computeHash, IProgress<string>? progress = null,
+        ManualResetEventSlim? pauseToken = null, CancellationToken ct = default)
     {
         bool isHidden = File.GetAttributes(source).HasFlag(FileAttributes.Hidden);
 
@@ -967,6 +971,11 @@ public sealed class TransferService
         // fewer throttle-sleep cycles; pooling avoids per-file heap churn under heavy loads.
         const int BufferSize = 1024 * 1024;
         var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+        var srcInfo = new FileInfo(source);
+        var srcLength = srcInfo.Length;
+        bool reportProgress = progress != null && srcLength >= LargeFileProgressThresholdBytes;
+        var srcName = Path.GetFileName(source);
+        int lastReportedPct = -1;
         try
         {
             using var srcStream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, FileOptions.SequentialScan);
@@ -986,6 +995,20 @@ public sealed class TransferService
                     sha?.TransformBlock(buffer, 0, bytesRead, null, 0);
                     destStream.Write(buffer, 0, bytesRead);
                     totalBytesWritten += bytesRead;
+
+                    // Within-file progress for large throttled copies. Mirrors the
+                    // CopyProgressRoutine path that fires for unthrottled copies — without
+                    // this the UX trap from the audit (throttle + multi-GB ISO = frozen bar)
+                    // would still be there in the path users hit most.
+                    if (reportProgress && srcLength > 0)
+                    {
+                        var pct = (int)(totalBytesWritten * 100 / srcLength);
+                        if (pct != lastReportedPct)
+                        {
+                            lastReportedPct = pct;
+                            progress!.Report($"Copying {srcName}: {pct}%");
+                        }
+                    }
 
                     // Throttle: if we've written more bytes than the rate allows, wait on the
                     // cancel token's wait handle so a Cancel() request breaks the delay
@@ -1017,8 +1040,7 @@ public sealed class TransferService
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        // Preserve timestamps
-        var srcInfo = new FileInfo(source);
+        // Preserve timestamps (srcInfo captured earlier when reading srcLength)
         File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc);
         File.SetCreationTimeUtc(dest, srcInfo.CreationTimeUtc);
 

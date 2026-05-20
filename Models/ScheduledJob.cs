@@ -104,20 +104,27 @@ public sealed class ScheduledJob
     /// <summary>
     /// Copies every persisted field from <paramref name="src"/> onto this instance, except for
     /// <see cref="Id"/> which is treated as the immutable identity. Used by SchedulerService's
-    /// LoadJobs (cross-process watcher reload) and UpdateJob (edits) so that in-flight
-    /// ExecuteJobAsync tasks holding a reference to the existing instance see the merged
-    /// state instead of being orphaned by a list-slot replacement.
+    /// LoadJobs (cross-process watcher reload), UpdateJob (edits), and SnapshotJob (background
+    /// task hand-off) so that in-flight tasks holding a reference to the existing instance see
+    /// the merged state instead of being orphaned by a list-slot replacement.
+    ///
+    /// List-valued properties (<see cref="SourcePaths"/>, <see cref="ExclusionFilters"/>) are
+    /// defensively deep-copied — the caller's list isn't aliased into this instance. That
+    /// matters for SnapshotJob (the snapshot lives on a worker thread and the original may
+    /// mutate concurrently) and for UpdateJob (the dialog VM keeps its own reference and
+    /// could mutate it after returning).
+    ///
     /// Add new persisted properties here too, otherwise merges silently drop them.
     /// </summary>
     public void CopyFieldsFrom(ScheduledJob src)
     {
         Name = src.Name;
-        SourcePaths = src.SourcePaths;
+        SourcePaths = new List<string>(src.SourcePaths);
         DestinationPath = src.DestinationPath;
         StripPermissions = src.StripPermissions;
         VerifyChecksums = src.VerifyChecksums;
         TransferMode = src.TransferMode;
-        ExclusionFilters = src.ExclusionFilters;
+        ExclusionFilters = new List<string>(src.ExclusionFilters);
         ThrottleMBps = src.ThrottleMBps;
         EnableVersioning = src.EnableVersioning;
         MaxVersions = src.MaxVersions;

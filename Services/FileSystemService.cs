@@ -126,12 +126,15 @@ public sealed class FileSystemService
         int cancel = 0;
         CopyProgressRoutine? routine = null;
         IntPtr routinePtr = IntPtr.Zero;
-        GCHandle routineHandle = default;
         if (onBytesProgress != null)
         {
-            // Capture the delegate in a local so the GC can't collect it while CopyFileEx is calling
-            // back into it. GCHandle.Alloc(routine) pins the managed object; the delegate-to-fnptr
-            // marshalling stays valid for the duration of the call. Free in the finally regardless.
+            // The delegate is stored in a local so it stays strongly rooted on this stack
+            // frame for the duration of the CopyFileEx call; GC.KeepAlive(routine) below
+            // makes that explicit so the JIT can't optimise the local away. We deliberately
+            // do NOT use GCHandle.Alloc here — a Normal-kind handle just adds rooting,
+            // which we already have, and a Pinned handle isn't allowed on a delegate (it's
+            // not blittable). The previous version's GCHandle was redundant and the
+            // accompanying "pins the managed object" comment was misleading.
             routine = (total, transferred, _, _, _, _, _, _, _) =>
             {
                 // The kernel calls back into this delegate during the copy. Letting an
@@ -144,7 +147,6 @@ public sealed class FileSystemService
                 catch { /* never let an exception cross the P/Invoke boundary */ }
                 return 0; // PROGRESS_CONTINUE
             };
-            routineHandle = GCHandle.Alloc(routine);
             routinePtr = Marshal.GetFunctionPointerForDelegate(routine);
         }
         try
@@ -162,7 +164,10 @@ public sealed class FileSystemService
         }
         finally
         {
-            if (routineHandle.IsAllocated) routineHandle.Free();
+            // Anchor the delegate past the CopyFileEx return so the kernel can't see
+            // a freed function pointer if a callback is still draining when CopyFileEx
+            // returns. KeepAlive emits the necessary read on `routine` to prevent the
+            // JIT from eliding the local.
             GC.KeepAlive(routine);
         }
     }

@@ -229,11 +229,17 @@ public sealed class SchedulerService : IDisposable
         if (!_headlessMode) StartWatcher();
     }
 
-    /// <summary>Starts the background scheduler loop (idempotent).</summary>
+    /// <summary>Starts the background scheduler loop (idempotent — safe to call from multiple threads).</summary>
     public void Start()
     {
-        if (_runTask == null)
-            _runTask = RunAsync(_cts.Token);
+        // Lock against a second concurrent Start() observing _runTask == null and launching
+        // a duplicate RunAsync. Today only App.OnStartup calls this once, but the
+        // documented contract is "idempotent" and the previous read+assign pattern would
+        // orphan one of two competing tasks if the contract were ever exercised concurrently.
+        lock (_jobsLock)
+        {
+            _runTask ??= RunAsync(_cts.Token);
+        }
     }
 
     /// <summary>Returns enabled jobs whose next-run time is in the past (missed while app was closed).</summary>
@@ -599,26 +605,12 @@ public sealed class SchedulerService : IDisposable
 
     private static ScheduledJob SnapshotJob(ScheduledJob job)
     {
-        return new ScheduledJob
-        {
-            Id = job.Id,
-            Name = job.Name,
-            SourcePaths = new List<string>(job.SourcePaths),
-            DestinationPath = job.DestinationPath,
-            StripPermissions = job.StripPermissions,
-            VerifyChecksums = job.VerifyChecksums,
-            TransferMode = job.TransferMode,
-            ExclusionFilters = new List<string>(job.ExclusionFilters),
-            ThrottleMBps = job.ThrottleMBps,
-            EnableVersioning = job.EnableVersioning,
-            MaxVersions = job.MaxVersions,
-            EnableCompression = job.EnableCompression,
-            IsRecurring = job.IsRecurring,
-            RecurInterval = job.RecurInterval,
-            NextRun = job.NextRun,
-            LastRun = job.LastRun,
-            IsEnabled = job.IsEnabled
-        };
+        // Routes through ScheduledJob.CopyFieldsFrom so adding a new persisted property to
+        // ScheduledJob is a one-touch change rather than something that has to be reflected
+        // here too. The Id is set up front (CopyFieldsFrom treats it as immutable identity).
+        var snapshot = new ScheduledJob { Id = job.Id };
+        snapshot.CopyFieldsFrom(job);
+        return snapshot;
     }
 
     /// <summary>Pauses a currently running job by resetting its pause gate.</summary>
@@ -874,6 +866,25 @@ public sealed class SchedulerService : IDisposable
         try { _reloadCts?.Cancel(); } catch (ObjectDisposedException) { }
         _reloadCts?.Dispose();
         _reloadCts = null;
+
+        // Cancel in-flight jobs BEFORE waiting on the scheduler loop. The old order waited
+        // up to 3s for the scheduler tick task (which only dispatches; doesn't run jobs) and
+        // only THEN signalled the actual ExecuteJobAsync workers. That meant a scheduled run
+        // active at quit time kept copying bytes through the entire 3s wait window, and
+        // App.OnExit's 5s overall budget frequently fired before the worker could unwind.
+        // Cancelling here gives the worker the full wait window to observe the token, close
+        // its file handles, and run its finally block cleanly. Pause gates are pulsed first
+        // so a paused worker observes the CT immediately rather than via the throw path.
+        lock (_jobsLock)
+        {
+            foreach (var gate in _pauseGates.Values)
+                gate.Set();
+            foreach (var cts in _runningCts.Values)
+            {
+                try { cts.Cancel(); } catch (ObjectDisposedException) { }
+            }
+        }
+
         _cts.Cancel();
         _ticker.Dispose(); // Causes WaitForNextTickAsync to return false immediately
         // Wait briefly for the scheduler loop to exit — don't block indefinitely
@@ -883,11 +894,12 @@ public sealed class SchedulerService : IDisposable
             if (!_runTask.Wait(TimeSpan.FromSeconds(3)))
                 FileLogger.Warn("Scheduler task did not exit within 3 seconds — abandoning wait");
         }
+
+        // Now that workers have had their cancellation window, dispose their resources.
+        // A worker's own finally block may have already removed its entries and disposed
+        // its CTS — the guards here cover the harmless double-dispose path.
         lock (_jobsLock)
         {
-            // Cancel running jobs first, then release their pause gates so workers can observe
-            // the cancellation. Order matters: a cancelled-but-paused job would otherwise block
-            // here forever waiting on the gate.
             foreach (var cts in _runningCts.Values)
             {
                 try { cts.Cancel(); } catch (ObjectDisposedException) { }

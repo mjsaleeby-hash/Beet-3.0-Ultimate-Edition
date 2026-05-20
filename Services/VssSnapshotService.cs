@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -10,22 +11,27 @@ namespace BeetsBackup.Services;
 /// </summary>
 public sealed class VssSnapshotService : IDisposable
 {
-    // Snapshot cache: volume root (e.g. "C:\") → shadow device path
-    private readonly Dictionary<string, string> _snapshotRoots = new();
-    // Track snapshot set IDs for cleanup
+    /// <summary>
+    /// Per-volume snapshot factories. Keys are volume roots ("C:\"). The <see cref="Lazy{T}"/>
+    /// pattern with publication-thread-safety means each volume's snapshot is created exactly
+    /// once even under concurrent calls, AND callers for different volumes don't block each
+    /// other — multi-volume backups parallelize VSS creation instead of serializing it under
+    /// a single class-wide lock.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, Lazy<string>> _snapshotFactories =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // Track snapshot set IDs for cleanup. Guarded by _snapshotsLock so Dispose and the
+    // CreateSnapshot success-path additions don't race.
     private readonly List<(IVssBackupComponents components, Guid snapshotSetId, Guid snapshotId)> _snapshots = new();
-    // Serializes snapshot creation across parallel copy workers. Without this two workers hitting
-    // locked files on the same volume could race in CreateSnapshot, double-create snapshots, and
-    // leak COM handles. Granularity is per-volume in spirit (ConcurrentDictionary<volume, Lazy<>>
-    // would express that better) but a single lock is fine here — VSS create is rare, slow when
-    // it does happen, and we don't want to create two on the same volume in parallel anyway.
-    private readonly object _snapshotLock = new();
+    private readonly object _snapshotsLock = new();
     private bool _disposed;
 
     /// <summary>
     /// Gets the shadow copy device path for the volume containing the given file.
     /// Creates a new VSS snapshot if one doesn't already exist for that volume.
-    /// Thread-safe: parallel copy workers can call this concurrently.
+    /// Thread-safe: parallel copy workers can call this concurrently, and different volumes
+    /// proceed in parallel via per-volume Lazy factories.
     /// </summary>
     /// <param name="filePath">Full path to the locked file (e.g. C:\Users\foo\bar.db)</param>
     /// <returns>Shadow device root (e.g. \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3)</returns>
@@ -37,32 +43,50 @@ public sealed class VssSnapshotService : IDisposable
         var volumeRoot = Path.GetPathRoot(filePath)
             ?? throw new ArgumentException($"Cannot determine volume root for: {filePath}");
 
-        lock (_snapshotLock)
+        // GetOrAdd returns the existing Lazy for already-snapshotted volumes; the factory
+        // delegate only runs for a brand-new volume key. Inside the Lazy, exactly one thread
+        // creates the snapshot — others awaiting the same volume block on Lazy's monitor
+        // but a thread asking about a DIFFERENT volume runs concurrently. If Lazy.Value
+        // throws, the exception is cached and re-thrown to every awaiter, so failures don't
+        // get retried in a hot loop — drop the cached failure so the next call can retry.
+        var lazy = _snapshotFactories.GetOrAdd(volumeRoot, v => new Lazy<string>(
+            () => CreateSnapshotWithLogging(v),
+            LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
         {
-            // Return cached snapshot if we already have one for this volume.
-            if (_snapshotRoots.TryGetValue(volumeRoot, out var cached))
-                return cached;
+            return lazy.Value;
+        }
+        catch
+        {
+            _snapshotFactories.TryRemove(new KeyValuePair<string, Lazy<string>>(volumeRoot, lazy));
+            throw;
+        }
+    }
 
-            FileLogger.Info($"Creating VSS snapshot for volume {volumeRoot}");
-
-            try
-            {
-                var snapshotDevicePath = CreateSnapshot(volumeRoot);
-                _snapshotRoots[volumeRoot] = snapshotDevicePath;
-                FileLogger.Info($"VSS snapshot created: {volumeRoot} → {snapshotDevicePath}");
-                return snapshotDevicePath;
-            }
-            catch (COMException ex)
-            {
-                FileLogger.Error($"VSS failed for {volumeRoot}: 0x{ex.HResult:X8} — {ex.Message}");
-                throw new InvalidOperationException(
-                    $"VSS snapshot failed for {volumeRoot}. The application may need to run as Administrator.", ex);
-            }
-            catch (Exception ex)
-            {
-                FileLogger.Error($"VSS failed for {volumeRoot}: {ex.Message}");
-                throw new InvalidOperationException($"VSS snapshot failed for {volumeRoot}: {ex.Message}", ex);
-            }
+    /// <summary>
+    /// Wraps <see cref="CreateSnapshot"/> with the volume's log lines and the exception
+    /// translation that <see cref="GetOrCreateSnapshotRoot"/> used to do inline.
+    /// </summary>
+    private string CreateSnapshotWithLogging(string volumeRoot)
+    {
+        FileLogger.Info($"Creating VSS snapshot for volume {volumeRoot}");
+        try
+        {
+            var snapshotDevicePath = CreateSnapshot(volumeRoot);
+            FileLogger.Info($"VSS snapshot created: {volumeRoot} → {snapshotDevicePath}");
+            return snapshotDevicePath;
+        }
+        catch (COMException ex)
+        {
+            FileLogger.Error($"VSS failed for {volumeRoot}: 0x{ex.HResult:X8} — {ex.Message}");
+            throw new InvalidOperationException(
+                $"VSS snapshot failed for {volumeRoot}. The application may need to run as Administrator.", ex);
+        }
+        catch (Exception ex)
+        {
+            FileLogger.Error($"VSS failed for {volumeRoot}: {ex.Message}");
+            throw new InvalidOperationException($"VSS snapshot failed for {volumeRoot}: {ex.Message}", ex);
         }
     }
 
@@ -84,6 +108,11 @@ public sealed class VssSnapshotService : IDisposable
         if (hr != 0)
             Marshal.ThrowExceptionForHR(hr);
 
+        // Tracks whether snapshot-set creation got past StartSnapshotSet — if so, the failure
+        // path must call AbortBackup to release VSS's internal state. Without that, half-prepared
+        // snapshot sets linger in the VSS service until reboot and eventually exhaust the OS cap.
+        bool snapshotSetStarted = false;
+
         try
         {
             // Step 2: Initialize for backup
@@ -96,12 +125,12 @@ public sealed class VssSnapshotService : IDisposable
 
             // Step 4: Gather writer metadata (required by VSS state machine)
             hr = backupComponents.GatherWriterMetadata(out var asyncGather);
-            Marshal.ThrowExceptionForHR(hr);
-            WaitForAsync(asyncGather);
+            RunVssAsync(hr, asyncGather);
 
             // Step 5: Start a snapshot set
             hr = backupComponents.StartSnapshotSet(out var snapshotSetId);
             Marshal.ThrowExceptionForHR(hr);
+            snapshotSetStarted = true;
 
             // Step 6: Add the volume to the snapshot set
             // Ensure volume root ends with backslash (VSS requires it)
@@ -111,13 +140,11 @@ public sealed class VssSnapshotService : IDisposable
 
             // Step 7: Prepare for backup
             hr = backupComponents.PrepareForBackup(out var asyncPrepare);
-            Marshal.ThrowExceptionForHR(hr);
-            WaitForAsync(asyncPrepare);
+            RunVssAsync(hr, asyncPrepare);
 
             // Step 8: Execute the snapshot
             hr = backupComponents.DoSnapshotSet(out var asyncSnapshot);
-            Marshal.ThrowExceptionForHR(hr);
-            WaitForAsync(asyncSnapshot);
+            RunVssAsync(hr, asyncSnapshot);
 
             // Step 9: Get the snapshot properties to find the device path
             hr = backupComponents.GetSnapshotProperties(snapshotId, out var props);
@@ -136,18 +163,51 @@ public sealed class VssSnapshotService : IDisposable
             if (string.IsNullOrEmpty(devicePath))
                 throw new InvalidOperationException("VSS returned empty snapshot device path");
 
-            // Track for cleanup
-            _snapshots.Add((backupComponents, snapshotSetId, snapshotId));
+            // Track for cleanup. Lock against Dispose's list iteration so a worker creating
+            // a snapshot while another thread tears the service down doesn't corrupt the list.
+            lock (_snapshotsLock)
+            {
+                _snapshots.Add((backupComponents, snapshotSetId, snapshotId));
+            }
 
             // Remove trailing backslash if present so path concatenation works cleanly
             return devicePath.TrimEnd('\\');
         }
         catch
         {
-            // If snapshot creation failed, release the COM object
+            // Tell VSS to release any state it built up after StartSnapshotSet. Without this
+            // the half-prepared snapshot set lingers in the VSS service and counts against the
+            // OS's active-set cap until reboot.
+            if (snapshotSetStarted)
+            {
+                try { backupComponents.AbortBackup(); } catch { /* best-effort cleanup */ }
+            }
             try { Marshal.ReleaseComObject(backupComponents); } catch { }
             throw;
         }
+    }
+
+    /// <summary>
+    /// Throws on a failing HRESULT from the just-returned VSS call, otherwise waits on the
+    /// out-parameter async object. Centralizes the "release the IVssAsync even if the HR was
+    /// bad" pattern — previously a non-zero HR would throw before WaitForAsync was reached
+    /// and the COM RCW would leak across the unwind.
+    /// </summary>
+    private static void RunVssAsync(int hr, IVssAsync? vssAsync)
+    {
+        if (hr != 0)
+        {
+            // HR is bad — release the async (VSS may still hand it out via the out param)
+            // and propagate the failure.
+            if (vssAsync != null)
+            {
+                try { Marshal.ReleaseComObject(vssAsync); } catch { }
+            }
+            Marshal.ThrowExceptionForHR(hr);
+            return;
+        }
+        // HR ok — WaitForAsync handles the wait-and-release cycle in its own finally.
+        if (vssAsync != null) WaitForAsync(vssAsync);
     }
 
     private static void WaitForAsync(IVssAsync vssAsync)
@@ -173,7 +233,17 @@ public sealed class VssSnapshotService : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        foreach (var (components, snapshotSetId, _) in _snapshots)
+        // Snapshot the list under lock so we don't race with a worker still finishing
+        // CreateSnapshot on another volume. After the swap, no new entries can be added
+        // (callers see _disposed and bail).
+        List<(IVssBackupComponents components, Guid snapshotSetId, Guid snapshotId)> toDelete;
+        lock (_snapshotsLock)
+        {
+            toDelete = new List<(IVssBackupComponents, Guid, Guid)>(_snapshots);
+            _snapshots.Clear();
+        }
+
+        foreach (var (components, snapshotSetId, _) in toDelete)
         {
             try
             {
@@ -191,8 +261,7 @@ public sealed class VssSnapshotService : IDisposable
             }
         }
 
-        _snapshots.Clear();
-        _snapshotRoots.Clear();
+        _snapshotFactories.Clear();
         FileLogger.Info("VSS snapshots disposed");
     }
 

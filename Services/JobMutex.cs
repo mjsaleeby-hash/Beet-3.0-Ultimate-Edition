@@ -34,9 +34,23 @@ public static class JobMutex
             return new JobMutexLease(null, heldByUs: false, wasBusy: false);
         }
 
+        // WaitOne(0) only throws AbandonedMutexException in normal use, but if the named
+        // object's DACL has been tampered with we can hit AccessControlException — or
+        // theoretically WaitHandleCannotBeOpenedException, ObjectDisposedException after
+        // a TOCTOU race, etc. Dispose the just-created mutex in any of those paths so we
+        // don't leak the OS handle just because we couldn't poll it.
         bool gotLock;
-        try { gotLock = jobMutex.WaitOne(System.TimeSpan.Zero); }
-        catch (System.Threading.AbandonedMutexException) { gotLock = true; }
+        try
+        {
+            try { gotLock = jobMutex.WaitOne(System.TimeSpan.Zero); }
+            catch (System.Threading.AbandonedMutexException) { gotLock = true; }
+        }
+        catch (System.Exception ex)
+        {
+            FileLogger.LogException($"Could not poll job mutex for '{jobName}'; running without cross-process lock", ex);
+            jobMutex.Dispose();
+            return new JobMutexLease(null, heldByUs: false, wasBusy: false);
+        }
 
         if (!gotLock)
         {

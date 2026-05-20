@@ -92,11 +92,18 @@ public sealed class BackupLogService : IDisposable
         if (!_headlessMode) StartWatcher();
     }
 
+    /// <summary>Process start time. Used by <see cref="ReloadFromDisk"/> to distinguish stale
+    /// Running entries (left over from a crashed prior process — Timestamp predates our start)
+    /// from a peer process's currently-running entry (Timestamp post-dates our start). Without
+    /// this gate, a watcher reload would have second-guessed a live headless run.</summary>
+    private static readonly DateTime ProcessStartTime = System.Diagnostics.Process.GetCurrentProcess().StartTime;
+
     /// <summary>
     /// Re-reads the log file into <see cref="Entries"/>, replacing the current contents. Called
-    /// at startup (with housekeeping that fixes stale Running entries) and on every external
-    /// file change detected by the watcher (without housekeeping — the housekeeping was already
-    /// applied by whichever process loaded the file initially).
+    /// at startup with full housekeeping, and on every external file change detected by the
+    /// watcher with a narrower housekeeping pass that only rewrites pre-process-start Running
+    /// entries — that subset is safe to apply on every reload (a peer process's currently
+    /// running entry has a post-start timestamp).
     /// </summary>
     private void ReloadFromDisk(bool applyHousekeeping)
     {
@@ -113,15 +120,26 @@ public sealed class BackupLogService : IDisposable
                 foreach (var entry in loaded.OrderByDescending(e => e.Timestamp))
                     Entries.Add(entry);
 
-                if (!applyHousekeeping) return;
-
-                // Mark any entries left in Running state as interrupted
                 bool anyStale = false;
-                foreach (var entry in Entries.Where(e => e.Status == BackupStatus.Running).ToList())
+
+                // Stale-Running rewrite runs on EVERY reload, not just startup. Otherwise a
+                // foreground process that crashed mid-run wouldn't surface its own stale
+                // Running entry as Failed when a later watcher reload re-read the file —
+                // the previous code skipped this branch and the user saw a perpetual
+                // "Running" row. Gating on ProcessStartTime keeps us from clobbering a
+                // peer process's still-live Running entry.
+                foreach (var entry in Entries.Where(e =>
+                    e.Status == BackupStatus.Running && e.Timestamp < ProcessStartTime).ToList())
                 {
                     entry.Status = BackupStatus.Failed;
                     entry.Message = "Interrupted — the application closed while this job was running.";
                     anyStale = true;
+                }
+
+                if (!applyHousekeeping)
+                {
+                    if (anyStale) Save();
+                    return;
                 }
 
                 // Fix completed entries that still show a percentage as their message
@@ -407,7 +425,18 @@ public sealed class BackupLogService : IDisposable
             {
                 _savePending = true;
                 var dispatcher = Application.Current?.Dispatcher;
-                dispatcher?.BeginInvoke(DispatcherPriority.Background, () =>
+                if (dispatcher == null)
+                {
+                    // Shutdown: Application.Current went null between our entry and now.
+                    // The previous version did `dispatcher?.BeginInvoke(...)`, which on null
+                    // silently dropped the save — and since _savePending was already true,
+                    // no future Save() call would queue one either. Fall back to SaveNow
+                    // inline so the queued state still lands on disk.
+                    _savePending = false;
+                    SaveNow();
+                    return;
+                }
+                dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
                 {
                     _savePending = false;
                     SaveNow();

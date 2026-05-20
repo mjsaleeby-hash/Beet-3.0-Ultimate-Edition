@@ -138,22 +138,10 @@ public partial class BackupLogEntry : ObservableObject
         }
     }
 
-    private DateTime _timestamp = DateTime.Now;
-
     /// <summary>When this entry was last updated.</summary>
-    public DateTime Timestamp
-    {
-        get => _timestamp;
-        set
-        {
-            if (_timestamp != value)
-            {
-                _timestamp = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(TimestampDisplay));
-            }
-        }
-    }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TimestampDisplay))]
+    private DateTime _timestamp = DateTime.Now;
 
     /// <summary>Human-readable status text for UI binding.</summary>
     public string StatusDisplay => Status.ToString();
