@@ -309,6 +309,7 @@ public sealed class SchedulerService : IDisposable
                 SourcePath = string.Join("; ", job.SourcePaths),
                 DestinationPath = job.DestinationPath,
                 Status = BackupStatus.Skipped,
+                Timestamp = DateTime.Now,
                 Message = $"Missed backup skipped by user. Next run: {job.NextRun:g}"
             });
         }
@@ -332,6 +333,7 @@ public sealed class SchedulerService : IDisposable
             SourcePath = string.Join("; ", job.SourcePaths),
             DestinationPath = job.DestinationPath,
             Status = BackupStatus.Scheduled,
+            Timestamp = DateTime.Now,
             Message = $"Scheduled for {job.NextRun:g}{(job.IsRecurring ? $", recurring {job.RecurInterval}" : "")}"
         });
 

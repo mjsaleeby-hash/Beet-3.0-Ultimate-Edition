@@ -155,7 +155,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         get
         {
-            var last = TerminalEntries.OrderByDescending(e => e.Timestamp).FirstOrDefault();
+            // Only a Complete run counts as a "last backup". Failed/Skipped entries are in
+            // TerminalEntries (used by IsProtected's negative checks) but they did NOT back
+            // anything up — surfacing a user-skipped missed job or a cancelled run as the
+            // "Last backup" is misleading, and a Skipped placeholder's timestamp can read as
+            // a future "Today, 11:45 PM" because nothing actually ran at that time.
+            var last = _log.Entries
+                .Where(e => e.Status == BackupStatus.Complete)
+                .OrderByDescending(e => e.Timestamp)
+                .FirstOrDefault();
             return last == null ? "Never" : FormatRelativeDate(last.Timestamp);
         }
     }
@@ -165,8 +173,28 @@ public partial class MainViewModel : ObservableObject, IDisposable
         get
         {
             var next = _scheduler.Jobs.Where(j => j.IsEnabled).OrderBy(j => j.NextRun).FirstOrDefault();
-            return next == null ? "Not scheduled" : FormatRelativeDate(next.NextRun);
+            return next == null ? "Not scheduled" : FormatRelativeDate(ProjectedNextRun(next));
         }
+    }
+
+    /// <summary>
+    /// Returns the job's next run time projected forward past <see cref="DateTime.Now"/>.
+    /// A recurring job whose run was missed while the app was closed keeps a past
+    /// <see cref="ScheduledJob.NextRun"/> until the missed-job machinery advances it; showing
+    /// that stale value would render a "Next backup" in the past — and one that can sort
+    /// earlier than "Last backup", producing an inconsistent pair. This computes the display
+    /// value only and does not mutate the persisted job.
+    /// </summary>
+    private static DateTime ProjectedNextRun(ScheduledJob job)
+    {
+        var nextRun = job.NextRun;
+        if (job.IsRecurring && job.RecurInterval is { } interval && interval > TimeSpan.Zero)
+        {
+            var now = DateTime.Now;
+            while (nextRun <= now)
+                nextRun = nextRun.Add(interval);
+        }
+        return nextRun;
     }
 
     public string TotalFilesCopiedDisplay
