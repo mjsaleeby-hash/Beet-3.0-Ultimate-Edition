@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 
 namespace BeetsBackup.Services;
 
@@ -26,8 +29,33 @@ public static class FileLogger
     private static readonly object _lock = new();
     private const long MaxSizeBytes = 10 * 1024 * 1024; // 10 MB
 
+    // Log writes go through a single-consumer background queue so callers — including the parallel
+    // copy workers — never block on disk I/O or contend on the file lock per line. The writer thread
+    // coalesces everything currently queued into one append, collapsing a burst of N per-line
+    // open/write/close cycles into a single one. A ProcessExit hook flushes the tail so a graceful
+    // shutdown loses nothing; an abrupt kill can still drop in-flight INFO/WARN lines, which is an
+    // acceptable trade for an operational log (crash dumps are flushed explicitly — see WriteCrashDump).
+    private static readonly BlockingCollection<object> _queue = new();
+
+    /// <summary>Marker enqueued by <see cref="Flush"/>; the writer signals <see cref="Done"/> once
+    /// every line queued before it has reached disk.</summary>
+    private sealed record FlushSignal(ManualResetEventSlim Done);
+
+    static FileLogger()
+    {
+        var writer = new Thread(DrainLoop)
+        {
+            IsBackground = true,
+            Name = "FileLogger",
+        };
+        writer.Start();
+        // Best-effort flush of the tail on a graceful exit (normal shutdown, headless --run-job done).
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Flush();
+    }
+
     /// <summary>
-    /// Writes a timestamped log entry at the specified level.
+    /// Writes a timestamped log entry at the specified level. Returns immediately — the formatted
+    /// line is handed to the background writer rather than written inline.
     /// </summary>
     /// <param name="level">Severity level (e.g. "INFO", "WARN", "ERROR").</param>
     /// <param name="message">The message to log.</param>
@@ -35,11 +63,68 @@ public static class FileLogger
     {
         try
         {
+            _queue.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}\n");
+        }
+        catch { /* queue completed during shutdown — drop the line */ }
+    }
+
+    /// <summary>
+    /// Blocks until every log line queued so far has reached disk. Called from
+    /// <see cref="WriteCrashDump"/> and on process exit so durability-critical lines aren't stranded
+    /// in the background queue. Bounded by a short timeout so a wedged writer can't hang shutdown.
+    /// </summary>
+    public static void Flush()
+    {
+        var done = new ManualResetEventSlim(false);
+        try { _queue.Add(new FlushSignal(done)); }
+        catch { return; /* nothing draining the queue */ }
+        try { done.Wait(TimeSpan.FromSeconds(2)); }
+        catch { /* timeout/disposed — give up rather than block forever */ }
+    }
+
+    /// <summary>Single-consumer loop: drains the queue, coalescing all immediately-available lines
+    /// into one append so a burst of logging is one disk write, not one per line.</summary>
+    private static void DrainLoop()
+    {
+        foreach (var item in _queue.GetConsumingEnumerable())
+        {
+            if (item is FlushSignal flushOnly)
+            {
+                // All prior lines were written in earlier iterations — nothing buffered to flush.
+                flushOnly.Done.Set();
+                continue;
+            }
+
+            var batch = new StringBuilder((string)item);
+            bool released = false;
+            while (_queue.TryTake(out var next))
+            {
+                if (next is FlushSignal signal)
+                {
+                    // Write what we've accumulated, THEN release the waiter — it must observe its
+                    // own preceding lines on disk before Flush returns.
+                    WriteBatch(batch.ToString());
+                    signal.Done.Set();
+                    released = true;
+                    break;
+                }
+                batch.Append((string)next!);
+            }
+            if (!released) WriteBatch(batch.ToString());
+        }
+    }
+
+    /// <summary>Appends a pre-formatted block of one or more lines to the operational log,
+    /// rotating first if needed. Failures are swallowed — logging must never throw.</summary>
+    private static void WriteBatch(string text)
+    {
+        try
+        {
             lock (_lock)
             {
                 Directory.CreateDirectory(LogDirectory);
                 RotateIfNeeded(LogPath);
-                File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}\n");
+                File.AppendAllText(LogPath, text);
             }
         }
         catch { }
@@ -142,8 +227,10 @@ public static class FileLogger
 
             File.AppendAllText(CrashDumpPath, dump);
 
-            // Also log to operational log for correlation
+            // Also log to operational log for correlation, then force the background queue to disk —
+            // a crash dump usually precedes process death, so we can't leave that line in flight.
             Log("FATAL", $"{source}: {ex.GetType().Name}: {ex.Message}");
+            Flush();
         }
         catch { /* Last resort — nothing we can do */ }
     }

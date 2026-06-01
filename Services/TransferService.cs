@@ -94,7 +94,6 @@ public sealed class TransferService
             // Create a per-session VSS scope — snapshots are cached per volume and cleaned up at the end
             using var vssSession = new VssSnapshotService();
 
-            CheckFreeSpace(sourceList, destinationDir);
             var excludeSet = exclusions != null && exclusions.Count > 0 ? exclusions : null;
 
             // Phase 1 — enumerate. One walk of the source tree produces a frozen plan: every
@@ -105,6 +104,12 @@ public sealed class TransferService
             progress?.Report("Scanning source...");
             var plan = EnumerateWorkItems(sourceList, destinationDir, mode, excludeSet, cancellationToken);
             result.TotalFiles = plan.Files.Count;
+
+            // Free-space pre-check, sized off the plan rather than the raw source total. Only Copy and
+            // Replace items consume destination space; SkipIdentical files already exist and excluded
+            // subtrees aren't in the plan at all. The old raw-total check rejected backups that would
+            // comfortably fit — e.g. a re-run of a mostly-unchanged Mirror, or one with big exclusions.
+            CheckFreeSpaceForBytes(RequiredFreeBytes(plan), destinationDir);
 
             // Phase 2 — pre-create destination directories, parents before children. Sorting by
             // separator-count (depth proxy) is enough because a child's path is always longer than
@@ -205,8 +210,9 @@ public sealed class TransferService
             // clobber user data. Counter suffix: "name.zip" → "name (2).zip" → "name (3).zip" …
             var archivePath = GetUniqueFilePath(Path.Combine(destinationDir, archiveName));
 
-            // Rough free-space check based on uncompressed size (conservative — real archive will be smaller)
-            CheckFreeSpace(sourceList, destinationDir);
+            // Rough free-space check based on uncompressed size (conservative — real archive will be
+            // smaller). Honors exclusions so excluded subtrees don't inflate the requirement.
+            CheckFreeSpace(sourceList, destinationDir, exclusions);
 
             var excludeSet = exclusions != null && exclusions.Count > 0 ? exclusions : null;
             result.TotalFiles = sourceList.Sum(s => CountFiles(s, excludeSet));
@@ -1196,10 +1202,36 @@ public sealed class TransferService
         return candidate;
     }
 
-    private static void CheckFreeSpace(List<string> sourcePaths, string destinationDir)
+    /// <summary>
+    /// Estimate-based free-space pre-check used by the Compress and Move paths (which don't build an
+    /// enumeration plan). Honors <paramref name="exclusions"/> so a backup that excludes most of its
+    /// source — e.g. a huge <c>node_modules</c> — isn't rejected for space it will never actually use.
+    /// </summary>
+    private static void CheckFreeSpace(List<string> sourcePaths, string destinationDir, IReadOnlyList<string>? exclusions = null)
     {
-        long totalSize = EstimateTotalSize(sourcePaths);
+        CheckFreeSpaceForBytes(EstimateTotalSize(sourcePaths, exclusions), destinationDir);
+    }
 
+    /// <summary>
+    /// Bytes the destination drive must have free for this plan: the sum of <see cref="FileAction.Copy"/>
+    /// and <see cref="FileAction.Replace"/> source sizes. <see cref="FileAction.SkipIdentical"/> items
+    /// already exist at the destination and excluded files never make it into the plan, so neither
+    /// counts. (Replace overwrites an existing file, so this slightly over-estimates by the old file's
+    /// size — deliberately conservative, and far closer than the previous raw source total.)
+    /// </summary>
+    internal static long RequiredFreeBytes(EnumerationPlan plan) =>
+        plan.Files
+            .Where(f => f.Action is FileAction.Copy or FileAction.Replace)
+            .Sum(f => f.SourceSize);
+
+    /// <summary>
+    /// Throws <see cref="InsufficientSpaceException"/> if the destination drive can't hold
+    /// <paramref name="requiredBytes"/>. The Copy path computes that figure from the enumeration plan
+    /// (Copy + Replace items only) so files that will be skipped as identical don't inflate the
+    /// requirement and fail a backup that would actually fit.
+    /// </summary>
+    private static void CheckFreeSpaceForBytes(long requiredBytes, string destinationDir)
+    {
         var root = Path.GetPathRoot(destinationDir);
         if (string.IsNullOrEmpty(root)) return; // relative path — skip check
 
@@ -1208,8 +1240,8 @@ public sealed class TransferService
             var driveInfo = new DriveInfo(root);
             long available = driveInfo.AvailableFreeSpace;
 
-            if (totalSize > available)
-                throw new InsufficientSpaceException(totalSize, available);
+            if (requiredBytes > available)
+                throw new InsufficientSpaceException(requiredBytes, available);
         }
         catch (ArgumentException)
         {
@@ -1423,8 +1455,13 @@ public sealed class TransferService
                 ? destinationDir
                 : Path.Combine(destinationDir, name);
 
-            if (mode == TransferMode.KeepBoth && Directory.Exists(destSubDir))
-                destSubDir = GetUniqueFolderPath(destSubDir);
+            // KeepBoth must reserve through reservedDestPaths, not just consult the live filesystem:
+            // the planner writes nothing, so two sources sharing a leaf name (e.g. two "Photos"
+            // folders from different roots) would both see the destination as non-existent and
+            // silently plan to merge into the same folder. GetUniqueFolderPathReserved renames the
+            // second one ("Photos-1") and records the claim. Other modes keep filesystem semantics.
+            if (mode == TransferMode.KeepBoth)
+                destSubDir = GetUniqueFolderPathReserved(destSubDir, reservedDestPaths);
 
             plan.Directories.Add(new DirectoryWorkItem(
                 sourcePath,
@@ -1511,6 +1548,32 @@ public sealed class TransferService
             candidate = Path.Combine(dir, $"{nameNoExt}-{counter}{ext}");
             counter++;
         } while (File.Exists(candidate) || !reserved.Add(candidate));
+        return candidate;
+    }
+
+    /// <summary>
+    /// KeepBoth-aware folder uniqueness for the planner: returns <paramref name="path"/> itself if it's
+    /// free, otherwise the first "<c>{name}-{n}</c>" sibling that is. "Free" means it neither exists on
+    /// disk NOR has already been reserved earlier in this same enumeration pass — the reservation half
+    /// matters because the planner performs no I/O, so without it two sources with the same leaf name
+    /// would both observe the folder as non-existent and silently plan to write into it. The chosen
+    /// path is reserved before returning so later siblings see the claim.
+    /// </summary>
+    private static string GetUniqueFolderPathReserved(string path, HashSet<string> reserved)
+    {
+        // The original path is acceptable only if it's both absent on disk and unclaimed this pass.
+        if (!Directory.Exists(path) && reserved.Add(path))
+            return path;
+
+        var parent = Path.GetDirectoryName(path)!;
+        var name = Path.GetFileName(path);
+        int counter = 1;
+        string candidate;
+        do
+        {
+            candidate = Path.Combine(parent, $"{name}-{counter}");
+            counter++;
+        } while (Directory.Exists(candidate) || !reserved.Add(candidate));
         return candidate;
     }
 }

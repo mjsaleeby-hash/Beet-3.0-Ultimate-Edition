@@ -405,4 +405,107 @@ public class TransferServiceTests
         File.Exists(Path.Combine(dest, "folder", "b.txt")).Should().BeTrue();
         Directory.Exists(src).Should().BeFalse();
     }
+
+    // ============================================================
+    //  FREE-SPACE REQUIREMENT — sized off the plan, not the raw source total
+    // ============================================================
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void RequiredFreeBytes_AllNewFiles_CountsEveryByte()
+    {
+        using var tmp = new TempDirectory();
+        var src = Path.Combine(tmp.Path, "src");
+        var dest = Path.Combine(tmp.Path, "dest");
+        FileBuilder.In(src).File("a.bin", 1000).File("b.bin", 2000).Build();
+        Directory.CreateDirectory(dest);
+
+        var plan = _transfer.EnumerateWorkItems(
+            new[] { Path.Combine(src, "a.bin"), Path.Combine(src, "b.bin") },
+            dest, TransferMode.SkipExisting, exclusions: null, CancellationToken.None);
+
+        TransferService.RequiredFreeBytes(plan).Should().Be(3000);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void RequiredFreeBytes_SkipExisting_IdenticalFilesCostNothing()
+    {
+        // The headline regression: re-running a backup where most data already exists at the
+        // destination. The old check summed the raw source total and could reject a backup that
+        // needed almost no space; the plan-based requirement counts only what actually copies.
+        using var tmp = new TempDirectory();
+        var src = Path.Combine(tmp.Path, "src");
+        var dest = Path.Combine(tmp.Path, "dest");
+        Directory.CreateDirectory(src);
+        Directory.CreateDirectory(dest);
+
+        // A big file already present and identical at the destination, plus one small new file.
+        File.WriteAllBytes(Path.Combine(src, "big.bin"), new byte[100_000]);
+        File.WriteAllBytes(Path.Combine(dest, "big.bin"), new byte[100_000]);
+        File.SetLastWriteTimeUtc(Path.Combine(dest, "big.bin"),
+            File.GetLastWriteTimeUtc(Path.Combine(src, "big.bin")));
+        File.WriteAllBytes(Path.Combine(src, "small.bin"), new byte[50]);
+
+        var plan = _transfer.EnumerateWorkItems(
+            new[] { Path.Combine(src, "big.bin"), Path.Combine(src, "small.bin") },
+            dest, TransferMode.SkipExisting, exclusions: null, CancellationToken.None);
+
+        // Only the 50-byte new file is required — the 100 KB identical file is skipped, not re-sized.
+        TransferService.RequiredFreeBytes(plan).Should().Be(50);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void RequiredFreeBytes_ExcludedFiles_DoNotCount()
+    {
+        using var tmp = new TempDirectory();
+        var src = Path.Combine(tmp.Path, "src");
+        var dest = Path.Combine(tmp.Path, "dest");
+        FileBuilder.In(src).File("keep.dat", 1000).File("drop.tmp", 9000).Build();
+        Directory.CreateDirectory(dest);
+
+        var plan = _transfer.EnumerateWorkItems(
+            new[] { src }, dest, TransferMode.SkipExisting,
+            exclusions: new[] { "*.tmp" }, CancellationToken.None);
+
+        TransferService.RequiredFreeBytes(plan).Should().Be(1000);
+    }
+
+    // ============================================================
+    //  COPY — KEEP BOTH, DUPLICATE TOP-LEVEL FOLDER NAMES
+    // ============================================================
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task CopyAsync_KeepBoth_TwoSourcesSameFolderName_BothPreserved_NoOverwrite()
+    {
+        // Two distinct source folders share a leaf name ("Photos") and each holds a same-named file.
+        // The planner does no disk writes, so without reservation both would target dest\Photos\pic.jpg
+        // and one copy would silently clobber the other. The fix lands the second under "Photos-1".
+        using var tmp = new TempDirectory();
+        var srcA = Path.Combine(tmp.Path, "a", "Photos");
+        var srcB = Path.Combine(tmp.Path, "b", "Photos");
+        var dest = Path.Combine(tmp.Path, "dest");
+        Directory.CreateDirectory(dest);
+        Directory.CreateDirectory(srcA);
+        Directory.CreateDirectory(srcB);
+        File.WriteAllText(Path.Combine(srcA, "pic.jpg"), "one");
+        File.WriteAllText(Path.Combine(srcB, "pic.jpg"), "two");
+
+        await _transfer.CopyAsync(
+            new[] { srcA, srcB }, dest,
+            stripPermissions: false, TransferMode.KeepBoth);
+
+        File.Exists(Path.Combine(dest, "Photos", "pic.jpg")).Should().BeTrue();
+        File.Exists(Path.Combine(dest, "Photos-1", "pic.jpg")).Should().BeTrue();
+
+        // Neither copy was lost — both distinct contents survive.
+        var contents = new[]
+        {
+            File.ReadAllText(Path.Combine(dest, "Photos", "pic.jpg")),
+            File.ReadAllText(Path.Combine(dest, "Photos-1", "pic.jpg")),
+        };
+        contents.Should().BeEquivalentTo(new[] { "one", "two" });
+    }
 }

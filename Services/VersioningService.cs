@@ -288,8 +288,12 @@ public static class VersioningService
         {
             // Match only this file's archived versions — not unrelated siblings
             var pattern = $"{nameNoExt}__*{ext}";
+            // Order by the archive timestamp embedded in the filename, NOT content mtime. The two
+            // disagree whenever an older-dated source is backed up after a newer one (mtime is
+            // preserved on copy), so a File.GetLastWriteTimeUtc sort could rank a just-archived
+            // version as "oldest" and prune the very copy the user most likely wants to keep.
             var stale = Directory.EnumerateFiles(versionsDir, pattern)
-                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .OrderByDescending(ArchiveTimestampOf)
                 .Skip(maxVersions)
                 .ToList();
             foreach (var old in stale)
@@ -302,5 +306,23 @@ public static class VersioningService
         {
             FileLogger.Warn($"Version prune scan failed in {versionsDir}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Extracts the archive-time sort key from a version filename produced by
+    /// <see cref="ArchiveBeforeOverwrite"/>. Falls back to the file's content mtime if the name
+    /// doesn't carry a parseable timestamp (e.g. a file dropped in by hand), so an unrecognized
+    /// straggler sorts as oldest rather than being treated as brand new.
+    /// </summary>
+    private static DateTime ArchiveTimestampOf(string path)
+    {
+        var body = Path.GetFileNameWithoutExtension(path);
+        var m = ArchiveSuffixRegex.Match(body);
+        if (m.Success && DateTime.TryParseExact(m.Groups["ts"].Value, "yyyy-MM-dd_HH-mm-ss",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var ts))
+            return ts;
+
+        try { return File.GetLastWriteTimeUtc(path); }
+        catch { return DateTime.MinValue; }
     }
 }
