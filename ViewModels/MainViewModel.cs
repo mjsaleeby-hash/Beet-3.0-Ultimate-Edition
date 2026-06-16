@@ -29,6 +29,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
     // or when the user opens About — keeps it out of the cold-start critical path.
     private readonly Lazy<UpdateService> _update;
 
+    // The dashboard's "Last backup"/"Next backup" and schedule labels render relative dates
+    // ("Today", "Yesterday", "Tomorrow"). Those getters only re-run when a log or scheduler
+    // event fires, so if the app sits open across midnight the wording silently drifts one day
+    // stale — e.g. last night's "Today, 11:45 PM" still reads "Today" the next morning. This
+    // timer re-raises the relative-date bindings when the calendar day rolls over. It changes
+    // no data; it only re-evaluates the display strings against the new DateTime.Today.
+    private readonly System.Windows.Threading.DispatcherTimer _dateRolloverTimer;
+    private DateTime _lastKnownDate = DateTime.Today;
+
     // --- Theme ---
     [ObservableProperty] private bool _isDarkMode;
 
@@ -372,6 +381,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
             IsCrashBannerVisible = true;
             CrashBannerMessage = $"Previous session ended unexpectedly (started {whenStarted:MMM d, h:mm tt}). Export diagnostics to send to support.";
         }
+
+        // Poll once a minute (Background priority, so it never competes with UI work) but only
+        // refresh when the date actually changes — keeping the relative-date labels current
+        // across an open-overnight session. A minute tick is cheap and survives sleep/resume
+        // and clock changes more robustly than a single midnight-aligned alarm.
+        _dateRolloverTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMinutes(1)
+        };
+        _dateRolloverTimer.Tick += OnDateRolloverTick;
+        _dateRolloverTimer.Start();
+    }
+
+    private void OnDateRolloverTick(object? sender, EventArgs e)
+    {
+        var today = DateTime.Today;
+        if (today == _lastKnownDate) return;
+        _lastKnownDate = today;
+        OnPropertyChanged(nameof(LastBackupDisplay));
+        OnPropertyChanged(nameof(NextBackupDisplay));
+        OnPropertyChanged(nameof(ScheduleTimeDisplay));
     }
 
     private void LogEntries_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -682,6 +712,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _scheduler.SchedulerError -= OnSchedulerError;
         _scheduler.JobsChanged -= OnSchedulerJobsChanged;
         _scheduler.RunningJobChanged -= OnSchedulerRunningJobChanged;
+        _dateRolloverTimer.Stop();
+        _dateRolloverTimer.Tick -= OnDateRolloverTick;
         _pauseGate.Dispose();
         _transferCts?.Dispose();
         _topSizeCts?.Cancel(); _topSizeCts?.Dispose();
