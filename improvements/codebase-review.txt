@@ -1,0 +1,477 @@
+================================================================================
+BEET'S BACKUP 3.0 — SENIOR ENGINEER CODEBASE REVIEW
+================================================================================
+Author:   "Newly-joined senior engineer" pass (advisory only — NO code changed)
+Date:     2026-06-22
+Scope:    Reverse-engineered architecture + data flow, then findings &
+          refactoring strategy across architecture, duplication, performance,
+          scalability, and maintainability.
+Mandate:  Improve code QUALITY, SCALABILITY, MAINTAINABILITY without changing
+          observable functionality. Everything below is a recommendation.
+
+Files read in depth:
+  App.xaml.cs (537), ViewModels/MainViewModel.cs (1972),
+  Services/TransferService.cs (1579), Services/SchedulerService.cs (948),
+  BeetsBackup.csproj, plus targeted reads of BackupLogService, Launcher, and a
+  file-tree/line-count survey of the whole solution (~23k LOC of app code).
+
+--------------------------------------------------------------------------------
+1. ARCHITECTURE — AS-BUILT (reverse engineered)
+--------------------------------------------------------------------------------
+
+Platform: WPF on .NET 8 (net8.0-windows), single-file self-contained publish,
+Server GC enabled, MVVM via CommunityToolkit.Mvvm, DI via
+Microsoft.Extensions.DependencyInjection.
+
+Solution layout (4 build outputs + tests):
+  - BeetsBackup (main WPF app)
+  - BeetsBackupLauncher (tiny non-elevated stub that signals the elevated app)
+  - PerformanceMonitor (out-of-process sampler/analyzer)
+  - BeetsBackup.Tests (xUnit; InternalsVisibleTo wired in csproj)
+
+Layering (intended):
+  Views (XAML + code-behind)
+      -> ViewModels (MainViewModel + wizard/dialog VMs)
+          -> Services (Transfer, Scheduler, BackupLog, FileSystem, Settings,
+             Theme, Update, Vss, Diagnostics, etc.)
+              -> Models (FileSystemItem, ScheduledJob, TransferResult, ...)
+
+Composition root: App.OnStartup
+  - Wires global exception handlers (Dispatcher / AppDomain / UnobservedTask).
+  - Sets AppUserModelID for taskbar grouping with the launcher.
+  - Single-instance named Mutex + named EventWaitHandle "show signal" with a
+    hand-rolled cross-integrity-level DACL + lowered mandatory label so the
+    Medium-IL launcher can wake the High-IL app. (advapi32/shell32 P/Invoke.)
+  - Branch A (headless): "--run-job <guid>" => RunHeadlessJob => build DI =>
+    Scheduler.RunJobByIdAsync => Environment.Exit. No window, no message loop.
+  - Branch B (interactive): build DI, load Settings/Log/Theme, show MainWindow,
+    surface missed backups, Scheduler.Start(), reconcile Windows Tasks, async
+    update check.
+
+Persistence: JSON files under %LocalAppData%\Beet's Backup\
+  - scheduled_jobs.json (atomic temp+File.Replace; FileSystemWatcher for
+    cross-process reloads with self-write cooldown + coalesce debounce).
+  - backup_log.json (debounced 5s save).
+  - settings, diagnostics sentinels, operational/crash logs.
+
+KEY DATA FLOWS
+  (a) Manual copy/move (file manager):
+      ListView selection -> MainViewModel.CopyToBottom/Top / MoveTo* ->
+      AskTransferMode (opens a View) -> BeginTransfer (resets CTS/pause gate) ->
+      TransferService.CopyAsync/MoveAsync -> FileSystemService.CopyFile(WithHash)
+      -> IProgress<string>/<int> -> VM status bar + progress + ETA ->
+      EndTransfer -> TransferReporter toast.
+
+  (b) Scheduled backup (in-process):
+      PeriodicTimer (1 min) -> RunAsync finds due jobs -> _dispatchedJobIds claim
+      -> Task.Run(ExecuteJobAsync) -> JobMutex cross-process lock -> BackupLog
+      "Running" entry -> EstimateTotalSize -> TransferService.CopyAsync/Compress
+      -> progress mirrored into log entry -> finally advances NextRun, persists,
+      raises RunningJobChanged -> MainViewModel mirrors into dashboard.
+
+  (c) Scheduled backup (headless, app closed):
+      Windows Task Scheduler -> BeetsBackup.exe --run-job <guid> ->
+      RunHeadlessJob -> Scheduler.MarkHeadless + RunJobByIdAsync -> same
+      ExecuteJobAsync -> writes scheduled_jobs.json -> running app's watcher
+      reloads and refreshes the dashboard.
+
+  (d) Transfer engine (CopyAsync) — 3-phase:
+      Phase 1 ENUMERATE: one source walk -> frozen EnumerationPlan
+        (Directories[] + Files[] with FileAction baked in: Copy / Replace /
+         SkipIdentical, KeepBoth uniqueness pre-reserved).
+      Phase 2 PRE-CREATE dirs sorted by depth (parents first).
+      Phase 3 COPY files via Parallel.ForEachAsync, concurrency chosen by
+        DriveTypeService (SSD vs HDD vs network), with retry + VSS shadow-copy
+        fallback for locked files, optional throttle + SHA-256 verify.
+      Mirror mode adds a cleanup pass (delete dest extras to Recycle Bin).
+      NOTE: MoveAsync still uses the OLD recursive CopyItem path, not the plan.
+
+Overall: this is a *competently engineered* app with genuinely hard problems
+solved well (cross-IL IPC, zombie-process watchdogs, cross-process job locking,
+atomic JSON writes, drive-aware parallelism, VSS fallback). The issues below are
+about structure and scale, not correctness. The code is unusually well-commented
+— that is a real asset and should be preserved through any refactor.
+
+--------------------------------------------------------------------------------
+2. BAD ARCHITECTURE DESIGNS
+--------------------------------------------------------------------------------
+
+A1. GOD OBJECTS.
+    MainViewModel = 1,972 lines; TransferService = 1,579 lines. MainViewModel
+    alone owns: theme toggle, drive enumeration, DUAL independent file panes,
+    navigation history (x2), deep search (x2), live filter, pie charts, folder
+    size calc, manual copy/move/archive/extract, scheduled-backup orchestration,
+    update checks, diagnostics export, crash banner, and date-rollover timer.
+    This is ~10 responsibilities in one class. SRP is gone; the file is hard to
+    navigate, test, and change safely.
+
+A2. NO SERVICE INTERFACES (concretes registered in DI).
+    Only one interface exists in the whole codebase. DI binds concrete types, so
+    there are no seams for substitution/mocking. Tests cope via temp dirs +
+    InternalsVisibleTo (decent integration testing), but unit-level isolation of
+    the VM/Scheduler from the filesystem/clock is impossible.
+
+A3. VIEWMODEL CONSTRUCTS VIEWS / SHOWS DIALOGS (MVVM violation).
+    MainViewModel directly news up TransferModeDialog, ScheduleDialog,
+    BackupWizardDialog, JobsDialog, LogDialog, OpenFolderDialog and calls
+    MessageBox.Show / Application.Current.MainWindow. The VM is hard-coupled to
+    the View layer and to a live WPF app — it cannot be exercised headless.
+
+A4. AMBIENT WPF DEPENDENCY IN THE VM.
+    `System.Windows.Application.Current.Dispatcher` is reached for directly in
+    many VM methods. The VM assumes a running WPF dispatcher exists. This blocks
+    testability and conflates threading policy with view-model logic.
+
+A5. STATIC GLOBAL STATE / SERVICE LOCATOR.
+    App.Services (static IServiceProvider) and App.PreviousUncleanShutdownAt are
+    global mutable state. Cross-cutting helpers are static singletons
+    (FileLogger, DiagnosticsService, ToastNotifier, PowerManagement, JobMutex,
+    NameSanitizer). Convenient, but they are invisible dependencies that can't be
+    swapped or asserted on in tests, and they couple everything to process-global
+    state.
+
+A6. DUPLICATED IPC CONTRACT ACROSS PROJECTS.
+    The mutex name, show-signal name, and AUMID are hand-copied string literals
+    in BOTH App.xaml.cs and BeetsBackupLauncher/Program.cs. If one side changes a
+    name, single-instance + taskbar grouping silently break with no compile
+    error. This is a shared contract with no shared definition.
+
+A7. TWO PARALLEL COPY ENGINES IN ONE SERVICE.
+    CopyAsync uses the new enumerate-then-parallel plan; MoveAsync still uses the
+    legacy recursive CopyItem. The per-file mode-decision logic
+    (SkipExisting/Mirror/Replace/KeepBoth + archive-before-overwrite) is therefore
+    implemented TWICE, with subtly different code. Any change to transfer
+    semantics must be made in two places or the two paths drift. The code
+    comments already flag this hazard — that's a smell, not a safety net.
+
+A8. CODE-HEAVY VIEWS.
+    MainWindow.xaml.cs is 769 lines and SplitPaneWindow.xaml.cs 431. Significant
+    interaction logic lives in code-behind that likely belongs in behaviors,
+    attached properties, or the VM.
+
+--------------------------------------------------------------------------------
+3. DUPLICATE LOGIC (highest-value cleanup target)
+--------------------------------------------------------------------------------
+
+D1. TOP-PANE vs BOTTOM-PANE — the single biggest duplication in the app.
+    Nearly the entire pane subsystem is copy-pasted with "Top"/"Bottom" renamed:
+      - NavigateTop / NavigateBottom
+      - ExecuteDeepSearchAsync / ExecuteBottomDeepSearchAsync
+      - SearchDirectoryRecursive / SearchDirectoryRecursiveBottom (≈45 lines each,
+        essentially identical)
+      - ClearSearch / ClearBottomSearch
+      - GoBack/GoForward/GoUp  x2  (+ CanGoBack/Forward/Up x2)
+      - SelectTopDrive/Bottom, SelectTopTreeFolder/Bottom
+      - history fields, *Cts fields, IsTop*/IsBottom* observable props,
+        pie-slice + size state, all doubled.
+    Estimated 500-700 lines that exist only because the pane logic wasn't
+    extracted into a single reusable unit.
+
+D2. TRANSFER COMMAND BOILERPLATE (x6).
+    CopyToBottom/CopyToTop/MoveToBottom/MoveToTop/ArchiveNow/RunWizardBackup all
+    repeat the identical skeleton: BeginTransfer -> log -> new Progress<>x2 ->
+    try { await transfer; summary; EndTransfer; Notify } catch(Cancelled){...}
+    catch(InsufficientSpace){...}. The InsufficientSpace branch
+    (FileLogger.Error + EndTransfer + Toast + the SAME MessageBox.Show string)
+    is verbatim-duplicated 4 times.
+
+D3. CopyToBottom vs CopyToTop and MoveToBottom vs MoveToTop differ ONLY by which
+    pane is source/destination. Four methods that should be two parameterized
+    calls (or one).
+
+D4. UNIQUENESS HELPERS x4.
+    GetUniqueFilePath / GetUniqueFolderPath / GetUniqueFilePathReserved /
+    GetUniqueFolderPathReserved. The "Reserved" variants are supersets of the
+    plain ones (a null reservation set degenerates to the plain behavior).
+
+D5. COUNT/SIZE PRUNED vs NON-PRUNED x2 each.
+    CountFiles/CountFilesPruned and CalculateTotalSize/CalculateTotalSizePruned.
+    The pruned recursive variant already handles the no-exclusions case; the
+    non-pruned branch is an optimization that duplicates the walk.
+
+D6. PROGRESS-PERCENT MATH repeated ≥5 times.
+    `Math.Min((int)Math.Round(done * 100.0 / TotalFiles), 100)` with the same
+    `done = Copied+Skipped+Failed+(DiskFull)+Locked` assembly appears in
+    ReportPercent, ProcessFileWorkItem, CopyItem, and AddToArchive (twice).
+    Slightly inconsistent (some include DiskFullErrors, some don't).
+
+D7. IOException HResult classification duplicated.
+    `when ((ioEx.HResult & 0xFFFF) == 0x0020)` (sharing/lock) and `== 0x0070`
+    (disk full) magic numbers appear in many catch blocks across CopyItem,
+    ProcessFileWorkItem, CompressAsync, ExtractAsync, CopyAndVerify.
+
+D8. SCHEDULER LOG-ENTRY CONSTRUCTION duplicated.
+    The `new BackupLogEntry { JobId, JobName, SourcePath = string.Join("; ",...),
+    ... }` block is built in AddJob, SkipMissedJob, ExecuteJobAsync, RetryAsync —
+    same field-mapping each time.
+
+--------------------------------------------------------------------------------
+4. PERFORMANCE BOTTLENECKS
+--------------------------------------------------------------------------------
+
+P1. DOUBLE (sometimes TRIPLE) FULL TREE WALK per scheduled backup.
+    ExecuteJobAsync calls TransferService.EstimateTotalSize(...) — a complete
+    recursive walk — *purely to log* "Estimated size: X". Then CopyAsync walks
+    the whole tree AGAIN to build the EnumerationPlan, and computes
+    RequiredFreeBytes from that plan. On a large source (hundreds of GB / millions
+    of files on a HDD), that pre-walk can add minutes of pure I/O before a single
+    byte is copied. The plan already knows the size; the estimate walk is
+    redundant for the Copy path.
+
+P2. WHOLE-PLAN-IN-MEMORY before any copy starts.
+    EnumerationPlan materializes List<DirectoryWorkItem> + List<FileWorkItem> for
+    the ENTIRE source before Phase 3 begins. For very large trees this is a big,
+    bursty allocation and delays time-to-first-byte. A producer/consumer
+    (Channel<FileWorkItem>) would overlap enumeration with copying and bound
+    memory. (Trade-off: the plan currently enables the up-front free-space check
+    and KeepBoth reservation; a streaming design needs those handled incrementally
+    — doable but more involved. Flag as scalability item P/S.)
+
+P3. MoveAsync recomputes via the old path AND does CountFiles separately.
+    MoveAsync calls `sourceList.Sum(s => CountFiles(s))` (full walk) then walks
+    again inside CopyItem. Same double-walk pattern as P1.
+
+P4. Per-keystroke O(n) live filter.
+    SearchFilter setter calls _filteredTopView.Refresh() + _filteredBottomView
+    .Refresh() on every character, re-evaluating the predicate over all items in
+    both panes. Fine for small folders, sluggish for large listings; a short
+    debounce would smooth typing.
+
+P5. Extra syscall per directory in deep search.
+    SearchDirectoryRecursive calls File.GetAttributes(dirPath) on every
+    subdirectory to test ReparsePoint, in addition to the enumeration. Using
+    EnumerationOptions.AttributesToSkip = ReparsePoint (as the transfer paths
+    already do) avoids the second stat.
+
+P6. Folder-size recompute on every navigation.
+    Each NavigateTop/Bottom kicks off CalculateFolderSizesWithProgressAsync,
+    which recursively sizes every child directory in parallel — recomputed from
+    scratch on every visit with no caching. Repeatedly bouncing in/out of a
+    folder re-walks it each time.
+
+P7. (Minor) Repeated FileInfo allocations.
+    ExecuteCopy does `new FileInfo(source).Length`; the enumerate phase already
+    captured SourceSize in the work item. The size is re-statted at copy time.
+
+NOTE (already handled well — do NOT "fix"):
+    - BackupLogService.Save is debounced (5s) so per-percent progress updates do
+      NOT cause 100 disk writes. Good.
+    - ArrayPool buffers, SequentialScan hints, single-pass hash-during-copy,
+      drive-aware worker counts, flush-to-disk durability — all solid.
+
+--------------------------------------------------------------------------------
+5. SCALABILITY ISSUES
+--------------------------------------------------------------------------------
+
+S1. Memory scales with file count (see P2). Millions of files => large plan +
+    a single TransferResult with per-file error list (AddFileError) that grows
+    unbounded; a backup with many failures accumulates every message in memory
+    and into the log entry.
+
+S2. backup_log.json is a single growing JSON array, fully serialized/rewritten
+    on save and fully loaded into an ObservableCollection at startup. Over years
+    of daily backups this file and the in-memory collection grow without bound.
+    No rotation/trimming/paging strategy is evident for history.
+
+S3. Scheduler concurrency is unbounded.
+    RunAsync dispatches each due job via its own Task.Run with no cap. If many
+    jobs come due in the same minute (or many missed jobs run at once), they all
+    contend for disk simultaneously — on a single HDD this is slower than serial.
+    A bounded scheduler (SemaphoreSlim / per-destination-drive serialization)
+    would scale predictably.
+
+S4. Dual-pane state can't grow to N panes / tabs.
+    Because pane state is hand-duplicated (D1) rather than an instantiable
+    PaneViewModel, adding tabs or a 3rd pane would mean another full copy-paste.
+
+S5. Cross-process coordination relies on a constellation of named primitives
+    (single-instance mutex, show signal, per-job Global mutex, file watchers).
+    It works, but there's no single owner/abstraction; each new cross-process
+    feature adds more ad-hoc primitives.
+
+--------------------------------------------------------------------------------
+6. MAINTAINABILITY ISSUES
+--------------------------------------------------------------------------------
+
+M1. Very long parameter lists.
+    CopyAsync(13 params), CopyItem(12), ProcessFileWorkItem(11), CopyAndVerify,
+    ThrottledCopy. Call sites are positional and hard to read (e.g. the manual
+    Copy call passes 10+ positional args). A TransferRequest/TransferContext
+    options object would make calls self-documenting and shrink the signatures.
+
+M2. Magic numbers / strings scattered.
+    HResult masks 0x0020/0x0070, the 256 MB large-file threshold, 1 MB buffers,
+    the "Versions" folder name, retry counts, and the IPC names. Some are already
+    named constants (good); the HResult codes and IPC strings are not centralized.
+
+M3. Broad/empty catches.
+    Numerous `catch { }` and `catch (Exception)` swallow-and-continue blocks.
+    Many are deliberate (best-effort enumeration, cosmetic AUMID) and commented —
+    but the pattern makes it easy for a real bug to hide. Worth tagging which are
+    intentional vs. tightening to specific exception types.
+
+M4. Fully-qualified type names inline everywhere.
+    `System.Windows.MessageBox`, `System.Windows.Threading.DispatcherPriority`,
+    `Microsoft.Win32.OpenFolderDialog`, `System.Windows.Application.Current...`
+    repeated throughout the VM add noise. Using-aliases/usings would improve
+    readability.
+
+M5. Mixed responsibilities in TransferService.
+    It does enumeration planning, copy execution, zip compress/extract, mirror
+    cleanup, free-space checks, size estimation, hashing, and uniqueness naming.
+    Several of these are cohesive sub-services (Archiver, SpacePlanner,
+    PathUniquifier, Enumerator).
+
+M6. Test coverage is good for services but thin for the VM.
+    There are service + stress + model tests (commendable), but MainViewModel's
+    enormous surface is largely untestable as written (A3/A4), so the riskiest,
+    most-changed class is the least covered.
+
+--------------------------------------------------------------------------------
+7. CLEAN ARCHITECTURE — TARGET BREAKDOWN
+--------------------------------------------------------------------------------
+
+Keep the existing layer intent, but make the seams real and split the god
+objects. Target shape:
+
+  Views (XAML only + thin behaviors)
+    │  binds to
+  ViewModels
+    │  MainViewModel  (shell: theme, drives, dashboard, command routing)
+    │  PaneViewModel  (ONE class, instantiated twice: nav, history, search,
+    │                  filter, pie, size calc)   <-- collapses D1
+    │  TransferCoordinator / TransferHostVM (owns BeginTransfer/EndTransfer +
+    │                  the shared try/catch/Toast/MessageBox skeleton)  <-- D2
+    │  (wizard/schedule/log VMs unchanged)
+    │  depends on ABSTRACTIONS:
+  Service interfaces  (ITransferService, ISchedulerService, IBackupLogService,
+    │  IFileSystemService, ISettingsService, IThemeService, IUpdateService,
+    │  IDialogService, IUiDispatcher, IClock)
+    │  implemented by
+  Services (concrete)  — TransferService split into:
+    │      • IBackupEnumerator (build plan / stream work items)
+    │      • ITransferEngine   (execute Copy/Move/Verify/Throttle/VSS)
+    │      • IArchiveService   (Compress/Extract)
+    │      • IMirrorService    (cleanup)
+    │      • PathUniquifier, SpacePlanner (free-space + size)  helpers
+    │  depends on
+  Models / Domain (pure, no WPF)
+  Cross-cutting: ILogger (wrap FileLogger), INotifier (wrap ToastNotifier),
+                 IProcessCoordinator (single-instance + show-signal + job mutex),
+                 shared Constants project for IPC names.
+
+Two new seams unlock most of the testability win:
+  • IUiDispatcher  — abstracts Application.Current.Dispatcher (A4).
+  • IDialogService — abstracts dialog/MessageBox/folder-picker (A3).
+
+--------------------------------------------------------------------------------
+8. CRITICAL PROBLEM AREAS (ranked by risk × reach)
+--------------------------------------------------------------------------------
+
+  1. A7/D... TWO COPY ENGINES (CopyAsync plan vs MoveAsync CopyItem). Highest
+     CORRECTNESS-DRIFT risk: transfer-mode semantics live in two places. Unify
+     so Move reuses the plan/engine (or both share one mode-decision function).
+  2. D1  DUAL-PANE DUPLICATION. Highest VOLUME of duplication; every pane bug
+     must be fixed twice today. Extract PaneViewModel.
+  3. A1  MainViewModel god object. Highest CHANGE-FRICTION surface.
+  4. P1/P3 REDUNDANT FULL TREE WALKS. Highest USER-VISIBLE perf win on large
+     backups; remove the estimate-only pre-walk for the Copy path.
+  5. A6  DUPLICATED IPC CONTRACT across exes. Low effort, prevents a silent,
+     hard-to-diagnose breakage class.
+  6. S2  UNBOUNDED backup_log growth. Sleeper scalability issue over time.
+
+--------------------------------------------------------------------------------
+9. REFACTORING STRATEGY (incremental, behavior-preserving, lowest-risk first)
+--------------------------------------------------------------------------------
+
+Guardrails for ALL steps: the goal is "same behavior, better structure."
+Lean on the existing test suite; add characterization tests BEFORE each move;
+do one refactor per commit; keep the excellent comments.
+
+PHASE 0 — Safety net (no behavior change)
+  - Add characterization tests around: each TransferMode decision (Skip/Replace/
+    KeepBoth/Mirror), Move's "don't delete source on failure" contract, and the
+    dual-pane navigation/search behavior. These pin behavior before you touch it.
+
+PHASE 1 — Pure de-duplication (mechanical, very low risk)
+  - Extract one ProgressCalculator.Percent(result) helper (D6).
+  - Extract IOExceptionClassifier (IsSharingViolation/IsDiskFull) for the
+    0x0020/0x0070 masks (D7/M2).
+  - Collapse the 4 uniqueness helpers into 2 with an optional reservation set
+    (D4); collapse Count/Size pruned/non-pruned into one each (D5).
+  - Move the IPC names + AUMID into a shared constants file referenced by both
+    BeetsBackup and BeetsBackupLauncher (A6).
+  - Extract BackupLogEntryFactory.For(job/snapshot/...) (D8).
+
+PHASE 2 — Tame TransferService signatures (low risk)
+  - Introduce TransferRequest (sources, dest, mode, strip, verify, throttle,
+    exclusions, versioning, tokens) and pass it through (M1). Keep public method
+    names/behavior; just bundle parameters.
+  - Split out ArchiveService (Compress/Extract) and SpacePlanner (size +
+    free-space) from TransferService (M5) — move, don't rewrite.
+
+PHASE 3 — Unify the two copy engines (medium risk — covered by Phase 0 tests)
+  - Make MoveAsync reuse the EnumerationPlan + engine used by CopyAsync (delete
+    the move/source only after the plan's files all succeed). Removes A7 and the
+    second mode-decision implementation.
+
+PHASE 4 — Extract PaneViewModel (medium risk, big payoff)
+  - Create PaneViewModel encapsulating items, filtered view, history, deep
+    search, size calc, pie state. MainViewModel holds TopPane/BottomPane
+    instances. Collapses D1/D3 and most of A1.
+  - Introduce IUiDispatcher and route all dispatcher access through it (A4) as
+    part of this move, so PaneViewModel is unit-testable.
+
+PHASE 5 — Dialog + transfer-host seams (medium risk)
+  - Introduce IDialogService (transfer-mode prompt, folder picker, message box)
+    and a TransferHost that owns Begin/End + the shared try/catch/Toast/MessageBox
+    skeleton (A3/D2). Commands become a few lines each.
+
+PHASE 6 — Interfaces + DI tidy (low risk once above lands)
+  - Extract interfaces for the services the VM/scheduler consume; register in DI.
+    Enables real unit tests for MainViewModel/SchedulerService (A2/M6).
+
+PHASE 7 — Performance & scalability (independent track)
+  - Remove the estimate-only pre-walk on the Copy path; derive logged size from
+    the plan (P1/P3).
+  - Consider Channel<FileWorkItem> streaming enumeration->copy for memory + TTFB
+    (P2/S1) — only if large-backup memory is a real target; it's the biggest
+    change here, do it last and behind its own tests.
+  - Add backup_log rotation/trimming + (optional) paged history load (S2).
+  - Bound scheduler concurrency / serialize per destination drive (S3).
+  - Debounce the live filter; drop the extra GetAttributes in search via
+    AttributesToSkip (P4/P5); optional folder-size cache (P6).
+
+--------------------------------------------------------------------------------
+10. PRODUCTION-GRADE TARGET — WHAT "DONE" LOOKS LIKE
+--------------------------------------------------------------------------------
+
+  - MainViewModel < ~400 lines: a shell that wires PaneViewModel x2, the
+    dashboard, and routes commands. No `new SomeDialog()`, no
+    Application.Current.Dispatcher, no MessageBox.Show.
+  - TransferService replaced by Enumerator + Engine + ArchiveService +
+    MirrorService + SpacePlanner, each < ~300 lines, ONE place where transfer-mode
+    semantics live, shared by Copy AND Move.
+  - All VM/service collaboration via interfaces; the riskiest classes have unit
+    tests, not just integration tests.
+  - Zero copy-pasted Top/Bottom pairs; zero duplicated catch/MessageBox blocks.
+  - IPC names/AUMID defined once, shared by app + launcher.
+  - Large backups start copying almost immediately (no redundant pre-walk),
+    bounded memory, bounded log growth, predictable multi-job scheduling.
+  - The existing high-quality comments preserved and migrated with the code.
+
+--------------------------------------------------------------------------------
+11. EXPLICIT NON-GOALS / THINGS TO LEAVE ALONE
+--------------------------------------------------------------------------------
+  - The cross-IL show-signal DACL/label dance, zombie-process watchdogs,
+    cross-process JobMutex, atomic JSON writes, VSS fallback, drive-aware
+    parallelism, ArrayPool/SequentialScan/single-pass-hash: these are correct and
+    hard-won. Refactor their PACKAGING (shared constants, an IProcessCoordinator
+    wrapper) but do NOT rewrite the mechanisms.
+  - Debounced log save is already right — don't "optimize" it into per-update
+    writes.
+  - No functional/UX change anywhere — this whole plan is structure-only.
+
+================================================================================
+END OF REVIEW — advisory only; no source files were modified.
+================================================================================

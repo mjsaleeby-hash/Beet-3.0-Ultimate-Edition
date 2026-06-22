@@ -519,6 +519,10 @@ public sealed class SchedulerService : IDisposable
 
         var pauseGate = new ManualResetEventSlim(true);
         var runCts = new CancellationTokenSource();
+        // Wall-clock for this run, so telemetry can report transfer speed (bytes/duration).
+        // backup_log.json stores only a last-updated timestamp, not a duration, so this is
+        // the only place that number is available.
+        var runStopwatch = System.Diagnostics.Stopwatch.StartNew();
         lock (_jobsLock)
         {
             _pauseGates[logEntry.Id] = pauseGate;
@@ -570,6 +574,9 @@ public sealed class SchedulerService : IDisposable
             }
 
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete, result);
+            runStopwatch.Stop();
+            EmitBackupTelemetry(snapshot.Name, snapshot.TransferMode.ToString(), result,
+                runStopwatch.Elapsed.TotalMilliseconds, snapshot.DestinationPath);
             FileLogger.Info($"Scheduled job completed: '{snapshot.Name}' — {TransferReporter.FormatSummary(result)}");
             TransferReporter.Notify($"Backup complete: {snapshot.Name}", result);
         }
@@ -618,6 +625,34 @@ public sealed class SchedulerService : IDisposable
             RunningJobChanged?.Invoke(SnapshotRunningState());
             jobLock.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Emits a single additive telemetry event summarising a finished backup run, used by
+    /// the external 3.0->4.0 verification tooling to measure transfer throughput and to
+    /// prove the FAT/exFAT incremental re-copy fix (run-2 filesCopied should drop to ~0 on
+    /// a FAT/exFAT destination). Best-effort and side-effect-free — a telemetry failure
+    /// must never affect the backup outcome or the caller.
+    /// </summary>
+    private static void EmitBackupTelemetry(
+        string jobName, string mode, TransferResult result, double durationMs, string destinationPath)
+    {
+        try
+        {
+            string destFs = "unknown";
+            try
+            {
+                var root = Path.GetPathRoot(destinationPath);
+                if (!string.IsNullOrEmpty(root))
+                    destFs = new DriveInfo(root).DriveFormat; // "NTFS" / "FAT32" / "exFAT" / ...
+            }
+            catch { /* drive may be unavailable; leave as "unknown" */ }
+
+            Telemetry.BeetTelemetry.Log.BackupCompleted(
+                jobName, mode, result.BytesTransferred, result.FilesCopied,
+                result.FilesSkipped, result.FilesFailed, durationMs, destFs);
+        }
+        catch { /* telemetry is observe-only */ }
     }
 
     private static ScheduledJob SnapshotJob(ScheduledJob job)
@@ -716,6 +751,7 @@ public sealed class SchedulerService : IDisposable
         _log.Add(logEntry);
         FileLogger.Info($"Retry started: '{logEntry.JobName}' — {logEntry.SourcePath} → {logEntry.DestinationPath}");
 
+        var retryStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var percentProgress = new Progress<int>(pct =>
@@ -729,6 +765,9 @@ public sealed class SchedulerService : IDisposable
                 progressPercent: percentProgress).ConfigureAwait(false);
 
             _log.UpdateStats(logEntry.Id, BackupStatus.Complete, result);
+            retryStopwatch.Stop();
+            EmitBackupTelemetry(logEntry.JobName, logEntry.TransferMode.ToString(), result,
+                retryStopwatch.Elapsed.TotalMilliseconds, logEntry.DestinationPath);
             FileLogger.Info($"Retry completed: '{logEntry.JobName}' — {TransferReporter.FormatSummary(result)}");
         }
         catch (InsufficientSpaceException)

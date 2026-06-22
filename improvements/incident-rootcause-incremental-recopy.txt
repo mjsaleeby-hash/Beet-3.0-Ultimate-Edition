@@ -1,0 +1,413 @@
+================================================================================
+PRODUCTION INCIDENT — ROOT CAUSE ANALYSIS & FIX PROPOSAL
+"Every backup re-copies every file — incremental backups never converge"
+================================================================================
+Engineer:  Senior debugging engineer (incident response)
+Date:      2026-06-22
+Severity:  HIGH (correctness + performance + flash-wear; silent — no error shown)
+Status:    Root cause identified and proven from source. FIX PROPOSED ONLY.
+           No source files were modified. All code below is a proposal.
+
+--------------------------------------------------------------------------------
+0. INCIDENT FRAMING (the symptom an on-call engineer would receive)
+--------------------------------------------------------------------------------
+Reported symptoms (the class of report this bug produces):
+  - "My nightly backup to the USB drive copies EVERYTHING again every single
+     night. Nothing changed but it re-copies 400 GB and never finishes by morning."
+  - "SkipExisting / Mirror is supposed to be incremental but the log shows
+     'Updated (changed)' for files I haven't touched in years."
+  - Only happens on some destinations (USB sticks, SD cards, some NAS shares);
+     a backup to an internal NTFS drive behaves correctly.
+
+Why this is an "outage": a backup tool whose incremental mode silently degrades
+to a full copy every run will (a) never complete inside the user's window,
+(b) hammer/wear out flash media, and (c) defeat versioning/throttling sizing.
+There is NO exception and NO error in the log — the tool reports success — so it
+is invisible until someone notices the runtime/bytes. That is the worst kind of
+production bug: silent, data-path, intermittent-by-environment.
+
+--------------------------------------------------------------------------------
+1. CODE FUNCTIONALITY BREAKDOWN (what the code actually does)
+--------------------------------------------------------------------------------
+The transfer subsystem decides, per source file that already exists at the
+destination, whether to SKIP it (identical) or RE-COPY it (changed). This
+decision is the heart of SkipExisting and Mirror (the two incremental modes).
+
+There are TWO independent implementations of this decision (this matters — see
+§6, both must be fixed):
+
+  (A) CopyAsync path — used by scheduled backups, "Back up now", and pane
+      Copy commands. Decision made up-front in the enumeration planner:
+
+      File: Services/TransferService.cs  (EnumerateOne, ~line 1500-1514)
+      ----------------------------------------------------------------------
+        case TransferMode.SkipExisting:
+        case TransferMode.Mirror:
+        {
+            var sourceInfo = new FileInfo(sourcePath);
+            var destInfo   = new FileInfo(destFile);
+            bool changed = sourceInfo.Length != destInfo.Length
+                        || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc;   // <-- decision
+            plan.Files.Add(new FileWorkItem(sourcePath, destFile,
+                changed ? FileAction.Replace : FileAction.SkipIdentical, sourceSize));
+            break;
+        }
+
+  (B) CopyItem path — used by MoveAsync (move = copy then delete source):
+
+      File: Services/TransferService.cs  (CopyItem, ~line 641-665)
+      ----------------------------------------------------------------------
+        case TransferMode.SkipExisting:
+        case TransferMode.Mirror:
+            var sourceInfo = new FileInfo(sourcePath);
+            var destInfo   = new FileInfo(destFile);
+            if (sourceInfo.Length != destInfo.Length
+                || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)            // <-- same decision
+            { ...archive+recopy... }
+            else { result.IncrementFilesSkipped(); /* "Skipped (identical)" */ }
+            break;
+
+Both use the identical predicate:
+    CHANGED  ⇔  (length differs)  OR  (source.LastWriteTimeUtc > dest.LastWriteTimeUtc)
+
+The "unchanged" branch is the optimization that makes incremental backups fast.
+
+The other half of the mechanism is the post-copy timestamp re-stamp. After every
+copy the destination's last-write time is forced to equal the source's, so a
+later run sees matching mtimes and skips:
+
+  File: Services/FileSystemService.cs
+   - CopyFile (line ~108):            File.SetLastWriteTimeUtc(dest, srcLastWrite);
+   - CopyFileWithHash (line ~247):    File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc);
+   - TransferService.ThrottledCopy (line ~1050): File.SetLastWriteTimeUtc(dest, srcInfo.LastWriteTimeUtc);
+
+Design intent (correct): copy file → stamp dest.mtime = src.mtime → next run sees
+equal mtimes → SkipIdentical. On NTFS→NTFS this works perfectly.
+
+--------------------------------------------------------------------------------
+2. ROOT CAUSE ANALYSIS (the real cause, proven)
+--------------------------------------------------------------------------------
+ROOT CAUSE: an EXACT timestamp comparison (`>`) is run against destination
+timestamps that the destination FILESYSTEM has SILENTLY TRUNCATED to a coarser
+resolution than the source. There is NO tolerance in the comparison, so the
+(full-resolution) source time is reported as strictly greater than the
+(truncated) destination time on every subsequent run, and the file is re-copied
+forever.
+
+The truncation is environmental, not a bug in our write — it is how FAT-family
+filesystems store time:
+  - NTFS  last-write resolution: 100 ns   (effectively exact)
+  - exFAT last-write resolution: 10 ms
+  - FAT32 last-write resolution: 2 s       (and only even seconds)
+
+Sequence of events that produces the failure (step by step):
+
+  Run 1, file foo.dat, source.LastWriteTimeUtc = 10:00:01.7000000 (NTFS source)
+    1. Copy foo.dat to a FAT32 USB destination.
+    2. CopyFile does File.SetLastWriteTimeUtc(dest, 10:00:01.7000000).
+    3. FAT32 cannot store 1.7 s; it truncates → dest stored as 10:00:00.0000000
+       (rounds DOWN to a 2-second boundary). This is invisible; no error.
+
+  Run 2 (nothing changed by the user):
+    4. EnumerateOne/CopyItem reads:
+         source.LastWriteTimeUtc = 10:00:01.7   (unchanged, full resolution)
+         dest.LastWriteTimeUtc   = 10:00:00.0   (the truncated value from step 3)
+    5. Predicate: lengths equal, but 10:00:01.7 > 10:00:00.0  → CHANGED = true.
+    6. The file is archived (if versioning on) and RE-COPIED.
+    7. Re-stamp truncates again to 10:00:00.0 → state is identical to step 3.
+    => Every run repeats steps 4-7 for EVERY file. The backup never converges.
+
+This is deterministic for any source file whose sub-2-second (FAT32) or
+sub-10-ms (exFAT) mtime fraction is non-zero — i.e. essentially ALL real files.
+USB sticks and SD cards ship formatted exFAT/FAT32, so the most common
+"plug in an external drive and back up to it" workflow hits this on every run.
+
+Corroborating detail (why it's silent): the re-copy is reported as
+"Updated (changed)" / counted under FilesCopied — a success path. No exception,
+no Failed status. The only externally visible signature is runtime and
+BytesTransferred staying high on an allegedly-incremental run.
+
+This is the exact problem robocopy solves with its /FFT flag ("assume FAT File
+Times — 2-second granularity"); the tool here has no equivalent.
+
+--------------------------------------------------------------------------------
+3. WHY THE COMPARISON IS WRONG (precise defects in the predicate)
+--------------------------------------------------------------------------------
+D1. NO RESOLUTION TOLERANCE. Comparing a 100 ns-resolution value against a
+    2 s-resolution value with strict `>` guarantees false "changed" results once
+    the destination is FAT-family. The comparison must allow a tolerance at least
+    as large as the coarsest expected destination granularity (2 s).
+
+D2. STRICT `>` AT ALL. Even on uniform filesystems, `>` is fragile to the normal
+    truncation/round-trip of SetLastWriteTimeUtc on some volumes. A tolerance
+    band makes the heuristic robust instead of exact.
+
+Note (ruled out / done right): the code DOES use *Utc* consistently, so this is
+NOT a timezone or DST-offset bug in the simple case — that confounder is already
+handled. (DST interacts with FAT in a separate, narrower way — see §4.)
+
+--------------------------------------------------------------------------------
+4. HIDDEN EDGE CASES (what a shallow fix would miss)
+--------------------------------------------------------------------------------
+E1. exFAT (10 ms) AND FAT32 (2 s). A tolerance must cover the LARGEST plausible
+    granularity. Use 2 s; it subsumes exFAT's 10 ms.
+
+E2. SOURCE OLDER THAN DEST. If the destination is NEWER than the source (someone
+    edited the backup, or restored from elsewhere), the original `>` correctly
+    treated that as "not changed". The fix must PRESERVE that: only re-copy when
+    source is newer than dest by MORE than the tolerance — not when |diff| > tol.
+
+E3. LEGITIMATE EDIT WITHIN THE TOLERANCE WINDOW + SAME LENGTH. A file edited
+    in-place, same byte length, mtime within 2 s of the stored dest time, would
+    be skipped. This is the accepted cost of an mtime+length heuristic (robocopy
+    has the same property). It is ALREADY a limitation of the current code (which
+    is mtime+length only); the tolerance does not make it materially worse.
+    Mitigation already in product: VerifyChecksums mode does a real SHA-256 — the
+    tolerance must NOT short-circuit the checksum path (it doesn't; checksum
+    verification happens after copy, independent of the skip decision).
+
+E4. FAT "DST tunneling". FAT stores LOCAL time; Windows converts to UTC using the
+    CURRENT DST rule, so the SAME file can report a UTC mtime that shifts by
+    exactly 1 hour across a DST boundary. A 2 s tolerance does NOT absorb a 1 h
+    shift, so the first backup after a DST change can do a one-time full re-copy
+    to FAT destinations. This is a known, separate issue (robocopy's /DST). It is
+    OUT OF SCOPE for the silent-every-run bug but is documented here so it isn't
+    mistaken for a regression of this fix. Recommended follow-up in §7.
+
+E5. NETWORK SHARES. SMB to a FAT-backed NAS, or some cloud-sync redirectors,
+    exhibit the same coarse-granularity truncation; the tolerance covers these.
+
+E6. ZERO-LENGTH FILES. length 0 == 0, mtime within tolerance → skipped. Correct.
+
+E7. TWO ENGINES. The predicate exists in BOTH EnumerateOne (Copy/scheduled) and
+    CopyItem (Move). Fixing only one leaves Move (or Copy) still re-copying. The
+    fix MUST be applied to both, ideally via a single shared helper so they can
+    never drift again.
+
+E8. CLOCK SKEW BETWEEN MACHINES. If source files are written by a machine whose
+    clock is ahead, source.mtime can be > dest.mtime by more than 2 s for genuine
+    reasons; that is correctly treated as changed. Not something to "fix" — noted
+    so the tolerance isn't widened unnecessarily.
+
+--------------------------------------------------------------------------------
+5. THE ROBUST FIX (production-ready, behavior-preserving on NTFS)
+--------------------------------------------------------------------------------
+Strategy: introduce ONE shared, well-documented comparison helper with an
+explicit FAT-granularity tolerance, and call it from BOTH decision sites. This
+removes the duplication (E7) and fixes the truncation defect (D1/D2) while
+preserving the existing "source newer ⇒ changed; dest newer ⇒ skip" semantics
+(E2). NTFS→NTFS behavior is unchanged (sub-2 s identical mtimes still compare
+equal and skip).
+
+----- 5a. NEW shared helper (add to Services/TransferService.cs) ---------------
+
+    /// <summary>
+    /// Last-write-time comparison tolerance for the SkipExisting / Mirror "has this
+    /// file changed?" decision. FAT-family destinations store last-write time at a
+    /// coarse resolution — FAT32 at 2 seconds (even seconds only), exFAT at 10 ms —
+    /// so when we copy a file and stamp dest.mtime = src.mtime, the destination
+    /// filesystem silently TRUNCATES it. A later exact comparison then sees the
+    /// full-resolution source as strictly newer than the truncated destination and
+    /// re-copies the (unchanged) file on every run. 2 seconds covers FAT32 (the
+    /// coarsest case) and therefore exFAT too. This mirrors robocopy's /FFT behavior.
+    /// </summary>
+    private static readonly TimeSpan TimestampGranularityTolerance = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Decides whether an already-present destination file is out of date relative to
+    /// <paramref name="source"/> for SkipExisting / Mirror semantics. A file is
+    /// considered changed when its length differs, OR when the source was modified
+    /// MORE than <see cref="TimestampGranularityTolerance"/> after the destination.
+    /// The tolerance absorbs filesystem timestamp-resolution mismatches (NTFS 100 ns
+    /// vs FAT32 2 s / exFAT 10 ms) so an unchanged file on a FAT-family target is not
+    /// re-copied forever. Semantics preserved from the original predicate: a
+    /// destination that is NEWER than the source is treated as unchanged (we only
+    /// re-copy when the source is genuinely newer, beyond the tolerance).
+    /// </summary>
+    /// <remarks>
+    /// This is a length+mtime heuristic, identical in spirit to the original code; it
+    /// does not detect a same-length edit whose mtime lands within the tolerance. Use
+    /// VerifyChecksums for byte-exact guarantees — that path is unaffected by this
+    /// decision (it runs after the copy, not as part of the skip choice).
+    /// </remarks>
+    internal static bool IsDestinationStale(FileInfo source, FileInfo dest)
+    {
+        if (source.Length != dest.Length)
+            return true;
+        // Re-copy only when the source is newer than the destination by more than the
+        // tolerance. (source - dest) is negative when dest is newer → not stale.
+        return source.LastWriteTimeUtc - dest.LastWriteTimeUtc > TimestampGranularityTolerance;
+    }
+
+----- 5b. CALL SITE 1 — EnumerateOne (CopyAsync / scheduled / pane Copy) -------
+
+  REPLACE (Services/TransferService.cs, ~line 1504-1514):
+
+        case TransferMode.SkipExisting:
+        case TransferMode.Mirror:
+        {
+            var sourceInfo = new FileInfo(sourcePath);
+            var destInfo = new FileInfo(destFile);
+            bool changed = sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc;
+            plan.Files.Add(new FileWorkItem(sourcePath, destFile,
+                changed ? FileAction.Replace : FileAction.SkipIdentical,
+                sourceSize));
+            break;
+        }
+
+  WITH:
+
+        case TransferMode.SkipExisting:
+        case TransferMode.Mirror:
+        {
+            var sourceInfo = new FileInfo(sourcePath);
+            var destInfo = new FileInfo(destFile);
+            bool changed = IsDestinationStale(sourceInfo, destInfo);
+            plan.Files.Add(new FileWorkItem(sourcePath, destFile,
+                changed ? FileAction.Replace : FileAction.SkipIdentical,
+                sourceSize));
+            break;
+        }
+
+----- 5c. CALL SITE 2 — CopyItem (MoveAsync) ----------------------------------
+
+  REPLACE (Services/TransferService.cs, ~line 641-665):
+
+                case TransferMode.SkipExisting:
+                case TransferMode.Mirror:
+                    var sourceInfo = new FileInfo(sourcePath);
+                    var destInfo = new FileInfo(destFile);
+                    if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
+                    {
+                        // If versioning was requested and archiving fails, DO NOT destroy the
+                        // destination — the user asked us to protect it. Record a failure and skip.
+                        if (!VersioningService.ArchiveBeforeOverwrite(destFile, versioning))
+                        {
+                            result.IncrementFilesFailed();
+                            result.AddFileError(destFile, "Could not archive existing version; destination left untouched.");
+                            progress?.Report($"ERROR: {name} — version archive failed, keeping existing");
+                            break;
+                        }
+                        if (File.Exists(destFile)) File.Delete(destFile);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
+                        progress?.Report($"Updated (changed): {name}");
+                    }
+                    else
+                    {
+                        result.IncrementFilesSkipped();
+                        progress?.Report($"Skipped (identical): {name}");
+                    }
+                    break;
+
+  WITH (only the predicate line changes; all branch bodies are preserved):
+
+                case TransferMode.SkipExisting:
+                case TransferMode.Mirror:
+                    var sourceInfo = new FileInfo(sourcePath);
+                    var destInfo = new FileInfo(destFile);
+                    if (IsDestinationStale(sourceInfo, destInfo))
+                    {
+                        // If versioning was requested and archiving fails, DO NOT destroy the
+                        // destination — the user asked us to protect it. Record a failure and skip.
+                        if (!VersioningService.ArchiveBeforeOverwrite(destFile, versioning))
+                        {
+                            result.IncrementFilesFailed();
+                            result.AddFileError(destFile, "Could not archive existing version; destination left untouched.");
+                            progress?.Report($"ERROR: {name} — version archive failed, keeping existing");
+                            break;
+                        }
+                        if (File.Exists(destFile)) File.Delete(destFile);
+                        CopyAndVerify(sourcePath, destFile, stripPermissions, verifyChecksums, result, progress, throttleBytesPerSec, pauseToken, ct, vss);
+                        progress?.Report($"Updated (changed): {name}");
+                    }
+                    else
+                    {
+                        result.IncrementFilesSkipped();
+                        progress?.Report($"Skipped (identical): {name}");
+                    }
+                    break;
+
+Why this is the most robust option (vs alternatives):
+  - vs "compare with second precision by truncating both sides": truncating only
+    helps if both sides truncate to the SAME boundary; FAT rounds to even seconds
+    and the source is NTFS — a tolerance band is strictly more robust and is the
+    industry-standard approach (robocopy /FFT).
+  - vs "store a sidecar manifest of hashes": large design change, new on-disk
+    state, new failure modes; unnecessary for the reported failure.
+  - vs "always verify by hash": correct but turns every incremental run into a
+    full read of source AND dest — far more I/O than the bug we are fixing.
+  - The tolerance approach is O(1), no new state, preserves NTFS behavior exactly,
+    and is the same heuristic the rest of the industry uses.
+
+--------------------------------------------------------------------------------
+6. VERIFICATION / TESTS TO ADD (prove the fix; prevent regression)
+--------------------------------------------------------------------------------
+The repo already has BeetsBackup.Tests with TempDirectory / FileBuilder infra and
+InternalsVisibleTo, so IsDestinationStale (internal) is directly testable.
+
+T1. Truncation regression (the bug): given source.mtime = base+1.7s and
+    dest.mtime = base (simulating FAT truncation), same length →
+    IsDestinationStale == false  (was effectively true before the fix).
+
+T2. Genuine change by mtime: source.mtime = dest.mtime + 10s, same length →
+    IsDestinationStale == true.
+
+T3. Length change dominates: different lengths, any mtimes →
+    IsDestinationStale == true.
+
+T4. Destination newer (E2): source.mtime = dest.mtime - 1h, same length →
+    IsDestinationStale == false.
+
+T5. End-to-end on a simulated coarse-resolution destination: run CopyAsync twice
+    over an unchanged tree where the dest mtimes have been rounded down to a
+    2-second boundary; assert FilesCopied == 0 and FilesSkipped == N on the second
+    run (currently it would re-copy all N).
+
+(Manual repro for the incident: format a USB stick exFAT/FAT32, configure a
+SkipExisting backup, run twice, observe FilesCopied stays high on run 2 before
+the fix and drops to 0 after.)
+
+--------------------------------------------------------------------------------
+7. RELATED / SECONDARY OBSERVATIONS (lower confidence — verify before acting)
+--------------------------------------------------------------------------------
+S1. FAT "DST tunneling" one-time re-copy (E4). After the §5 fix, FAT/exFAT
+    destinations can still do a single full re-copy immediately after a DST
+    transition because FAT stores local time and the UTC conversion shifts by 1 h.
+    If field reports show "full re-copy twice a year", address with a robocopy
+    /DST-style rule (treat a ~1 h whole-hour mtime delta on FAT targets as
+    unchanged) — but ONLY for FAT-family destinations, and only if it's observed;
+    do not pre-emptively widen the general tolerance to an hour (that would mask
+    real same-day edits).
+
+S2. Long-path consistency in FileSystemService.CopyFile (NEEDS VERIFICATION, not
+    asserted as a live bug). CopyFileExNative deliberately prefixes paths with
+    \\?\ because the RAW Win32 P/Invoke does not honor the long-path manifest in
+    every host. The surrounding managed calls (File.GetAttributes / GetLastWrite /
+    SetLastWriteTimeUtc / SetAttributes) use the RAW path. In .NET 8 the BCL file
+    APIs transparently handle >MAX_PATH paths on Windows, so this is likely fine in
+    the shipped app — but it is worth a targeted test on a >260-char destination
+    (especially under the test runner, which the code comments call out as a host
+    where long-path awareness differs). If a PathTooLongException ever surfaces
+    here, the copied bytes would already be on disk yet the file would be counted
+    as failed. Flagged for verification only; no change proposed without a repro.
+
+--------------------------------------------------------------------------------
+8. SUMMARY
+--------------------------------------------------------------------------------
+ROOT CAUSE:   Incremental "has it changed?" decision uses an exact `>` mtime
+              comparison against destination timestamps that FAT-family
+              filesystems silently truncate (FAT32 2 s / exFAT 10 ms), so every
+              file looks "newer at source" forever and is re-copied on every run.
+              Silent — reported as success.
+BLAST RADIUS: All SkipExisting + Mirror backups whose destination is exFAT/FAT32
+              (default format for USB sticks / SD cards) or a coarse-granularity
+              share. Both the Copy/scheduled engine and the Move engine.
+FIX:          One shared IsDestinationStale(source, dest) helper with a 2-second
+              tolerance, called from both decision sites. O(1), no new state,
+              NTFS behavior unchanged, matches robocopy /FFT semantics.
+RISK OF FIX:  Very low. Only widens "unchanged" by a ≤2 s band on the mtime axis;
+              length check and checksum-verify path are untouched.
+
+================================================================================
+END — advisory only; no source files were modified. All code above is a proposal.
+================================================================================

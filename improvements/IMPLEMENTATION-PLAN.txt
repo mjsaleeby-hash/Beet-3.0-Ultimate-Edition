@@ -1,0 +1,647 @@
+================================================================================
+BEET'S BACKUP 3.0 — MASTER IMPLEMENTATION PLAN
+Synthesis + skeptical triage of the four improvement documents, with a
+fully-specified, low-risk-first execution plan.
+================================================================================
+Owner:     "Ultimate engineer" (accountable for every change below)
+Date:      2026-06-22
+Inputs:    improvements/codebase-review.txt           (architecture)
+           improvements/incident-rootcause-incremental-recopy.txt  (FAT re-copy bug)
+           improvements/performance-optimization-report.txt        (performance)
+           improvements/uxui-assessment.txt                        (UX/UI)
+Status:    PLAN ONLY. No production source has been modified by this document.
+
+HOW TO READ THIS FILE (for any developer, including juniors)
+  - Section 1: my independent take on the codebase.
+  - Section 2: which document claims I VERIFIED, ACCEPT, DOUBT, or REJECT — and why.
+  - Section 3: the execution waves (do Wave 1 first; do NOT skip ahead).
+  - Sections 4-6: the actual changes, each with: WHERE, WHY, BEFORE, AFTER (fully
+    commented), the TEST to add, and how to ROLL BACK.
+  - Section 7: things we are deliberately NOT doing yet, and the bar to start them.
+  - Section 8: the rules every change must follow (commenting, commits, testing).
+
+GUIDING PRINCIPLE
+  This application already works and is in production ("Ultimate Edition"). The
+  bar for change is therefore: "clear user value OR clear safety/maintainability
+  win, with regression risk we can prove is low." Cleverness that risks the
+  proven-correct copy/scheduler/IPC core is NOT worth it. When in doubt, we keep
+  the comments verbose and the change small.
+
+================================================================================
+1. INDEPENDENT WHOLE-CODEBASE ASSESSMENT (my own read, not the docs')
+================================================================================
+This is a competently engineered WPF/.NET 8 MVVM app. The hard parts are done
+well: cross-integrity-level IPC, zombie-process watchdogs, cross-process job
+mutex, atomic JSON writes with file-watch reconciliation, drive-aware parallel
+copy, VSS fallback for locked files, ArrayPool/SequentialScan I/O, debounced log
+saves. It is unusually well-commented — that is an asset we will PRESERVE and
+extend, never strip.
+
+The genuine problems, in priority order as I see them:
+  (1) A real, silent, user-facing DATA-PATH bug: incremental backups to FAT/exFAT
+      re-copy everything every run (incident doc). This is the only item that hurts
+      real users today. It is also low-risk to fix. => Top priority.
+  (2) Light theme is visually broken on the home dashboard because dozens of colors
+      are hard-coded to dark values (UX doc C1). Real, visible, fixable.
+  (3) A cluster of safe, cheap performance + a11y wins (FormatBytes alloc, search
+      syscall, pie hover-origin, AutomationProperties, focus ring).
+  (4) Structural debt (god objects, dual-pane duplication, two copy engines, no
+      interfaces). Real, but it is INTERNAL quality. It carries the HIGHEST
+      regression risk and the LOWEST user value. It must be earned with tests, not
+      rushed.
+
+================================================================================
+2. SKEPTICAL REVIEW OF THE FOUR DOCUMENTS (verify, then decide)
+================================================================================
+I treated the documents as claims to be checked against the code and the existing
+test suite (BeetsBackup.Tests), NOT as instructions to follow blindly.
+
+VERIFIED TRUE + SAFE (implement):
+  - FAT timestamp re-copy bug (incident doc). The predicate
+    `source.LastWriteTimeUtc > dest.LastWriteTimeUtc` exists in BOTH EnumerateOne
+    (TransferService ~:1509) and CopyItem (~:645) with no tolerance, and every copy
+    path re-stamps dest mtime (FileSystemService:108, :247; TransferService ~:1050).
+    BLAST-RADIUS CHECK AGAINST TESTS: every existing SkipExisting test uses a 1-hour
+    delta or an exact-equal timestamp (TransferServiceTests.cs:24-110, :430-456).
+    A 2-second tolerance changes NONE of those outcomes. => The fix is provably safe
+    against the current suite. ACCEPT, do first.
+  - FormatBytes allocates its suffix array per call (FileSystemItem.cs:142). Trivial,
+    safe. ACCEPT.
+  - Deep-search does an extra File.GetAttributes per subdir (MainViewModel ~:1078)
+    that AttributesToSkip=ReparsePoint removes. Equivalent behavior. ACCEPT.
+  - Pie hover scales about the path's bounding box, not the pie center
+    (PieChartControl.xaml.cs:202-203, 298-302) — wedge drifts on hover. Contained to
+    one control. ACCEPT.
+  - Zero AutomationProperties anywhere; custom button templates have no focus visual.
+    Additive a11y, cannot regress existing behavior. ACCEPT.
+  - IPC names/AUMID duplicated across App.xaml.cs and Launcher (arch doc A6).
+    Shared-constant extraction is mechanical and safe. ACCEPT.
+
+VERIFIED TRUE but needs CARE (implement with tests + review, Wave 2):
+  - Dashboard/crash-banner hard-coded colors (UX C1). Confirmed by grep (dozens of
+    literals). HIGH VALUE but LARGE surface. RISK: a wrong token value regresses the
+    (currently good) dark theme. MITIGATION RULE (mandatory): set every NEW dark-mode
+    token to the EXACT current hex so dark mode renders byte-identical; only the new
+    LIGHT values are new, and they need a visual sign-off pass.
+  - RangeObservableCollection bulk-load (perf P3). Safe in principle (NavigateTop
+    already does Clear()+Add; one Reset is fewer events, same end state). Touches a
+    widely-used field; do it with a focused test and a manual click-through.
+  - Filter debounce (perf P5) — introduces a 150 ms delay (a deliberate UX change).
+  - Drive-aware folder sizing (perf P1, partial) — reuse DriveTypeService for the
+    parallelism degree; trivial and safe. The CACHE and the per-item-update BATCHING
+    are bigger and go later.
+  - De-dup helpers (arch D4/D6/D7/D8): progress-percent, HResult classifier,
+    uniqueness, log-entry factory. Behavior-preserving but they touch many call
+    sites; each needs its own commit + test.
+
+DOUBTED / DOWNGRADED (do NOT do as written; smaller/safer version only):
+  - Folder-size CACHE keyed on folder mtime (perf C3). SKEPTICAL: a folder's mtime
+    does NOT change when a deep grandchild changes, so a cached size can be STALE and
+    show a wrong number. Acceptable for a transient display, but it can mislead during
+    an active backup. DECISION: defer; if done, invalidate on navigate-refresh and
+    document the staleness explicitly. Do the safe drive-aware + batched parts first.
+  - Single-walk backup / remove EstimateTotalSize pre-walk (perf P1, arch Phase 7).
+    SKEPTICAL: it touches SchedulerService.ExecuteJobAsync and CopyAsync's contract
+    (must surface planned bytes). Real win on huge HDD backups, but it edits the
+    scheduler's proven path. DECISION: defer to Wave 3 behind characterization tests.
+
+REJECTED FOR NOW (correct in theory, wrong risk/reward for a shipping app):
+  - Full god-object split + PaneViewModel extraction + interfaces-everywhere +
+    IDialogService/IUiDispatcher + unify-the-two-copy-engines + streaming Channel
+    copy (arch Phases 3-6, perf D2). These are large, touch the proven core, and —
+    critically — MainViewModelTests construct MainViewModel with concrete services
+    and call vm.BuildPieSlices(...)/read vm.TopPieSlices directly. Moving pane/pie
+    logic into a new class or behind interfaces WILL break test construction and
+    those tests. The user value is zero and the regression surface is the whole app.
+    DECISION: defer to Wave 3, gated on a real characterization-test suite and an
+    explicit decision to invest. (The incident-doc's SHARED-HELPER for the timestamp
+    decision gives us the one concrete benefit of "unify the engines" — a single
+    source of truth for the changed-file rule — WITHOUT the risk of rewriting Move.)
+
+================================================================================
+3. EXECUTION WAVES (strict order — finish a wave before starting the next)
+================================================================================
+WAVE 1 — Safe, high-value, provably low-risk. Ship these first.
+  1.1 FAT/exFAT incremental re-copy fix (shared IsDestinationStale helper)   [bug]
+  1.2 FormatBytes: hoist the suffix array                                    [perf]
+  1.3 Deep-search: drop the extra GetAttributes via AttributesToSkip         [perf]
+  1.4 Pie chart: scale hover about the pie center                            [ux/bug]
+  1.5 Accessibility: AutomationProperties.Name on icon/raster buttons + a
+      shared keyboard FocusVisualStyle                                       [a11y]
+  1.6 Shared IPC constants (mutex/show-signal/AUMID) across app + launcher   [maint]
+
+WAVE 2 — Real value, medium risk. One change per commit, each with a test and a
+manual pass. Requires the Wave-1 changes merged and green.
+  2.1 De-hardcode dashboard + crash-banner colors (restore light theme)     [ux]
+  2.2 RangeObservableCollection for pane + search population                 [perf]
+  2.3 Live-filter debounce                                                   [perf]
+  2.4 Drive-aware folder-size parallelism (DriveTypeService)                 [perf]
+  2.5 Pie polish: donut-center = surface, clamp center label, single tiny-
+      slice threshold; legend keyboard-operability + stop coloring % text    [ux/a11y]
+  2.6 De-dup helpers: ProgressPercent, IOExceptionClassifier, uniqueness,
+      BackupLogEntry factory                                                  [maint]
+
+WAVE 3 — High risk / high effort / low user value. DO NOT START without (a) a
+green characterization-test suite around the affected area and (b) an explicit
+"yes, invest now" decision. See Section 7 for the entry bar.
+  3.1 Unify Move onto the plan/engine (remove the second mode-decision path)
+  3.2 Extract PaneViewModel; split MainViewModel; introduce IUiDispatcher/IDialogService
+  3.3 Service interfaces + DI tidy
+  3.4 Streaming Channel<FileWorkItem> copy; single-walk backup sizing
+  3.5 Scheduler concurrency cap; backup_log rotation
+  3.6 Raster transport buttons -> themed vector glyphs; folder-size cache
+
+================================================================================
+4. WAVE 1 — FULLY SPECIFIED CHANGES (these are the ones to implement now)
+================================================================================
+NOTE TO IMPLEMENTER: copy the inline comments verbatim. They are written for a
+developer who may not know this codebase or be deeply experienced. Do not trim
+them to "save space" — verbose, explanatory comments are a project requirement.
+
+────────────────────────────────────────────────────────────────────────────
+1.1  FIX: FAT/exFAT incremental backups re-copy everything every run
+     FILE: Services/TransferService.cs
+     WHY:  FAT32 stores file times at 2-second resolution and exFAT at 10 ms.
+           After we copy a file we stamp the destination's modified-time to equal
+           the source's. The destination filesystem silently rounds that stamp
+           down. On the next run the (full-resolution) source time is strictly
+           greater than the (rounded) destination time, so the unchanged file is
+           judged "changed" and copied AGAIN — forever. This is silent (it reports
+           success) and hits the most common backup target (USB sticks / SD cards).
+────────────────────────────────────────────────────────────────────────────
+STEP A — add ONE shared decision helper near the other private helpers in
+TransferService. This becomes the SINGLE source of truth for "did this file
+change?", used by both the Copy planner and the Move path, so they can never
+drift apart again.
+
+    // ----------------------------------------------------------------------
+    // Incremental-backup "has this file changed?" decision.
+    //
+    // BACKGROUND FOR FUTURE MAINTAINERS:
+    //   Different filesystems store a file's last-write time with different
+    //   precision:
+    //       NTFS  -> 100 nanoseconds (effectively exact)
+    //       exFAT -> 10 milliseconds
+    //       FAT32 -> 2 seconds (and only even-numbered seconds!)
+    //   When we copy a file we set the destination's last-write time equal to the
+    //   source's. On a FAT/exFAT destination the filesystem ROUNDS that value down
+    //   to its own precision. So the destination's stored time ends up SLIGHTLY
+    //   EARLIER than the source's. If we then compared the two times with a plain
+    //   ">", the source would always look "newer" and we would re-copy a file that
+    //   never actually changed — on every single backup run.
+    //
+    //   The fix is to allow a small tolerance (a "close enough" window). 2 seconds
+    //   covers FAT32's coarse 2-second granularity, and therefore exFAT's finer
+    //   10 ms granularity as well. Windows' own robocopy tool does the exact same
+    //   thing with its "/FFT" (FAT File Times) option.
+    // ----------------------------------------------------------------------
+
+    /// <summary>
+    /// Maximum last-write-time difference (source minus destination) that we still
+    /// treat as "unchanged". Sized to FAT32's 2-second timestamp granularity so a
+    /// freshly-copied file on a FAT/exFAT drive is not re-copied forever just
+    /// because the destination filesystem rounded the timestamp we wrote.
+    /// </summary>
+    private static readonly TimeSpan TimestampGranularityTolerance = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Returns true when the destination copy of a file is out of date relative to
+    /// the source, for SkipExisting / Mirror modes. A file counts as changed when:
+    ///   (a) the byte length differs, OR
+    ///   (b) the source was modified MORE than <see cref="TimestampGranularityTolerance"/>
+    ///       after the destination.
+    /// A destination that is NEWER than the source is treated as unchanged (we only
+    /// ever re-copy when the source is genuinely newer) — this preserves the
+    /// original behaviour. This is a length+modified-time heuristic; for byte-exact
+    /// guarantees the user enables VerifyChecksums, which is a separate, unaffected
+    /// step that runs AFTER the copy.
+    /// </summary>
+    internal static bool IsDestinationStale(FileInfo source, FileInfo dest)
+    {
+        // A size change is an unambiguous "changed" signal — no tolerance needed.
+        if (source.Length != dest.Length)
+            return true;
+
+        // (source - dest) is positive only when the source is newer. If the
+        // destination is newer or equal, the difference is zero or negative, which
+        // is never greater than the tolerance, so we correctly return "not stale".
+        return source.LastWriteTimeUtc - dest.LastWriteTimeUtc > TimestampGranularityTolerance;
+    }
+
+STEP B — CALL SITE 1, the Copy planner. Find this block in EnumerateOne (~:1504):
+
+    BEFORE:
+        case TransferMode.SkipExisting:
+        case TransferMode.Mirror:
+        {
+            var sourceInfo = new FileInfo(sourcePath);
+            var destInfo = new FileInfo(destFile);
+            bool changed = sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc;
+            plan.Files.Add(new FileWorkItem(sourcePath, destFile,
+                changed ? FileAction.Replace : FileAction.SkipIdentical,
+                sourceSize));
+            break;
+        }
+
+    AFTER (only the "changed" line changes; everything else stays identical):
+        case TransferMode.SkipExisting:
+        case TransferMode.Mirror:
+        {
+            var sourceInfo = new FileInfo(sourcePath);
+            var destInfo = new FileInfo(destFile);
+            // Use the shared tolerance-aware check so FAT/exFAT destinations don't
+            // re-copy unchanged files forever (see IsDestinationStale for the why).
+            bool changed = IsDestinationStale(sourceInfo, destInfo);
+            plan.Files.Add(new FileWorkItem(sourcePath, destFile,
+                changed ? FileAction.Replace : FileAction.SkipIdentical,
+                sourceSize));
+            break;
+        }
+
+STEP C — CALL SITE 2, the Move path. Find this block in CopyItem (~:641):
+
+    BEFORE:
+                    var sourceInfo = new FileInfo(sourcePath);
+                    var destInfo = new FileInfo(destFile);
+                    if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
+                    {
+
+    AFTER (replace ONLY the if-condition; keep the entire body unchanged):
+                    var sourceInfo = new FileInfo(sourcePath);
+                    var destInfo = new FileInfo(destFile);
+                    // Shared tolerance-aware check — keeps Move and Copy in lock-step
+                    // and fixes the FAT/exFAT re-copy bug for moves too.
+                    if (IsDestinationStale(sourceInfo, destInfo))
+                    {
+
+TESTS TO ADD (BeetsBackup.Tests/Services/TransferServiceTests.cs — the helper is
+internal and InternalsVisibleTo is already configured, so it is directly callable):
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void IsDestinationStale_FatRoundedTimestampSameSize_NotStale()
+    {
+        // Simulates the bug: identical length, source 1.7s newer than the
+        // destination ONLY because FAT rounded the stamp down. Must be "not stale".
+        // (Build two real temp files so we can use real FileInfo objects.)
+        using var tmp = new TempDirectory();
+        var s = Path.Combine(tmp.Path, "s.bin"); File.WriteAllBytes(s, new byte[100]);
+        var d = Path.Combine(tmp.Path, "d.bin"); File.WriteAllBytes(d, new byte[100]);
+        var baseTime = DateTime.UtcNow.AddMinutes(-5);
+        File.SetLastWriteTimeUtc(s, baseTime.AddSeconds(1.7)); // full-resolution source
+        File.SetLastWriteTimeUtc(d, baseTime);                 // FAT-rounded destination
+        TransferService.IsDestinationStale(new FileInfo(s), new FileInfo(d)).Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void IsDestinationStale_SourceMuchNewerSameSize_Stale()
+    {
+        using var tmp = new TempDirectory();
+        var s = Path.Combine(tmp.Path, "s.bin"); File.WriteAllBytes(s, new byte[100]);
+        var d = Path.Combine(tmp.Path, "d.bin"); File.WriteAllBytes(d, new byte[100]);
+        File.SetLastWriteTimeUtc(s, DateTime.UtcNow);
+        File.SetLastWriteTimeUtc(d, DateTime.UtcNow.AddMinutes(-10));
+        TransferService.IsDestinationStale(new FileInfo(s), new FileInfo(d)).Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void IsDestinationStale_DifferentSize_Stale()
+    {
+        using var tmp = new TempDirectory();
+        var s = Path.Combine(tmp.Path, "s.bin"); File.WriteAllBytes(s, new byte[200]);
+        var d = Path.Combine(tmp.Path, "d.bin"); File.WriteAllBytes(d, new byte[100]);
+        TransferService.IsDestinationStale(new FileInfo(s), new FileInfo(d)).Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void IsDestinationStale_DestinationNewer_NotStale()
+    {
+        using var tmp = new TempDirectory();
+        var s = Path.Combine(tmp.Path, "s.bin"); File.WriteAllBytes(s, new byte[100]);
+        var d = Path.Combine(tmp.Path, "d.bin"); File.WriteAllBytes(d, new byte[100]);
+        File.SetLastWriteTimeUtc(s, DateTime.UtcNow.AddHours(-1));
+        File.SetLastWriteTimeUtc(d, DateTime.UtcNow);
+        TransferService.IsDestinationStale(new FileInfo(s), new FileInfo(d)).Should().BeFalse();
+    }
+
+REGRESSION CHECK: re-run the FULL TransferServiceTests. The existing
+SkipExisting tests (SourceNewer = +1h, SourceOlder = -1h, identical, different
+size) are all outside the 2s band and MUST still pass unchanged.
+ROLLBACK: revert the two call-site lines to the original `>` expression and delete
+the helper. No data migration involved.
+
+────────────────────────────────────────────────────────────────────────────
+1.2  PERF: FormatBytes allocates a string[] on every call
+     FILE: Models/FileSystemItem.cs (~:140)
+     WHY:  FormatBytes runs constantly (every size label, dashboard stat, pie
+           slice). Allocating the suffix array each call is needless GC pressure.
+────────────────────────────────────────────────────────────────────────────
+    BEFORE:
+        public static string FormatBytes(long bytes)
+        {
+            string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
+            double value = bytes;
+            int i = 0;
+            while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
+            return $"{value:0.##} {suffixes[i]}";
+        }
+
+    AFTER:
+        // Allocated ONCE for the whole process instead of on every call. FormatBytes
+        // is invoked very frequently (every file-size label, dashboard figure, and
+        // pie-chart slice), so re-allocating this tiny array each time was pure waste.
+        private static readonly string[] ByteSuffixes = ["B", "KB", "MB", "GB", "TB"];
+
+        public static string FormatBytes(long bytes)
+        {
+            double value = bytes;
+            int i = 0;
+            while (value >= 1024 && i < ByteSuffixes.Length - 1) { value /= 1024; i++; }
+            return $"{value:0.##} {ByteSuffixes[i]}";
+        }
+    TEST: existing formatting behaviour is unchanged; covered indirectly by tests
+    that assert size strings. Optionally add FormatBytes(0)=="0 B", 1024=="1 KB".
+    ROLLBACK: trivially revert.
+
+────────────────────────────────────────────────────────────────────────────
+1.3  PERF: deep search does an extra metadata syscall per subdirectory
+     FILE: ViewModels/MainViewModel.cs (SearchDirectoryRecursive and
+           SearchDirectoryRecursiveBottom, ~:1037 and ~:1195)
+     WHY:  The enumerator is created with AttributesToSkip=None, then the code does
+           a SECOND File.GetAttributes(dirPath) on every subdirectory just to skip
+           reparse points (junctions/symlinks). Telling the enumerator to skip
+           reparse points removes that second syscall entirely.
+────────────────────────────────────────────────────────────────────────────
+    In BOTH SearchDirectoryRecursive and SearchDirectoryRecursiveBottom:
+
+    CHANGE the options to skip reparse points:
+        var options = new EnumerationOptions
+        {
+            // Skip junctions/symlinks at the enumerator level so we don't have to
+            // stat each subdirectory again below, and so we never recurse into a
+            // reparse point (which could loop or escape the search root).
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = true,
+            RecurseSubdirectories = false
+        };
+
+    Then DELETE the now-redundant guard inside the subdirectory loop:
+        // REMOVE these lines — the enumerator no longer yields reparse points:
+        //   try { var dirAttr = File.GetAttributes(dirPath);
+        //         if (dirAttr.HasFlag(FileAttributes.ReparsePoint)) continue; }
+        //   catch { continue; }
+
+    NOTE: keep IgnoreInaccessible=true (preserves the "skip locked folders"
+    behaviour the old try/catch also provided).
+    TEST: add a search test over a tree containing a normal subfolder; assert
+    matches are found. (Reparse-point creation needs admin, so don't unit-test that
+    leg; the change is behaviour-equivalent.)
+    ROLLBACK: restore AttributesToSkip=None and the guard block.
+
+────────────────────────────────────────────────────────────────────────────
+1.4  UX/BUG: pie slice "pops" in the wrong direction on hover
+     FILE: Views/PieChartControl.xaml.cs (CreateSlicePath ~:194, HighlightSlice ~:290)
+     WHY:  Each slice path is positioned with absolute canvas coordinates (the pie
+           center is at 140,140). The hover effect scales the slice using
+           RenderTransformOrigin = 0.5,0.5, which is the center of the SLICE's own
+           bounding box — not the pie's center. So a wedge grows from its own middle
+           and visibly slides sideways instead of expanding outward from the donut.
+────────────────────────────────────────────────────────────────────────────
+    In CreateSlicePath, REPLACE:
+        RenderTransformOrigin = new Point(0.5, 0.5),
+        RenderTransform = new ScaleTransform(1, 1)
+    WITH:
+        // Scale the slice about the PIE's center (cx,cy), not the slice's own
+        // bounding-box center. ScaleTransform's 3rd/4th args are the fixed center
+        // point in the same coordinate space the geometry uses, so the wedge now
+        // grows radially outward on hover instead of drifting sideways.
+        RenderTransform = new ScaleTransform(1, 1, cx, cy)
+    (Delete the RenderTransformOrigin line entirely.)
+
+    HighlightSlice needs no change — it still sets transform.ScaleX/ScaleY to 1.05.
+    OPTIONAL polish (only if desired): animate ScaleX/ScaleY with a 120 ms
+    DoubleAnimation for a smooth pop instead of an instant jump.
+    TEST: visual — hover each slice and confirm it grows outward, centered.
+    ROLLBACK: restore the two original lines.
+
+────────────────────────────────────────────────────────────────────────────
+1.5  ACCESSIBILITY: name icon/raster controls + add a visible keyboard focus ring
+     FILES: Views/MainWindow.xaml (icon/raster buttons), and the shared style
+            location (Window.Resources or Themes/Controls.xaml) for the focus style.
+     WHY:  There are ZERO AutomationProperties in the shell. Icon-only buttons use
+           glyphs ("◀","▶","▲","🔍","⏹") and two transport buttons are PNG images,
+           so a screen reader announces a codepoint or nothing. Custom button
+           templates also define no keyboard-focus visual, so a keyboard user can't
+           see what's focused.
+────────────────────────────────────────────────────────────────────────────
+    STEP A — add AutomationProperties.Name to every icon/raster/glyph button.
+    Examples (apply the same pattern to ALL of them):
+        <Button Content="&#x25C0;" ToolTip="Back"
+                AutomationProperties.Name="Back"
+                Command="{Binding GoBackCommand}"/>
+        <Button Content="&#x25B6;" ToolTip="Forward"
+                AutomationProperties.Name="Forward" Command="{Binding GoForwardCommand}"/>
+        <Button Content="&#x25B2;" ToolTip="Up one level"
+                AutomationProperties.Name="Up one level" Command="{Binding GoUpCommand}"/>
+        <Button Content="&#x1F50D;" ToolTip="Search"
+                AutomationProperties.Name="Search" Command="{Binding ExecuteDeepSearchCommand}"/>
+        <!-- The raster buttons need this MOST (they have no text at all): -->
+        <Button Command="{Binding StartBackupCommand}" ToolTip="Start a manual backup"
+                AutomationProperties.Name="Back up now"> ... </Button>
+        <Button Command="{Binding PauseResumeTransferCommand}"
+                AutomationProperties.Name="Pause or resume transfer"> ... </Button>
+        <Button Command="{Binding StopTransferCommand}"
+                AutomationProperties.Name="Stop transfer" ToolTip="Stop"> ... </Button>
+    Do this for the duplicated nav buttons in the split-pane sections too.
+
+    STEP B — define ONE focus-visual style and apply it to the base button styles.
+    Add to the same dictionary that defines ToolbarButton:
+        <!-- A clearly-visible keyboard focus ring. WPF draws a control's
+             FocusVisualStyle on top of the control when it has KEYBOARD focus, so
+             this does not affect mouse users or change layout. -->
+        <Style x:Key="AccentFocusVisual">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Rectangle Margin="-2" RadiusX="9" RadiusY="9"
+                                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                                   SnapsToDevicePixels="True"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    Then on ToolbarButton (and the buttons in Controls.xaml) add:
+        <Setter Property="FocusVisualStyle" Value="{StaticResource AccentFocusVisual}"/>
+    TEST: tab through the toolbar with the keyboard; confirm a visible ring and that
+    Narrator announces the names. ROLLBACK: remove the added attributes/style.
+
+────────────────────────────────────────────────────────────────────────────
+1.6  MAINT: single source of truth for the cross-process IPC names
+     FILES: App.xaml.cs (:45,105,109,116,133), BeetsBackupLauncher/Program.cs (:30,33)
+     WHY:  The single-instance mutex name, the show-window signal name, and the
+           AppUserModelID are hand-copied string literals in BOTH executables. If
+           one side is edited, single-instance + taskbar grouping break silently
+           with no compile error. A shared constant makes a mismatch impossible.
+────────────────────────────────────────────────────────────────────────────
+    APPROACH (pick the one that fits the build; both are low-risk):
+      Option A (simplest): add a tiny shared source file linked into BOTH projects:
+        // File: Shared/IpcNames.cs  (add as <Compile Include> link in both .csproj)
+        namespace BeetsBackup.Shared;
+        /// <summary>
+        /// Inter-process coordination names shared by the elevated main app and the
+        /// non-elevated launcher stub. These MUST be identical in both processes or
+        /// single-instance detection and taskbar grouping silently stop working.
+        /// Defined ONCE here so the two executables can never drift apart.
+        /// </summary>
+        public static class IpcNames
+        {
+            public const string SingleInstanceMutex = "BeetsBackup_SingleInstance_Mutex";
+            public const string ShowWindowSignal    = "BeetsBackup_ShowWindow_Signal";
+            public const string AppUserModelId      = "BeetSoftware.BeetsBackup";
+        }
+      Then replace each literal with IpcNames.SingleInstanceMutex etc.
+    TEST: launch app, launch a 2nd instance -> first window comes forward; pin the
+    launcher and confirm taskbar grouping. ROLLBACK: inline the literals again.
+
+================================================================================
+5. WAVE 2 — SPECIFIED AT THE DESIGN LEVEL (implement after Wave 1 is merged/green)
+================================================================================
+Each Wave-2 item is its own commit with its own test and a manual pass. The full
+drop-in code for 2.2-2.6 already exists in performance-optimization-report.txt and
+uxui-assessment.txt; reuse it, but apply the rules in Section 8 (especially the
+commenting standard and the dark-theme safety rule below).
+
+2.1  De-hardcode dashboard + crash-banner colors (UX C1) — restore light theme.
+     MANDATORY SAFETY RULE: for every new token, set the DARK value to the EXACT
+     hex currently hard-coded in MainWindow.xaml, so dark mode is pixel-identical
+     after the change. Only the LIGHT values are new; route them past a quick visual
+     review before merge. New tokens to add to BOTH Dark.xaml and Light.xaml (names
+     are suggestions): CardBorder, BannerWarnBg/Border/Text, StatusOkBg/Fg,
+     StatusRiskBg/Fg, plus brushes. Then replace literals like BorderBrush="#3A3075"
+     with "{DynamicResource CardBorderBrush}". This is mechanical but touches many
+     lines — do it in one focused commit and screenshot dark AND light before/after.
+
+2.2  RangeObservableCollection (perf P3). Add Models/RangeObservableCollection.cs
+     (full code in performance-optimization-report.txt §FIX A). Change TopPaneItems
+     and BottomPaneItems to this type; in NavigateTop/Bottom replace the
+     clear+foreach-Add with ReplaceAll(children); in deep search use AddRange(batch).
+     RISK NOTE: a Reset clears ListView selection — but NavigateTop already cleared
+     it, so no behaviour change. Verify selection-dependent commands still work.
+
+2.3  Live-filter debounce (perf P5). 150 ms debounce in the SearchFilter setter
+     (full code in perf report §FIX F). This is a deliberate, small UX change.
+
+2.4  Drive-aware folder sizing (perf P1, safe subset only). In
+     CalculateFolderSizesWithProgressAsync set MaxDegreeOfParallelism from
+     DriveTypeService.GetWorkerCount(...) instead of Environment.ProcessorCount so
+     HDDs serialize. Do NOT add the size cache yet (see Section 2 "DOUBTED").
+
+2.5  Pie polish + a11y: donut-center brush = SurfaceBrush; clamp the center label
+     (MaxWidth + TextTrimming); use ONE min-visible-percentage constant for both the
+     render guard and IsNegligible; make legend rows focusable/keyboard-activatable;
+     stop painting the legend % in the slice color (use PrimaryTextBrush) so it
+     passes contrast in light mode. Code sketches in uxui-assessment.txt.
+
+2.6  De-dup helpers (arch D4/D6/D7/D8), each behaviour-preserving, each its own
+     commit + test: ProgressPercent(result), IOExceptionClassifier
+     (IsSharingViolation/IsDiskFull for 0x20/0x70), collapse the 4 uniqueness
+     helpers to 2, BackupLogEntryFactory. These reduce drift risk for FUTURE bugs.
+
+================================================================================
+6. WAVE 2 TESTS (add alongside each item)
+================================================================================
+  - RangeObservableCollection: ReplaceAll raises exactly one CollectionChanged
+    (Reset) and ends with the expected items; AddRange appends and raises one Reset.
+  - IOExceptionClassifier: classifies crafted HResults correctly.
+  - ProgressPercent: clamps to 100 and matches the old inline formula on samples.
+  - Uniqueness helper: "file.txt" with existing file.txt + file-1.txt -> file-2.txt.
+  - BackupLogEntryFactory: produces the same field mapping the call sites did.
+  - Light-theme: no automated pixel test; require a manual dark+light screenshot
+    pass recorded in the PR.
+
+================================================================================
+7. WAVE 3 — DEFERRED (do NOT start without meeting the entry bar)
+================================================================================
+These are correct long-term directions but are HIGH risk for a shipping app and
+carry little-to-no user-visible benefit. They are explicitly OUT OF SCOPE until
+their entry bar is met.
+
+ENTRY BAR (all must be true before starting any Wave-3 item):
+  (1) A characterization-test suite exists that pins the CURRENT behaviour of the
+      area being changed (transfer modes incl. Move's "don't delete source on
+      failure" contract; scheduler dispatch/lock/NextRun; pane navigation/search).
+  (2) The Wave-1 and Wave-2 changes are merged and stable in the field.
+  (3) An explicit decision is made that the maintainability payoff is worth the
+      risk right now (it is a business call, not a default).
+
+DEFERRED ITEMS + the specific reason each is risky:
+  3.1 Unify Move onto the plan/engine — touches the proven Move data-safety
+      contract ("source survives if any byte failed"). The Wave-1 shared
+      IsDestinationStale already removes the worst drift risk without this.
+  3.2 PaneViewModel extraction + split MainViewModel + IUiDispatcher/IDialogService
+      — WILL break MainViewModelTests construction and the BuildPieSlices tests
+      (they new up MainViewModel and call vm.BuildPieSlices / read vm.TopPieSlices).
+      Needs those tests rewritten first.
+  3.3 Service interfaces + DI — wide mechanical change; only valuable once 3.2 makes
+      the VM testable. Update test construction to use the interfaces.
+  3.4 Streaming Channel copy + single-walk sizing — edits the proven copy core and
+      the scheduler's ExecuteJobAsync. Highest data-path risk in the whole plan.
+  3.5 Scheduler concurrency cap + log rotation — behaviour changes to scheduling and
+      on-disk history format; need migration thought + tests.
+  3.6 Raster->vector transport buttons (needs vector assets) + folder-size cache
+      (staleness caveat, Section 2).
+
+================================================================================
+8. RULES EVERY CHANGE MUST FOLLOW (non-negotiable)
+================================================================================
+R1. COMMENTING STANDARD (project requirement). This codebase is heavily and
+    helpfully commented; keep it that way. Every non-trivial change must carry an
+    inline comment that explains WHY (not just what), written so a junior who has
+    never seen this code can understand it. When you move code, MOVE its comments
+    too. Do not delete explanatory comments to "tidy up".
+R2. ONE LOGICAL CHANGE PER COMMIT, with a message that says what and why. Never mix
+    a behaviour change with a mechanical rename in the same commit.
+R3. TEST-FIRST FOR ANYTHING WITH LOGIC. Add/adjust a test in BeetsBackup.Tests in
+    the same commit. Run the FULL suite before and after; it must stay green.
+R4. DARK-THEME SAFETY (for any color work): new dark-mode token values must equal
+    the exact current hard-coded hex, so dark mode is unchanged. Only light values
+    are new and they get a visual review.
+R5. DO NOT TOUCH THE "LEAVE ALONE" LIST: cross-IL show-signal DACL/label code,
+    zombie-process watchdogs, JobMutex, atomic JSON writes + file-watch
+    reconciliation, VSS fallback, ArrayPool/SequentialScan/single-pass-hash,
+    debounced log saves. Repackage (e.g. shared constants) but never rewrite the
+    mechanisms.
+R6. PRESERVE OBSERVABLE BEHAVIOUR unless a change is explicitly a behaviour change
+    (only 1.1 fixes a bug; 2.1/2.3/2.5 are intentional UX changes — call them out
+    in the PR). Everything else must be behaviour-neutral.
+R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a small
+    copy AND a small SkipExisting re-run (expect 0 re-copies), toggle light/dark,
+    open the pie chart. For 1.1 specifically, if hardware allows, re-run a backup to
+    a FAT/exFAT USB stick twice and confirm the second run skips everything.
+
+================================================================================
+9. EXECUTION CHECKLIST (tick in order)
+================================================================================
+  [ ] Wave 1.1  FAT timestamp fix + 4 unit tests; full suite green; manual re-run test
+  [ ] Wave 1.2  FormatBytes static array
+  [ ] Wave 1.3  Deep-search EnumerationOptions
+  [ ] Wave 1.4  Pie hover-origin
+  [ ] Wave 1.5  AutomationProperties.Name + FocusVisualStyle (Narrator pass)
+  [ ] Wave 1.6  Shared IPC constants (two-instance + taskbar smoke test)
+  [ ] --- review/stabilize; confirm field-stable ---
+  [ ] Wave 2.1  De-hardcode colors (dark=exact hex; light review) — light theme works
+  [ ] Wave 2.2  RangeObservableCollection
+  [ ] Wave 2.3  Filter debounce
+  [ ] Wave 2.4  Drive-aware sizing
+  [ ] Wave 2.5  Pie polish + legend a11y + % contrast
+  [ ] Wave 2.6  De-dup helpers (one commit each)
+  [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
+  [ ] Wave 3.*  Only on explicit go-ahead, characterization tests first.
+
+================================================================================
+END OF PLAN — no production source modified by this document.
+The four source documents remain the detailed reference for each item.
+================================================================================

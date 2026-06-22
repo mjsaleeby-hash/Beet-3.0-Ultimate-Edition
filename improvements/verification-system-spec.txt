@@ -1,0 +1,312 @@
+================================================================================
+BEET 3.0 -> 4.0 PERFORMANCE VERIFICATION SYSTEM — DESIGN SPECIFICATION
+"Prove, with real data, that Beet improved — and by exactly how much."
+================================================================================
+Owner:   "Ultimate engineer" (accountable for every claim this system makes)
+Date:    2026-06-22
+Status:  APPROVED SCOPE — build in progress. This document is the contract for
+         what gets built and how the before/after comparison is conducted.
+
+Decisions locked with the user:
+  - Instrumentation depth ......... Option 1: a thin, additive EventSource INSIDE
+                                    Beet (exact per-operation timings + per-backup
+                                    duration). Does NOT touch the leave-alone core.
+  - Measurement strategy .......... Full combo: controlled BENCHMARK harness (proof)
+                                    + multi-day FIELD monitoring (realism/leaks/errors)
+                                    + SYSTEM-CONTEXT capture (external-interference
+                                    attribution) + ERROR/OUTCOME ingestion.
+  - Field window length ........... ~7 days for the 3.0 baseline, an equal ~7 days
+                                    for the 4.0 candidate after implementation.
+
+================================================================================
+0. WHY PASSIVE MONITORING ALONE IS NOT ENOUGH (the reason this system exists)
+================================================================================
+Performance is only meaningful relative to a WORKLOAD. If we sample Beet for a
+week on 3.0 and a week on 4.0, the two weeks had different folders browsed,
+different backup sizes, and different background load. "Average CPU dropped 8%"
+would then prove nothing — the workload simply differed.
+
+The existing PerformanceMonitor tool even encodes this limitation: its trend
+analysis compares FIRST session vs LATEST session. That is good LEAK detection,
+but it is NOT an A/B proof of an improvement.
+
+To state "Beet improved by X%" with certainty we need apples-to-apples. That
+requires THREE data streams feeding ONE build-tagged comparison report:
+
+  Stream 1  BENCHMARK   — identical, repeatable workload on both builds  => PROOF
+  Stream 2  FIELD       — days of real-world passive sampling            => REALISM,
+                                                                            LEAKS
+  Stream 3  OUTCOME/ERR — Beet's own results + OS crash records          => ERRORS,
+                                                                            THROUGHPUT
+  Output    COHORT A/B  — every datum tagged 3.0-baseline | 4.0-candidate,
+                          reported as median/p95/p99 + delta + % change + a
+                          significance flag.
+
+================================================================================
+1. WHAT WE MEASURE, AND WHERE EACH NUMBER COMES FROM
+================================================================================
+Mapping every metric the user asked about to its source, so nothing is hand-wavy.
+
+  "Transfer speeds"
+     Source: BeetTelemetry EventSource — BackupCompleted(bytes, durationMs, ...)
+             => MB/s per run, split read vs write, normal-path vs VSS-path.
+     Cross-check: PerfMon IoWriteBytesPerSec curve during the same window.
+
+  "System processes impacting Beet" (is a dip Beet's fault or the machine's?)
+     Source: PerfMon system-context capture — per-volume disk queue length, disk
+             busy %, system-wide CPU/IO, and the TOP-N competing processes by
+             CPU/IO at each sample. This is the ALIBI CHECK: if Beet looks slow at
+             14:03 and the sample shows another process pinning the disk, the dip
+             is attributed correctly and excluded from the cohort verdict.
+
+  "For certain it improved, and by how much"
+     Source: BENCHMARK harness — same corpus, same destination, run N times on each
+             build. Certainty comes from the controlled experiment; precision comes
+             from the EventSource timings. Field data corroborates; it never decides.
+
+  "Errors before and after"
+     Source: backup_log.json ingestion (FilesFailed, FilesLocked, DirectoriesFailed,
+             DiskFullErrors, ChecksumMismatches, FileErrors[]) + Windows Application
+             Event Log (Beet process crashes / unhandled .NET exceptions).
+
+  "Memory / handle leaks over a long run"
+     Source: PerfMon WorkingSet / PrivateBytes / HandleCount / ThreadCount trend
+             WITHIN each 7-day window (slope), and baseline-vs-candidate steady state.
+
+================================================================================
+2. ARCHITECTURE (4 cooperating pieces; reuses the existing PerfMon project)
+================================================================================
+
+  +-------------------+        EventSource events         +-------------------+
+  |   Beet (4.0/3.0)  | --------------------------------> |  TelemetryFileSink |
+  |  + BeetTelemetry  |   (in-process EventListener)      |  *.jsonl on disk   |
+  +-------------------+                                   +-------------------+
+        |   writes backup_log.json (already)                       |
+        v                                                          |
+  %LocalAppData%\Beet's Backup\                                    |
+     backup_log.json                                               |
+     telemetry\telemetry_<date>.jsonl  <-----------------------────+
+        ^
+        |  ingests (tolerant, shared-read)
+  +-----+--------------------------------------------------------------+
+  |  PerformanceMonitor (extended)                                     |
+  |    - PerformanceSampler (CPU/mem/handles/IO)         [exists]      |
+  |    - SystemContextCollector (disk queue, top procs)  [NEW]        |
+  |    - SessionLogWriter (session_*.jsonl, build-tagged) [extend]     |
+  |    - Ingestors: BackupLog / Telemetry / EventLog      [NEW]        |
+  |    - CohortReport (A/B baseline vs candidate)         [NEW]        |
+  +--------------------------------------------------------------------+
+        ^
+        |  runs scenarios via BeetsBackup.exe --run-job <fixedJobId>
+  +-----+--------------------------------------------------------------+
+  |  BenchmarkHarness (new console project)                            |
+  |    - Fixed corpora + fixed destinations (incl. FAT32 USB)          |
+  |    - Repeats each scenario N times, both builds                    |
+  |    - Emits benchmark_<scenario>_<build>.jsonl                      |
+  +--------------------------------------------------------------------+
+
+Design rules carried over from the implementation plan:
+  - The EventSource is ADDITIVE and isolated. It touches NONE of the leave-alone
+    mechanisms (copy/scheduler/IPC/VSS/atomic-writes/watchdog). It only reads
+    already-available numbers (bytes, counts, elapsed) at the END of an operation.
+  - PerfMon stays a SEPARATE project, builds independently, observes from outside.
+  - Everything is JSON Lines: append-only, tolerant of truncated tails, easy to
+    diff across builds.
+
+================================================================================
+3. PIECE 1 — BeetTelemetry EventSource (inside Beet, additive)
+================================================================================
+File: Telemetry/BeetTelemetry.cs  (EventSource "BeetsBackup-Telemetry")
+File: Telemetry/TelemetryFileSink.cs (EventListener -> JSONL, started at app init)
+
+EventSource is near-zero cost when no listener is attached, and our in-process
+sink is the only listener. Events (all carry a monotonic timestamp + build tag):
+
+  NavigationCompleted(pane, itemCount, elapsedMs)
+  SearchCompleted(matchCount, directoriesScanned, elapsedMs)
+  FolderSizeCompleted(directoryCount, driveType, elapsedMs)
+  BackupCompleted(jobName, mode, bytesTransferred, filesCopied, filesSkipped,
+                  filesFailed, durationMs, destFilesystem)
+  FilterRefreshed(itemCount, elapsedMs)          [supports the debounce metric]
+  AppStarted(version, gitCommit, buildTag)        [stamps every telemetry file]
+
+Why a per-backup DURATION here: Beet's backup_log.json records only a last-updated
+Timestamp, NOT how long a run took. BackupCompleted.durationMs closes that gap so
+"transfer speed = bytes / duration" is computable per run, in the field, with no
+guesswork.
+
+Call sites (each is a Stopwatch around an EXISTING operation + one emit at the end):
+  - MainViewModel.NavigateTop/NavigateBottom        -> NavigationCompleted
+  - MainViewModel.SearchDirectoryRecursive(+Bottom) -> SearchCompleted
+  - MainViewModel.CalculateFolderSizesWithProgress  -> FolderSizeCompleted
+  - SchedulerService.ExecuteJobAsync / Copy result  -> BackupCompleted
+  - SearchFilter refresh                            -> FilterRefreshed
+
+BUILD TAG mechanism: AssemblyInformationalVersion / a compiled-in constant set to
+"3.0-baseline" or "4.0-candidate". The EventSource stamps it on AppStarted so every
+telemetry record and every PerfMon session can be bucketed without manual bookkeeping.
+
+================================================================================
+4. PIECE 2 — PerformanceMonitor extensions
+================================================================================
+4a. Build tagging
+    SessionMetadata gains: BuildTag, GitCommit, BeetInformationalVersion. PerfMon
+    reads them from the AppStarted telemetry record (or the Beet exe's version
+    resource) so a session file is self-describing as baseline or candidate.
+
+4b. System-context capture (the attribution requirement)
+    New SystemContextCollector, sampled alongside each PerformanceSample:
+      - Per physical disk: Avg. Disk Queue Length, % Disk Time (busy).
+      - System-wide IO bytes/sec.
+      - Top 3 processes by CPU and by IO bytes/sec (name + pid + value),
+        EXCLUDING Beet itself.
+    Stored on the sample so any Beet slowdown can be checked against whether the
+    MACHINE was saturated and by WHAT at that exact second.
+
+4c. Ingestors (Stream 3)
+      - BackupLogIngestor: reads %LocalAppData%\Beet's Backup\backup_log.json with
+        FileShare.ReadWrite|Delete (Beet may be writing). Emits one outcome record
+        per completed/failed run with all error counters.
+      - TelemetryIngestor: reads telemetry\*.jsonl (the EventSource sink output).
+      - EventLogIngestor: queries the Windows Application log for Beet process
+        crashes and unhandled .NET exceptions (.NET Runtime / Application Error
+        sources referencing BeetsBackup.exe) within the window.
+
+4d. Cohort A/B report (Piece replaces first-vs-latest "Trends")
+    Groups ALL data (samples, telemetry, outcomes, benchmark results) by BuildTag,
+    then for every metric prints:
+        baseline median / p95 / p99   |   candidate median / p95 / p99
+        delta (absolute)              |   % change              |   better?
+    Plus: error-rate delta (errors per backup-run, per build), benchmark per-
+    scenario deltas, and a SIGNIFICANCE flag so sampling noise isn't read as a win
+    (e.g. require the candidate distribution to clear the baseline p95 by a margin,
+    and flag when sample counts are too small to conclude).
+
+================================================================================
+5. PIECE 3 — Benchmark harness (the proof engine)
+================================================================================
+New console project: BenchmarkHarness/  (standalone .NET 8, like PerfMon).
+
+Backup scenarios — FULLY AUTOMATED via the existing headless CLI
+  Beet exposes `BeetsBackup.exe --run-job <jobId>`: it runs ONE scheduled job
+  headless and exits. The harness:
+    1. Ensures a fixed scheduled job exists (fixed source corpus -> fixed dest).
+    2. Runs `--run-job` N times, reading BackupCompleted + backup_log.json each run.
+    3. Repeats against multiple destinations, including a FAT32/exFAT USB.
+
+  S1  FAT/exFAT incremental re-copy (HEADLINE — proves Wave 1.1)
+      Back up a fixed corpus to a FAT32 USB, then run AGAIN with nothing changed.
+      METRIC: run-2 filesCopied and bytesTransferred.
+      3.0 EXPECTED: ~all files re-copied (the bug). 4.0 EXPECTED: ~0 re-copied,
+      filesSkipped == file count. This is a black-and-white, screenshot-able win.
+
+  S2  Throughput (proves copy speed is not regressed and quantifies it)
+      Fresh backup of a large multi-GB corpus to SSD and to HDD.
+      METRIC: MB/s (bytes / durationMs), wall-clock, peak working set.
+
+  S3  Large-tree size + double-walk (relates to perf P1/P2)
+      Backup of a deep/high-file-count corpus.
+      METRIC: time-to-first-byte, total duration, peak memory (file-count scaling).
+
+UI-latency scenarios — captured via the EventSource
+  Navigation into a fixed 50k-file folder, deep search over a fixed 200k-file tree,
+  folder-size on HDD vs SSD. These need the live UI. Two build options (decide at
+  implementation time; EventSource captures the timings either way):
+    (a) FlaUI UI-automation driver — fully hands-off, repeatable; or
+    (b) a guarded `--bench-ui` mode in Beet that runs the ops programmatically.
+  Until one is built, these latencies are still collected during the FIELD window
+  and during a short scripted manual pass, just not in a tight automated loop.
+
+Each scenario writes benchmark_<scenario>_<build>.jsonl; the cohort report joins
+them by scenario id and prints the 3.0-vs-4.0 delta per scenario.
+
+================================================================================
+6. METRIC -> WAVE TRACEABILITY MATRIX
+================================================================================
+Every change in IMPLEMENTATION-PLAN.txt mapped to how we PROVE it moved.
+
+ Wave  Change                         Primary metric              Source        Dir
+ ----  -----------------------------  --------------------------  ------------  ---
+ 1.1   FAT/exFAT re-copy fix          run-2 filesCopied / bytes   backup_log    DOWN
+                                       -> 0  (headline)            (S1 bench)    to 0
+ 1.2   FormatBytes static array       Gen0 collections / allocs   PerfMon GC*   DOWN
+ 1.3   Deep-search syscalls           search elapsedMs, dirs/s    Telemetry     DOWN
+ 1.4   Pie hover origin               (visual — UX checklist)     manual        n/a
+ 1.5   Accessibility names/focus      (a11y — Narrator/AI checks) manual        n/a
+ 1.6   Shared IPC constants           (smoke — 2-instance test)   manual        n/a
+ 2.1   De-hardcode colors             (visual — light/dark shots) manual        n/a
+ 2.2   RangeObservableCollection      nav elapsedMs into 50k dir  Telemetry/S?  DOWN
+ 2.3   Live-filter debounce           FilterRefreshed count/burst Telemetry     DOWN
+ 2.4   Drive-aware folder sizing      FolderSizeCompleted ms HDD  Telemetry     DOWN
+       Dashboard one-pass fold        UI-thread time on notify    PerfMon CPU   DOWN
+ *GC counters: add EventCounters subscription (dotnet runtime counters) to PerfMon,
+  OR read from the BeetTelemetry sink if we also surface a periodic GC snapshot.
+
+Items with "n/a" direction are correctness/visual/maintainability wins verified by
+the manual checklist in IMPLEMENTATION-PLAN.txt R7, not by the telemetry pipeline.
+
+================================================================================
+7. THE 7-DAY PROTOCOL (how the comparison is actually run)
+================================================================================
+PHASE A — BASELINE (Beet 3.0, current build)
+  A1. Tag the running build "3.0-baseline" (telemetry AppStarted + PerfMon session).
+  A2. Run the BENCHMARK harness M times (e.g. M>=10) for S1-S3 + UI scenarios.
+      Park the results as the baseline cohort.
+  A3. Leave PerfMon + telemetry running for ~7 days of NORMAL real usage. Do real
+      backups so backup_log.json and the error ledger accumulate a real sample.
+  A4. Snapshot: cohort report for the baseline alone (sanity: stable, no leak).
+
+PHASE B — FREEZE & IMPLEMENT
+  B1. Implement Wave 1 (then Wave 2) per IMPLEMENTATION-PLAN.txt. Bump the build
+      tag to "4.0-candidate". Keep the telemetry call sites identical so metrics
+      are comparable.
+
+PHASE C — CANDIDATE (Beet 4.0)
+  C1. Re-run the SAME benchmark harness M times -> candidate cohort.
+  C2. ~7 days of NORMAL usage with PerfMon + telemetry, same machine, similar habits.
+
+PHASE D — VERDICT
+  D1. Run the cohort A/B report over everything. It prints, per metric:
+        baseline vs candidate (median/p95/p99), delta, % change, significance.
+  D2. Headline line items expected:
+        - S1: "Unchanged re-run to FAT32 now copies 0 files (was N). 100% fixed."
+        - S2: "Copy throughput X MB/s -> Y MB/s (+/- Z%), not regressed."
+        - 50k-folder navigation latency: A ms -> B ms (-C%).
+        - Error rate: P errors/run -> Q errors/run.
+        - Working-set 7-day slope: stable / improved (no leak introduced).
+  D3. Any candidate "regression" is cross-checked against system-context: if the
+      machine was saturated by another process at those samples, it's annotated and
+      excluded from the verdict.
+
+VALIDITY GUARDRAILS
+  - Same machine, same disks, same corpora for both windows.
+  - Benchmarks run at comparable idle (harness records system-context too; runs with
+    high external load are flagged).
+  - Equal sample sizes where possible (or the "until N backup cycles" option).
+  - The report states confidence; it will say "insufficient data" rather than claim
+    a win it cannot support.
+
+================================================================================
+8. WHAT THIS SYSTEM WILL AND WILL NOT CLAIM
+================================================================================
+WILL: quantify, with controlled repeats + real-world corroboration, the speed,
+      throughput, memory, handle, and error deltas between 3.0 and 4.0, and
+      attribute any anomaly to Beet vs the system.
+WILL NOT: claim a visual/a11y/maintainability item (1.4/1.5/1.6/2.1) as a measured
+      perf win — those are verified by the manual checklist, and the report says so
+      explicitly rather than dressing them up as numbers.
+
+================================================================================
+9. BUILD ORDER (tracked as tasks)
+================================================================================
+  [1] This spec.                                                        (done)
+  [2] BeetTelemetry EventSource + TelemetryFileSink + call sites; build Beet.
+  [3] PerfMon: build tag + SystemContextCollector.
+  [4] PerfMon: BackupLog / Telemetry / EventLog ingestors.
+  [5] PerfMon: cohort A/B report.
+  [6] BenchmarkHarness project: S1-S3 headless scenarios (UI scenarios second pass).
+  Each piece builds independently and is verified before the next.
+
+================================================================================
+END OF SPECIFICATION
+================================================================================

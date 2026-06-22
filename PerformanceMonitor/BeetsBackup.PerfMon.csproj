@@ -19,6 +19,9 @@
 
   <ItemGroup>
     <PackageReference Include="System.Management" Version="8.0.0" />
+    <!-- Reads the Windows Application event log for Beet process crashes / unhandled
+         .NET exceptions, so the before/after comparison includes hard-crash counts. -->
+    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

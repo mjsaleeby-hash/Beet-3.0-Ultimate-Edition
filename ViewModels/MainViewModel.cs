@@ -111,6 +111,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showNoResults;
     private CancellationTokenSource? _searchCts;
 
+    /// <summary>Counts directories entered during the current deep search, so the telemetry
+    /// event can report directories-scanned alongside elapsed time — the denominator that
+    /// makes the Wave 1.3 syscall reduction measurable. Reset at the start of each search.
+    /// Separate top/bottom counters so concurrent dual-pane searches don't cross-contaminate.</summary>
+    private int _searchDirsScanned;
+    private int _bottomSearchDirsScanned;
+
     // --- Deep search (bottom pane) ---
     [ObservableProperty] private bool _isBottomSearching;
     [ObservableProperty] private string _bottomDeepSearchQuery = string.Empty;
@@ -784,11 +791,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
         TopCurrentPath = path;
         TopPaneItems.Clear();
 
+        // Time the load+populate so the verification tooling can measure the navigation
+        // latency that Wave 2.2 (RangeObservableCollection) is meant to reduce.
+        var navSw = System.Diagnostics.Stopwatch.StartNew();
         var children = await Task.Run(() => _fs.GetChildren(path).ToList());
         // If a newer navigation has started, discard these results.
         if (navCts.IsCancellationRequested) return;
         foreach (var item in children)
             TopPaneItems.Add(item);
+        navSw.Stop();
+        Telemetry.BeetTelemetry.Log.NavigationCompleted("top", TopPaneItems.Count, navSw.Elapsed.TotalMilliseconds);
         _filteredTopView?.Refresh();
         IsTopCalculating = true;
         if (IsTopVisualMode)
@@ -830,11 +842,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         BottomCurrentPath = path;
         BottomPaneItems.Clear();
 
+        // Time the load+populate so the verification tooling can measure navigation latency.
+        var navSw = System.Diagnostics.Stopwatch.StartNew();
         var children = await Task.Run(() => _fs.GetChildren(path).ToList());
         // If a newer navigation has started, discard these results.
         if (navCts.IsCancellationRequested) return;
         foreach (var item in children)
             BottomPaneItems.Add(item);
+        navSw.Stop();
+        Telemetry.BeetTelemetry.Log.NavigationCompleted("bottom", BottomPaneItems.Count, navSw.Elapsed.TotalMilliseconds);
         _filteredBottomView?.Refresh();
         IsBottomCalculating = true;
         if (IsBottomVisualMode)
@@ -870,6 +886,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         int completed = 0;
         int total = directories.Count;
 
+        // Time the sizing pass so the verification tooling can measure the win from
+        // Wave 2.4 (drive-aware parallelism), which targets HDDs specifically.
+        var sizeSw = System.Diagnostics.Stopwatch.StartNew();
+
         var parallelOptions = new ParallelOptions
         {
             MaxDegreeOfParallelism = Environment.ProcessorCount,
@@ -896,6 +916,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         refreshTimer.Change(Timeout.Infinite, Timeout.Infinite);
 
+        sizeSw.Stop();
+        EmitFolderSizeTelemetry(directories, sizeSw.Elapsed.TotalMilliseconds);
+
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher == null) return;
         await dispatcher.InvokeAsync(() =>
@@ -904,6 +927,30 @@ public partial class MainViewModel : ObservableObject, IDisposable
             else IsBottomCalculating = false;
             RebuildPieSlicesIfNeeded();
         });
+    }
+
+    /// <summary>
+    /// Emits a folder-size telemetry event, labelled with the drive type of the folder being
+    /// sized so the verification tooling can compare HDD vs SSD sizing time (the Wave 2.4 win).
+    /// Best-effort and side-effect-free.
+    /// </summary>
+    private static void EmitFolderSizeTelemetry(List<FileSystemItem> directories, double elapsedMs)
+    {
+        try
+        {
+            string driveType = "unknown";
+            try
+            {
+                var firstPath = directories.Count > 0 ? directories[0].FullPath : null;
+                var root = firstPath != null ? Path.GetPathRoot(firstPath) : null;
+                if (!string.IsNullOrEmpty(root))
+                    driveType = new DriveInfo(root).DriveType.ToString(); // Fixed / Removable / Network / ...
+            }
+            catch { /* drive may be unavailable */ }
+
+            Telemetry.BeetTelemetry.Log.FolderSizeCompleted(directories.Count, driveType, elapsedMs);
+        }
+        catch { /* telemetry is observe-only */ }
     }
 
     // --- Navigation history ---
@@ -1013,14 +1060,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var searchRoot = TopCurrentPath;
         var dispatcher = System.Windows.Application.Current.Dispatcher;
 
+        // Measure search wall-clock and directories scanned (the Wave 1.3 win).
+        _searchDirsScanned = 0;
+        var searchSw = System.Diagnostics.Stopwatch.StartNew();
         await Task.Run(() =>
         {
             if (token.IsCancellationRequested) return;
             SearchDirectoryRecursive(searchRoot, query, isExtensionSearch, token, dispatcher);
         }, token).ContinueWith(_ => { }, TaskScheduler.Default);
+        searchSw.Stop();
 
         IsSearching = false;
         if (token.IsCancellationRequested) return;
+        Telemetry.BeetTelemetry.Log.SearchCompleted(
+            TopPaneItems.Count, System.Threading.Volatile.Read(ref _searchDirsScanned), searchSw.Elapsed.TotalMilliseconds);
         ShowNoResults = TopPaneItems.Count == 0;
         StatusMessage = TopPaneItems.Count > 0
             ? $"Found {TopPaneItems.Count} result{(TopPaneItems.Count != 1 ? "s" : "")} for \"{query}\""
@@ -1031,6 +1084,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void SearchDirectoryRecursive(string directory, string query, bool isExtensionSearch, CancellationToken token, System.Windows.Threading.Dispatcher dispatcher)
     {
         if (token.IsCancellationRequested) return;
+        System.Threading.Interlocked.Increment(ref _searchDirsScanned);
 
         try
         {
@@ -1172,14 +1226,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var searchRoot = BottomCurrentPath;
         var dispatcher = System.Windows.Application.Current.Dispatcher;
 
+        _bottomSearchDirsScanned = 0;
+        var searchSw = System.Diagnostics.Stopwatch.StartNew();
         await Task.Run(() =>
         {
             if (token.IsCancellationRequested) return;
             SearchDirectoryRecursiveBottom(searchRoot, query, isExtensionSearch, token, dispatcher);
         }, token).ContinueWith(_ => { }, TaskScheduler.Default);
+        searchSw.Stop();
 
         IsBottomSearching = false;
         if (token.IsCancellationRequested) return;
+        Telemetry.BeetTelemetry.Log.SearchCompleted(
+            BottomPaneItems.Count, System.Threading.Volatile.Read(ref _bottomSearchDirsScanned), searchSw.Elapsed.TotalMilliseconds);
         ShowBottomNoResults = BottomPaneItems.Count == 0;
         StatusMessage = BottomPaneItems.Count > 0
             ? $"Found {BottomPaneItems.Count} result{(BottomPaneItems.Count != 1 ? "s" : "")} for \"{query}\""
@@ -1189,6 +1248,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void SearchDirectoryRecursiveBottom(string directory, string query, bool isExtensionSearch, CancellationToken token, System.Windows.Threading.Dispatcher dispatcher)
     {
         if (token.IsCancellationRequested) return;
+        System.Threading.Interlocked.Increment(ref _bottomSearchDirsScanned);
 
         try
         {

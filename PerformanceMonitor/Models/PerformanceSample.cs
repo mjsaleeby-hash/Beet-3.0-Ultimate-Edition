@@ -19,4 +19,10 @@ public sealed record PerformanceSample
 
     public required double SystemCpuPercent { get; init; }
     public required long SystemAvailableMemoryBytes { get; init; }
+
+    /// <summary>Machine-wide context (disk saturation + top competing processes) at this
+    /// sample. Optional so the sampler stays decoupled from collection — the monitor loop
+    /// attaches it via a record `with` after sampling. Null when context capture is off
+    /// or failed for this tick.</summary>
+    public SystemContext? Context { get; init; }
 }

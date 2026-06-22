@@ -1,0 +1,531 @@
+================================================================================
+BEET'S BACKUP 3.0 — PERFORMANCE ENGINEERING REVIEW
+"Optimizing for maximum speed, low memory, scale, and rendering"
+================================================================================
+Engineer:  Senior performance engineer (heavy-traffic / millions-of-users lens)
+Date:      2026-06-22
+Scope:     Speed, memory, scalability, rendering, clean execution.
+Mandate:   NO source files changed. All code below is a PROPOSAL for future work.
+
+Profiling lens used: hot paths (navigation, folder sizing, deep search, the copy
+engine), the WPF render/layout pipeline, allocation churn, and memory growth
+under sustained use. Findings are grounded in the actual source, with file:line
+references. Where I verified something is ALREADY good, I say so — so no one
+wastes a sprint "fixing" a non-issue.
+
+--------------------------------------------------------------------------------
+0. WHAT'S ALREADY DONE RIGHT (do NOT touch)
+--------------------------------------------------------------------------------
+  - File-pane ListViews ARE virtualized: VirtualizingPanel.IsVirtualizing=True,
+    VirtualizationMode=Recycling, ScrollUnit=Pixel, CanContentScroll=True
+    (MainWindow.xaml:1336-1339, 1526-1529, 1775-1779). UI element count is
+    bounded by viewport, not folder size. This is the single most important WPF
+    perf setting and it's correct.
+  - Copy engine already: ArrayPool<byte> 1 MB buffers, FileOptions.SequentialScan,
+    single-pass hash-during-copy, drive-type-aware worker counts (DriveTypeService),
+    Flush(flushToDisk) for durability, CopyFileEx for kernel-side large-file paths.
+  - BackupLogService persistence is debounced (5 s) with terminal-status bypass.
+  - PieChartControl.RebuildChart() correctly unsubscribes old Path handlers before
+    clearing (PieChartControl.xaml.cs:121-126) — no handler leak there.
+  - INotifyPropertyChanged consumers are WPF bindings, which use weak events
+    (PropertyChangedEventManager) — list items do NOT leak the VM.
+
+The issues below are real and additive on top of an already-decent baseline.
+
+================================================================================
+1. PERFORMANCE ISSUE BREAKDOWN (ranked by impact)
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+P1 [HIGH] Folder-size recompute on EVERY navigation — uncached, not drive-aware,
+          one dispatcher hop per directory.
+──────────────────────────────────────────────────────────────────────────────
+Where:
+  - MainViewModel.CalculateFolderSizesWithProgressAsync (MainViewModel.cs:864)
+  - FileSystemItem.CalculateDirectorySizeAsync / CalculateDirectorySize
+    (FileSystemItem.cs:83-123)
+
+What happens:
+  Every NavigateTop/NavigateBottom kicks off a parallel job that, for each child
+  directory, does a FULL recursive enumeration of the whole subtree to sum file
+  sizes. Three compounding costs:
+
+  (a) NO CACHE. Bouncing in/out of a folder re-walks every subtree from scratch
+      each time. Opening C:\ then back repeatedly re-sizes Windows/Program Files
+      every visit.
+  (b) NOT DRIVE-AWARE. MaxDegreeOfParallelism = Environment.ProcessorCount
+      (MainViewModel.cs:875). On a single spinning HDD, N parallel recursive
+      directory walks cause seek thrashing and are SLOWER than sequential. The
+      codebase already has DriveTypeService.GetWorkerCount() used by the copy
+      engine — sizing ignores it.
+  (c) DISPATCHER HOP PER DIRECTORY. Each directory's result marshals back with
+      its own await dispatcher.InvokeAsync(() => Size = size)
+      (FileSystemItem.cs:92). A folder with 1,000 subdirs = 1,000 dispatcher
+      posts, each triggering a binding update + the per-item PropertyChanged for
+      Size/SizeDisplay/IsCalculating.
+
+Impact: sluggish navigation into large/deep folders, UI-thread pressure from the
+hop storm, and wasted CPU/IO re-doing work. This is the most-felt interactive
+slowness.
+
+──────────────────────────────────────────────────────────────────────────────
+P2 [HIGH] Backup does a full SOURCE TREE WALK twice, and holds the entire plan
+          in memory before copying.
+──────────────────────────────────────────────────────────────────────────────
+Where:
+  - SchedulerService.ExecuteJobAsync calls TransferService.EstimateTotalSize(...)
+    (SchedulerService.cs:533) — a complete recursive walk — purely to log
+    "Estimated size: X".
+  - TransferService.CopyAsync then walks the WHOLE tree AGAIN to build the
+    EnumerationPlan (TransferService.cs:105, EnumerateWorkItems:1384), and
+    RequiredFreeBytes sums the plan (TransferService.cs:1222).
+  - EnumerationPlan materializes List<DirectoryWorkItem> + List<FileWorkItem> for
+    the ENTIRE source before Phase 3 copy begins (TransferService.cs:1373).
+
+Impact:
+  - SPEED: on a large source on a HDD, the estimate pre-walk adds minutes of pure
+    seek-bound I/O before the first byte is copied. The size is already derivable
+    from the plan.
+  - MEMORY: time-to-first-byte is delayed by full enumeration, and peak memory
+    scales with file COUNT (one FileWorkItem per file). A multi-million-file
+    backup allocates a large, bursty list up front.
+  - MoveAsync has the same double-walk: sourceList.Sum(CountFiles) (full walk,
+    TransferService.cs:499) then walks again in CopyItem.
+
+──────────────────────────────────────────────────────────────────────────────
+P3 [MED-HIGH] One-item-at-a-time collection population → notification/layout storm.
+──────────────────────────────────────────────────────────────────────────────
+Where:
+  - NavigateTop/Bottom: `foreach (var item in children) TopPaneItems.Add(item);`
+    (MainViewModel.cs:790, 836).
+  - Deep search dispatches batches but still Adds one item at a time inside the
+    BeginInvoke (MainViewModel.cs:1063, 1097, etc.).
+
+What happens: ObservableCollection raises CollectionChanged PER Add. Each
+notification flows to (a) the ListView (layout/measure invalidation, even with
+virtualization the ItemContainerGenerator churns) and (b) the wrapping
+ICollectionView (FilteredTopPaneItems) which re-evaluates per change. Loading a
+50,000-entry folder = 50,000 notifications.
+
+Impact: visible stutter when entering large folders; amplified because TWO
+consumers react to every Add. Virtualization caps element COUNT but not
+notification COUNT.
+
+──────────────────────────────────────────────────────────────────────────────
+P4 [MED] Deep search: redundant per-directory syscall + per-match allocation.
+──────────────────────────────────────────────────────────────────────────────
+Where: SearchDirectoryRecursive / ...Bottom (MainViewModel.cs:1031-1119).
+  - Builds a fresh EnumerationOptions per directory call
+    (AttributesToSkip = None), then does an EXTRA File.GetAttributes(dirPath)
+    on every subdirectory to test ReparsePoint (MainViewModel.cs:1078).
+    Setting AttributesToSkip = ReparsePoint on the options eliminates that second
+    stat entirely (the transfer paths already do this).
+  - Allocates a new FileSystemItem (and FileInfo/DirectoryInfo) per match.
+Impact: doubles directory metadata syscalls on big trees; extra GC pressure.
+
+──────────────────────────────────────────────────────────────────────────────
+P5 [MED] Live-filter refresh on every keystroke.
+──────────────────────────────────────────────────────────────────────────────
+Where: SearchFilter setter → _filteredTopView?.Refresh() + _filteredBottomView
+       ?.Refresh() (MainViewModel.cs:92-93).
+Impact: each character re-runs the predicate across BOTH panes' full item sets
+synchronously on the UI thread. Fine for small folders, janky for large listings.
+A short debounce (≈150 ms) coalesces bursts.
+
+──────────────────────────────────────────────────────────────────────────────
+P6 [LOW, easy win] FormatBytes allocates a string[] on every call.
+──────────────────────────────────────────────────────────────────────────────
+Where: FileSystemItem.FormatBytes (FileSystemItem.cs:140-147) allocates
+`string[] suffixes = [...]` on EVERY invocation. This is called from every
+SizeDisplay binding, every dashboard stat, every pie slice, every transfer
+summary — i.e. constantly, during rendering. Hoist it to a static readonly array.
+
+──────────────────────────────────────────────────────────────────────────────
+P7 [LOW-MED] Dashboard computed properties re-scan the log repeatedly.
+──────────────────────────────────────────────────────────────────────────────
+Where: IsProtected, LastBackupDisplay, TotalFilesCopiedDisplay,
+TotalBytesTransferredDisplay, BackupsRunDisplay, RecentBackups
+(MainViewModel.cs:148-261). Each independently does
+`_log.Entries.Where(...).OrderByDescending(...)...` over up to MaxLogEntries (500)
+items, and NotifyLogPropertiesChanged() raises all of them together so a single
+status change re-runs ~6 full scans. Cheap individually, wasteful in aggregate
+and on every notify.
+
+──────────────────────────────────────────────────────────────────────────────
+P8 [LOW] Minor allocation / churn notes
+──────────────────────────────────────────────────────────────────────────────
+  - ExecuteCopy re-stats `new FileInfo(source).Length` (TransferService.cs:883)
+    although the plan already captured SourceSize in the work item.
+  - Repeated `System.Windows.Application.Current.Dispatcher` lookups in hot VM
+    paths (cache once).
+  - Cancelled CancellationTokenSource churn on rapid navigation/search — each
+    Navigate creates+disposes CTS; mostly handled, but high-frequency tree-click
+    navigation generates disposable pressure.
+
+================================================================================
+2. MEMORY LEAK / GROWTH AUDIT
+================================================================================
+No classic "handler keeps object alive forever" leak was found in the hot UI
+path (bindings use weak events; PieChartControl unsubscribes). Growth concerns
+are about UNBOUNDED state, not leaked references:
+
+  L1 [scale] EnumerationPlan peak memory scales with file count (P2). A run with
+     N files holds N FileWorkItem structs/objects + the per-run TransferResult's
+     FileErrors list, which grows unbounded with failures (AddFileError appends
+     for every failed file; a destination that fails on everything accumulates a
+     message per file in memory AND into the persisted log entry).
+  L2 [minor] MainViewModel subscribes Drives.CollectionChanged via a lambda in
+     the ctor (MainViewModel.cs:372) that is never unsubscribed. The VM is
+     effectively app-lifetime, so this is benign today, but it's a latent leak if
+     the VM ever becomes per-window/transient (it's registered AddTransient).
+  L3 [verify] Per-running-job ManualResetEventSlim/CTS in SchedulerService are
+     created and disposed in ExecuteJobAsync's finally — correct. No leak, noted
+     so it isn't re-investigated.
+
+================================================================================
+3. OPTIMIZATION STRATEGIES + PRODUCTION-READY CODE
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────
+FIX A (P3, P1c, L1-render) — RangeObservableCollection: bulk add = ONE reset.
+────────────────────────────────────────────────────────────────────────────
+Add a small collection type and use it for the pane item collections and search
+results. One notification instead of N.
+
+  // New file: Models/RangeObservableCollection.cs
+  using System.Collections.Generic;
+  using System.Collections.ObjectModel;
+  using System.Collections.Specialized;
+
+  namespace BeetsBackup.Models;
+
+  /// <summary>
+  /// ObservableCollection that supports bulk mutation with a SINGLE Reset
+  /// notification, avoiding the per-item CollectionChanged storm that makes
+  /// loading a large folder janky. WPF bindings and ICollectionView treat Reset
+  /// as "re-read everything", which is far cheaper than N Add events.
+  /// </summary>
+  public sealed class RangeObservableCollection<T> : ObservableCollection<T>
+  {
+      private bool _suppress;
+
+      protected override void OnCollectionChanged(NotifyCollectionChangedEventArgs e)
+      {
+          if (!_suppress) base.OnCollectionChanged(e);
+      }
+
+      /// <summary>Replaces all contents and raises a single Reset.</summary>
+      public void ReplaceAll(IEnumerable<T> items)
+      {
+          _suppress = true;
+          try
+          {
+              Items.Clear();
+              foreach (var item in items) Items.Add(item);
+          }
+          finally { _suppress = false; }
+          OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+          OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(Count)));
+          OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs("Item[]"));
+      }
+
+      /// <summary>Appends a batch and raises a single Reset (used by streaming search).</summary>
+      public void AddRange(IEnumerable<T> items)
+      {
+          _suppress = true;
+          try { foreach (var item in items) Items.Add(item); }
+          finally { _suppress = false; }
+          OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+          OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(Count)));
+          OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs("Item[]"));
+      }
+  }
+
+  Usage (proposal):
+   - Declare TopPaneItems/BottomPaneItems as RangeObservableCollection<FileSystemItem>.
+   - In NavigateTop, replace the clear+foreach-Add with:
+         var children = await Task.Run(() => _fs.GetChildren(path).ToList());
+         if (navCts.IsCancellationRequested) return;
+         ((RangeObservableCollection<FileSystemItem>)TopPaneItems).ReplaceAll(children);
+   - In deep search, accumulate the batch list and call AddRange(batch) instead of
+     looping Add inside BeginInvoke.
+
+  Net: a 50,000-item folder goes from 50,000 notifications (×2 consumers) to 1.
+
+────────────────────────────────────────────────────────────────────────────
+FIX B (P6) — Hoist the FormatBytes suffix table.
+────────────────────────────────────────────────────────────────────────────
+  // FileSystemItem.cs
+  private static readonly string[] ByteSuffixes = ["B", "KB", "MB", "GB", "TB"];
+
+  public static string FormatBytes(long bytes)
+  {
+      double value = bytes;
+      int i = 0;
+      while (value >= 1024 && i < ByteSuffixes.Length - 1) { value /= 1024; i++; }
+      return $"{value:0.##} {ByteSuffixes[i]}";
+  }
+  // Removes one array allocation per call on a very hot rendering path.
+
+────────────────────────────────────────────────────────────────────────────
+FIX C (P1) — Drive-aware, cached, batched folder sizing.
+────────────────────────────────────────────────────────────────────────────
+Three changes, smallest first:
+
+C1. Drive-aware parallelism — reuse the existing DriveTypeService instead of
+    ProcessorCount, so HDDs serialize and SSDs fan out:
+
+  // MainViewModel.CalculateFolderSizesWithProgressAsync
+  var workerCount = DriveTypeService.GetWorkerCount(
+      directories.FirstOrDefault()?.FullPath ?? string.Empty, /*dest*/ null);
+  var parallelOptions = new ParallelOptions
+  {
+      MaxDegreeOfParallelism = Math.Max(1, workerCount),
+      CancellationToken = cancellationToken
+  };
+  // (If GetWorkerCount's signature needs a dest, pass the same source root or add
+  //  a single-arg overload — it already classifies SSD/HDD/network internally.)
+
+C2. Batch the Size updates — compute on the worker, apply in ONE dispatcher hop
+    instead of one per directory. Replace the per-item marshalling in
+    FileSystemItem with a worker-side computation that returns the value, and let
+    the VM apply results in a single InvokeAsync:
+
+  // FileSystemItem.cs — add a pure compute method (no UI marshalling):
+  public long ComputeDirectorySize(CancellationToken ct = default)
+      => IsDirectory ? CalculateDirectorySize(FullPath, ct) : _size;
+
+  // Internal setter the VM can call on the UI thread in a batch:
+  internal void SetComputedSize(long size) => Size = size;   // Size setter already
+                                                             // raises the 3 notifies
+
+  // MainViewModel.CalculateFolderSizesWithProgressAsync (core loop):
+  var results = new System.Collections.Concurrent.ConcurrentBag<(FileSystemItem item, long size)>();
+  await Parallel.ForEachAsync(directories, parallelOptions, (dir, ct) =>
+  {
+      results.Add((dir, dir.ComputeDirectorySize(ct)));
+      return ValueTask.CompletedTask;
+  });
+  // single hop:
+  await dispatcher.InvokeAsync(() =>
+  {
+      foreach (var (item, size) in results) item.SetComputedSize(size);
+      if (isTop) IsTopCalculating = false; else IsBottomCalculating = false;
+      RebuildPieSlicesIfNeeded();
+  });
+  // The 800 ms periodic pie refresh can stay, but it now reads sizes that land in
+  // bulk rather than dribbling in one dispatcher post at a time.
+
+C3. Cache sizes keyed by (path, lastWriteTimeUtc) so re-visiting a folder is
+    instant and only changed subtrees recompute:
+
+  // New: Services/DirectorySizeCache.cs
+  using System.Collections.Concurrent;
+  namespace BeetsBackup.Services;
+
+  /// <summary>
+  /// Process-wide LRU-ish cache of computed directory sizes. Keyed by full path +
+  /// the directory's own last-write time (a cheap change signal — Windows updates a
+  /// folder's mtime when its direct children change). Bounded so it can't grow
+  /// without limit during a long session of heavy browsing.
+  /// </summary>
+  public static class DirectorySizeCache
+  {
+      private readonly record struct Key(string Path, long WriteTicks);
+      private static readonly ConcurrentDictionary<Key, long> _cache = new();
+      private const int MaxEntries = 4096;
+
+      public static bool TryGet(string path, long writeTicks, out long size)
+          => _cache.TryGetValue(new Key(path, writeTicks), out size);
+
+      public static void Set(string path, long writeTicks, long size)
+      {
+          if (_cache.Count >= MaxEntries) _cache.Clear(); // simple bound; swap for
+                                                          // an LRU if churn matters
+          _cache[new Key(path, writeTicks)] = size;
+      }
+  }
+  // ComputeDirectorySize checks the cache by (FullPath, Modified.Ticks) first and
+  // populates it after a full walk. NOTE: folder mtime only reflects DIRECT-child
+  // changes, so this is a heuristic — acceptable for a size *display*; the backup
+  // engine must NOT rely on it (it has its own enumeration).
+
+────────────────────────────────────────────────────────────────────────────
+FIX D (P2) — Single-walk backup: derive size from the plan; stream the copy.
+────────────────────────────────────────────────────────────────────────────
+D1. Remove the estimate-only pre-walk for the Copy path. The plan already knows
+    every file's SourceSize. Replace the separate EstimateTotalSize call with a
+    sum over the plan (or just log "Estimating…" then update once Phase 1 ends).
+
+  // SchedulerService.ExecuteJobAsync — instead of the standalone pre-walk at :533
+  //   var estimatedSize = await Task.Run(() => TransferService.EstimateTotalSize(...));
+  // let CopyAsync surface the planned size via an out/result field, e.g. expose
+  //   result.PlannedBytes = RequiredFreeBytes(plan) (already computed) and log it
+  // AFTER enumeration. Compressed jobs (which don't build a plan) can keep the
+  // estimate, or get a cheap count. Net: one walk instead of two for the common
+  // (non-compressed) backup — the dominant path.
+
+D2. (Bigger, scalability) Stream enumeration → copy with a bounded Channel so peak
+    memory is O(channel capacity), not O(file count), and copying starts while
+    enumeration is still running (overlap = lower wall-clock and faster TTFB):
+
+  // Sketch — TransferService.CopyAsync Phase 1+3 fused:
+  var channel = System.Threading.Channels.Channel.CreateBounded<FileWorkItem>(
+      new System.Threading.Channels.BoundedChannelOptions(capacity: 10_000)
+      { SingleWriter = true, SingleReader = false, FullMode = BoundedChannelFullMode.Wait });
+
+  // Producer: walk source, pre-create dirs as discovered, write FileWorkItems.
+  var producer = Task.Run(async () =>
+  {
+      try { await EnumerateInto(channel.Writer, sourceList, destinationDir, mode,
+                                excludeSet, cancellationToken); }
+      finally { channel.Writer.Complete(); }
+  }, cancellationToken);
+
+  // Consumers: drive-type-aware worker count, each pulls from the channel.
+  var consumers = Enumerable.Range(0, workerCount).Select(_ => Task.Run(async () =>
+  {
+      await foreach (var item in channel.Reader.ReadAllAsync(cancellationToken))
+          ProcessFileWorkItem(item, /*...*/);
+  }, cancellationToken)).ToArray();
+
+  await Task.WhenAll(consumers.Append(producer)).ConfigureAwait(false);
+
+  // TRADE-OFFS to handle in a full implementation:
+  //  - Free-space precheck: today it's exact (whole plan summed up front). With
+  //    streaming, either (a) keep a quick size-only pre-pass (cheaper than the full
+  //    plan walk because it allocates nothing), or (b) check incrementally and fail
+  //    fast on disk-full (the engine already classifies 0x70 disk-full).
+  //  - KeepBoth uniqueness reservation must move into the producer (single-writer,
+  //    so the HashSet stays thread-safe without locks).
+  //  Do this LAST and behind the Phase-0 characterization tests; it's the highest-
+  //  risk change here. For most users D1 alone removes the felt latency.
+
+D3. Bound TransferResult.FileErrors growth (L1): cap retained per-file error
+    messages (e.g. keep first 1,000 + a counter) so a catastrophically-failing
+    destination can't balloon memory and the persisted log entry.
+
+────────────────────────────────────────────────────────────────────────────
+FIX E (P4) — Cheaper deep search.
+────────────────────────────────────────────────────────────────────────────
+  // SearchDirectoryRecursive: one shared options instance that skips reparse
+  // points, removing the per-subdir File.GetAttributes(dirPath) call entirely.
+  private static readonly EnumerationOptions SearchEnumOptions = new()
+  {
+      AttributesToSkip = FileAttributes.ReparsePoint, // <-- drops the 2nd stat + loop guard
+      IgnoreInaccessible = true,
+      RecurseSubdirectories = false
+  };
+  // Then the `var dirAttr = File.GetAttributes(dirPath); if (ReparsePoint) continue;`
+  // block is no longer needed — the enumerator never yields reparse points.
+  // Combine with FIX A's AddRange so matches stream in as single-Reset batches.
+
+────────────────────────────────────────────────────────────────────────────
+FIX F (P5) — Debounce the live filter.
+────────────────────────────────────────────────────────────────────────────
+  // MainViewModel: coalesce keystrokes before refreshing the CollectionViews.
+  private CancellationTokenSource? _filterDebounceCts;
+  public string SearchFilter
+  {
+      get => _searchFilter;
+      set
+      {
+          if (!SetProperty(ref _searchFilter, value)) return;
+          _filterDebounceCts?.Cancel();
+          var cts = new CancellationTokenSource();
+          _filterDebounceCts = cts;
+          _ = Task.Delay(150, cts.Token).ContinueWith(t =>
+          {
+              if (t.IsCanceled) return;
+              _filteredTopView?.Refresh();
+              _filteredBottomView?.Refresh();
+          }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion,
+             TaskScheduler.FromCurrentSynchronizationContext());
+      }
+  }
+  // Refresh runs at most ~once per 150 ms idle instead of per character.
+
+────────────────────────────────────────────────────────────────────────────
+FIX G (P7) — Compute dashboard stats in one pass.
+────────────────────────────────────────────────────────────────────────────
+Replace the ~6 independent LINQ scans with a single fold computed once per
+NotifyLogPropertiesChanged, cached into backing fields the properties return:
+
+  private void RecomputeDashboard()
+  {
+      BackupLogEntry? lastComplete = null;
+      long files = 0, bytes = 0; int completed = 0;
+      foreach (var e in _log.Entries) // one pass over <=500 entries
+      {
+          if (e.Status != BackupStatus.Complete) continue;
+          completed++; files += e.FilesCopied; bytes += e.BytesTransferred;
+          if (lastComplete == null || e.Timestamp > lastComplete.Timestamp) lastComplete = e;
+      }
+      _lastComplete = lastComplete; _totalFiles = files; _totalBytes = bytes; _backupsRun = completed;
+      // raise the relevant OnPropertyChanged()s once
+  }
+  // The getters become cheap field reads. One scan instead of six per notify.
+
+================================================================================
+4. SCALABILITY RECOMMENDATIONS (heavy usage / large data)
+================================================================================
+  S1. Bound the backup scheduler's concurrency. RunAsync currently launches one
+      unbounded Task.Run per due job (SchedulerService.cs:462) and RunMissedJobs
+      fires all missed jobs at once (:280). If many come due together they all
+      hammer the disk in parallel; on a single drive that's slower than serial.
+      Add a SemaphoreSlim (or serialize per destination volume) so N due jobs
+      drain at a controlled width.
+
+  S2. Cap / rotate backup_log.json. It's a single growing JSON array, fully
+      (de)serialized and loaded into an ObservableCollection at startup. There's
+      a MaxLogEntries=500 cap on the in-memory Add path (good), but confirm the
+      on-disk file is trimmed to match on save and consider a rolling archive for
+      historical entries if users need long history without paying load cost.
+
+  S3. Make folder sizing incremental + cached (FIX C) so the file manager scales
+      to drives with deep trees and frequent re-navigation.
+
+  S4. Stream the copy engine (FIX D2) so memory is independent of file count —
+      the difference between a 10k-file and a 10M-file backup should be wall-clock,
+      not RAM.
+
+  S5. Reuse DriveTypeService everywhere I/O parallelism is chosen (sizing, search,
+      copy) so behavior is uniformly correct on HDD vs SSD vs network — today only
+      the copy path is drive-aware.
+
+  S6. Consider a single shared "UI dispatcher batcher" utility: many subsystems
+      post per-item to the dispatcher (sizing, search). A small helper that
+      coalesces posts within a frame (e.g. via DispatcherPriority.Background +
+      a pending queue) would cut UI-thread wakeups under load.
+
+================================================================================
+5. EXPECTED PAYOFF (qualitative)
+================================================================================
+  - Navigation into large folders: notification storm O(N) → O(1) (FIX A), and
+    HDD sizing stops thrashing (FIX C1) — the most-felt interactive win.
+  - Re-visiting folders: near-instant via size cache (FIX C3).
+  - Backup start latency on large sources: one tree walk instead of two (FIX D1).
+  - Backup memory: O(file count) → O(channel capacity) (FIX D2) — enables very
+    large backups without RAM blowup.
+  - Steady-state allocations during rendering reduced (FIX B, E, G).
+  - Predictable behavior under many concurrent jobs (S1).
+
+================================================================================
+6. SUGGESTED SEQUENCING (low risk → high)
+================================================================================
+  1. FIX B (FormatBytes), FIX E (search options), FIX F (filter debounce) —
+     tiny, isolated, immediate wins.
+  2. FIX A (RangeObservableCollection) — high payoff, contained.
+  3. FIX C1/C2 (drive-aware + batched sizing), FIX G (dashboard fold).
+  4. FIX C3 (size cache), S1 (scheduler concurrency cap), S2 (log rotation).
+  5. FIX D1 (single-walk size), D3 (error cap).
+  6. FIX D2 (streaming channel copy) — last, behind characterization tests; it's
+     the biggest change and the only one that touches the proven-correct copy core.
+
+Measure before/after with the in-repo PerformanceMonitor (it already samples the
+process) on representative workloads: a 50k-file folder navigation, a deep-tree
+size calc on HDD vs SSD, and a large multi-GB / high-file-count backup.
+
+================================================================================
+END — advisory only; no source files were modified. All code above is a proposal.
+================================================================================

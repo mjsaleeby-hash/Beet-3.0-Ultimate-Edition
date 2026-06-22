@@ -20,6 +20,7 @@ internal static class Program
         {
             "monitor" => await RunMonitorAsync(),
             "analyze" or "analyse" => RunAnalyze(args),
+            "cohort" or "compare" => RunCohort(),
             "help" or "--help" or "-h" => PrintHelp(),
             _ => PrintHelp(),
         };
@@ -32,7 +33,9 @@ internal static class Program
 
             Usage:
               BeetsBackup.PerfMon [monitor]     Watch for BeetsBackup.exe and log samples (default).
-              BeetsBackup.PerfMon analyze       Produce a report from all session logs.
+              BeetsBackup.PerfMon analyze       Produce a trend report from all session logs.
+              BeetsBackup.PerfMon cohort        A/B compare baseline vs candidate builds
+                                                (resource, latency, throughput, errors, FAT fix).
               BeetsBackup.PerfMon help          Show this message.
 
             Logs are written to:
@@ -93,6 +96,10 @@ internal static class Program
 
         using var writer = new SessionLogWriter(LogDirectory, metadata);
         var sampler = new PerformanceSampler(process);
+        // Captures disk saturation + competing processes each tick, so a Beet dip can be
+        // attributed to Beet vs. the machine. Beet's own PID is excluded.
+        using var context = new SystemContextCollector(process.Id);
+        Console.WriteLine($"[PerfMon] Build tag: {metadata.BuildTag}  (version {metadata.ProcessVersion})");
 
         // First sample establishes baselines; discard its CPU% since it's always 0.
         await Task.Delay(TimeSpan.FromSeconds(1), ct).ContinueWith(_ => { }, TaskScheduler.Default);
@@ -109,7 +116,9 @@ internal static class Program
                     break;
                 }
 
-                writer.WriteSample(sample);
+                // Attach machine-wide context via a record `with`, keeping the sampler
+                // decoupled from system-context collection.
+                writer.WriteSample(sample with { Context = context.Collect() });
             }
         }
         catch (OperationCanceledException)
@@ -131,6 +140,10 @@ internal static class Program
         try { processPath = process.MainModule?.FileName ?? "unknown"; } catch { /* access denied */ }
         try { processVersion = process.MainModule?.FileVersionInfo.FileVersion ?? "unknown"; } catch { /* access denied */ }
 
+        // Resolve the cohort this session belongs to: prefer the tag Beet itself stamped on
+        // its telemetry, falling back to deriving one from the exe version.
+        var identity = BuildIdentityResolver.Resolve(processVersion);
+
         return new SessionMetadata
         {
             SessionId = Guid.NewGuid().ToString("N")[..12],
@@ -139,6 +152,8 @@ internal static class Program
             ProcessName = process.ProcessName,
             ProcessPath = processPath,
             ProcessVersion = processVersion,
+            BuildTag = identity.BuildTag,
+            GitCommit = identity.GitCommit,
             System = systemInfo,
         };
     }
@@ -152,6 +167,20 @@ internal static class Program
         Console.WriteLine($"  .NET:    {s.DotNetVersion}");
         foreach (var d in s.Disks)
             Console.WriteLine($"  Disk:    {d.Model} ({d.MediaType}, {d.SizeBytes / (1024.0 * 1024 * 1024):F0} GB)");
+    }
+
+    private static int RunCohort()
+    {
+        var report = new CohortReport(LogDirectory).Build();
+        Console.Write(report);
+
+        var reportDir = Path.Combine(AppContext.BaseDirectory, "audit");
+        Directory.CreateDirectory(reportDir);
+        var reportPath = Path.Combine(reportDir, $"cohort_report_{DateTime.Now:yyyy-MM-dd_HHmmss}.md");
+        File.WriteAllText(reportPath, report);
+        Console.WriteLine();
+        Console.WriteLine($"[PerfMon] Saved cohort report to {reportPath}");
+        return 0;
     }
 
     private static int RunAnalyze(string[] args)

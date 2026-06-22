@@ -33,13 +33,21 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**;BeetsBackupLauncher\**;PerformanceMonitor\**;Test UI\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);BeetsBackup.Tests\**;BeetsBackupLauncher\**;PerformanceMonitor\**;BenchmarkHarness\**;Test UI\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>BeetsBackup.Tests</_Parameter1>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Performance-verification build tag. The telemetry channel stamps this on every
+       record so the external PerformanceMonitor buckets all data as baseline vs candidate.
+       Flip to "4.0-candidate" (and bump the version block above) when building the 4.0
+       work — this one line is the only change needed to re-tag a build. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="BuildTag" Value="3.0-baseline" />
   </ItemGroup>
 
   <ItemGroup>
@@ -76,3 +84,7 @@
   </Target>
 
 </Project>
+
+
+
+

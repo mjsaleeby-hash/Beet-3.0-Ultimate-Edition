@@ -1,0 +1,360 @@
+================================================================================
+BEET'S BACKUP 3.0 — UX/UI ASSESSMENT
+"Production-grade design-system review for a modern startup"
+================================================================================
+Engineer:  Senior front-end / design-systems engineer
+Date:      2026-06-22
+Surface:   WPF/XAML. "Front end" = Themes/*.xaml, Views/*.xaml, control templates.
+Mandate:   NO source files changed. All code below is a PROPOSAL for future work.
+
+Files reviewed:
+  Themes/Dark.xaml, Themes/Light.xaml, Themes/Controls.xaml,
+  Views/PieChartControl.xaml (+ .xaml.cs + Models/PieSlice.cs),
+  Views/MainWindow.xaml (structure, command bindings, color usage, a11y attrs).
+
+Method: read the token system and shared styles, then audited the main window's
+Command/Click wiring, hard-coded colors, and accessibility attributes via full-file
+grep. Every claim below has a file:line anchor.
+
+--------------------------------------------------------------------------------
+0. WHAT'S GOOD (keep it)
+--------------------------------------------------------------------------------
+  - Clean token architecture: Dark.xaml and Light.xaml define the SAME set of
+    Color + SolidColorBrush keys (BackgroundBrush, SurfaceBrush, AccentBrush, …),
+    consumed via DynamicResource. This is exactly how a themeable system should be
+    built — when it's actually used (see C1, where large areas bypass it).
+  - Contrast-awareness exists: Light.xaml comments call out deepening greens to
+    4.5:1 (Light.xaml:21,30). The intent is there.
+  - File-pane rows, scrollbars, tree tiles, toggle switch, and buttons have
+    consistent 8px corner radius and coherent hover/pressed/disabled states.
+  - Drive tiles have a usage ring + % badge + free-space ToolTip — genuinely nice.
+  - Every Command= binding in MainWindow.xaml resolves to a real VM RelayCommand,
+    and the remaining actions are wired via Click= handlers in code-behind. I found
+    NO dead/non-functional Command binding in the markup (see §4 caveat).
+
+================================================================================
+1. PIE CHART — VISUAL ANOMALIES (called out specifically)
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+PIE-1 [HIGH] Hover "pop" scales from the wrong origin → slice drifts, not grows.
+──────────────────────────────────────────────────────────────────────────────
+Where: PieChartControl.xaml.cs — CreateSlicePath sets
+       RenderTransformOrigin = new Point(0.5, 0.5) and RenderTransform =
+       new ScaleTransform(1,1) (lines 202-203); HighlightSlice scales to 1.05
+       (lines 298-302).
+
+Problem: each slice is a Path whose geometry uses ABSOLUTE canvas coordinates
+(StartPoint = pie center 140,140; arc points around radius 120). But
+RenderTransformOrigin 0.5,0.5 is relative to the PATH'S OWN bounding box, whose
+center is NOT the pie center (a wedge's bbox center sits out in the wedge). So on
+hover the wedge scales around its own bbox center and visibly TRANSLATES
+outward/sideways and overlaps neighbors, instead of expanding radially from the
+donut center like a proper "explode on hover". The 100%-single-slice case happens
+to look fine only because a full circle's bbox center coincides with the pie
+center.
+
+Fix (production-ready): scale around the fixed pie center (140,140) instead of the
+bbox. Drop RenderTransformOrigin and give every slice a ScaleTransform with
+explicit CenterX/CenterY = pie center.
+
+  // CreateSlicePath(...) — pass cx, cy in and set an absolute-center transform:
+  var path = new Path
+  {
+      Fill = new SolidColorBrush(slice.FillColor),
+      Stroke = sliceBorderBrush,
+      StrokeThickness = 1.5,
+      Cursor = Cursors.Hand,
+      // Scale about the PIE center, not the path's own bounding box:
+      RenderTransform = new ScaleTransform(1, 1, cx, cy)
+      // (remove RenderTransformOrigin entirely)
+  };
+
+  // HighlightSlice(...) — unchanged in spirit; the transform now grows radially:
+  if (target?.RenderTransform is ScaleTransform transform)
+  {
+      double scale = highlight ? 1.05 : 1.0;
+      transform.ScaleX = scale;
+      transform.ScaleY = scale;
+  }
+  // Optional polish: animate ScaleX/ScaleY with a 120ms DoubleAnimation for a
+  // smooth pop instead of an instant jump.
+
+──────────────────────────────────────────────────────────────────────────────
+PIE-2 [MED] Tiny slices render nothing but still appear in the legend (and two
+            different "too small" thresholds disagree).
+──────────────────────────────────────────────────────────────────────────────
+Where: CreateSlicePath returns an empty Path (no Data) when SweepAngle < 0.1°
+       (PieChartControl.xaml.cs:213-214) ⇒ percentage < ~0.028%. But
+       PieSlice.IsNegligible is percentage < 0.05% (PieSlice.cs:48).
+
+Problem: a top-10 slice between ~0.028% and 0.05% renders a sliver AND is flagged
+"negligible" (legend % dimmed). A slice below ~0.028% renders NOTHING in the donut
+yet still gets a color swatch + name + % in the legend (PieChartControl.xaml:60-116)
+and even a hover handler that scales an invisible path. Result: a legend row with a
+colored chip that has no matching wedge — a small but real "where is that slice?"
+inconsistency. The two thresholds (0.028% render vs 0.05% negligible) should be one
+shared constant.
+
+Fix: define a single MinVisiblePercentage (e.g. 0.05) used for BOTH the render
+guard and IsNegligible, and either (a) suppress legend rows below it (they're
+already rolled into "Other"), or (b) draw a 1px min-width wedge so every legend
+entry has a visible counterpart.
+
+──────────────────────────────────────────────────────────────────────────────
+PIE-3 [MED] Donut "hole" is a colored disc, not a true cut-out — reads as a smudge
+            in light mode.
+──────────────────────────────────────────────────────────────────────────────
+Where: the center hole Ellipse fills with DonutCenterBrush
+       (PieChartControl.xaml.cs:188), but the chart sits on SurfaceBrush
+       (PieChartControl.xaml:9). DonutCenterColor ≠ SurfaceColor in BOTH themes:
+         Dark:  center #121735 on surface #1A2045  (darker disc)
+         Light: center #F0F0ED on surface #FFFFFF  (grey disc on white card)
+Problem: instead of looking like a hole punched through to the card, the center is
+a slightly-off-color filled circle. In light mode the #F0F0ED disc on a #FFFFFF
+card looks like a dirty grey blob behind the total-size label.
+Fix: set the donut center to the actual surface it overlays (use SurfaceBrush), or
+intentionally design an inset ring with a subtle inner shadow rather than a flat
+mismatched fill.
+
+──────────────────────────────────────────────────────────────────────────────
+PIE-4 [LOW] Center label can overflow the 100px hole.
+──────────────────────────────────────────────────────────────────────────────
+Where: TotalSizeText is FontSize 20 Bold inside a 100px-diameter hole
+       (PieChartControl.xaml:29-32; hole is 100×100 at .xaml.cs:184-186).
+Problem: long values ("999.99 GB", "1.23 TB") at 20px bold can exceed ~100px and
+spill over the surrounding slices. There's no TextTrimming/▸ max width.
+Fix: cap with a MaxWidth (~96) + TextTrimming, or auto-shrink font via a
+viewbox-constrained label.
+
+──────────────────────────────────────────────────────────────────────────────
+PIE-5 [HIGH-a11y] Pie is invisible to assistive tech; legend is mouse-only.
+──────────────────────────────────────────────────────────────────────────────
+Where: slices are canvas-drawn Path objects (no AutomationProperties); the legend
+rows are Border elements with MouseEnter/Leave/MouseLeftButtonUp handlers
+(PieChartControl.xaml:63-66) — NOT focusable, NOT keyboard-activatable.
+Problem: keyboard and screen-reader users cannot perceive the chart OR activate
+"click slice to navigate". This is a functional dead-end for non-mouse users.
+Fix: see A11Y-2 (make legend rows real, focusable, keyboard-activatable controls
+and mirror their text as the accessible description of the chart).
+
+================================================================================
+2. VISUAL INCONSISTENCIES & DISPLAY ANOMALIES (whole app)
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+C1 [CRITICAL] The home dashboard & crash banner are HARD-CODED for dark mode —
+              light theme is effectively broken there.
+──────────────────────────────────────────────────────────────────────────────
+The token system exists precisely so colors flip with the theme, but large parts
+of MainWindow.xaml bypass it with literal hex. Confirmed instances:
+
+  - Crash banner: Background="#3A2A1A", BorderBrush="#D49A2A",
+    Foreground="#D49A2A" / "#F0D08A" (MainWindow.xaml:361,365,373). In LIGHT mode
+    this is a dark-brown bar with low-contrast amber text on a light window.
+  - Repeated card border "#3A3075" used for EVERY dashboard card and drive tile
+    (lines 46, 815, 974(#3A5249), 992, 1034, 1110, 1168, 1259). A dark violet
+    border that never lightens — visibly wrong on a light background.
+  - Status pills / source cards: #1A0507, #6E070A, #0A2519, #1E5140, #3DD68C,
+    #E04E5C, #5AE0A4, #F0B860, #1AF87171, #1A5AE0A4, #F87171, #7C5CFF
+    (lines 882-1233). These near-black red/green chip backgrounds ("Healthy" /
+    "At Risk", source-path tiles) are tuned for the dark canvas; on the light
+    dashboard they render as very dark chips — a major theme-consistency break.
+  - Rainbow gradient #4CC2FF→#FF6B8A→#4ade80 (lines 645-647) hard-coded (note the
+    lowercase #4ade80 vs uppercase elsewhere — cosmetic casing inconsistency too).
+
+Impact: a user who switches to Light mode (there's a ToggleTheme button at :621)
+gets a half-broken dashboard. This is the single biggest UI-quality issue.
+
+Fix strategy: move every semantic color into BOTH theme dictionaries as named
+tokens and reference them via DynamicResource. Add the missing tokens, e.g.:
+
+  // Add to Dark.xaml AND Light.xaml (values per theme):
+  <Color x:Key="BannerWarnBgColor">...</Color>      <!-- dark: #3A2A1A  light: #FDF4E3 -->
+  <Color x:Key="BannerWarnBorderColor">...</Color>  <!-- dark: #D49A2A  light: #E0A93A -->
+  <Color x:Key="BannerWarnTextColor">...</Color>    <!-- dark: #F0D08A  light: #8A5A00 -->
+  <Color x:Key="CardBorderColor">...</Color>        <!-- dark: #3A3075  light: #DDDDE4 -->
+  <Color x:Key="StatusOkBgColor"/> <Color x:Key="StatusOkFgColor"/>
+  <Color x:Key="StatusRiskBgColor"/> <Color x:Key="StatusRiskFgColor"/>
+  // ...and matching SolidColorBrush entries, as the file already does for others.
+
+  // Then in MainWindow.xaml replace literals:
+  //   Background="#3A2A1A"  ->  Background="{DynamicResource BannerWarnBgBrush}"
+  //   BorderBrush="#3A3075" ->  BorderBrush="{DynamicResource CardBorderBrush}"
+  //   Foreground="#5AE0A4"  ->  Foreground="{DynamicResource StatusOkFgBrush}"  (etc.)
+
+This is mechanical, low-risk, and restores a working light theme.
+
+──────────────────────────────────────────────────────────────────────────────
+C2 [MED] Mixed raster + vector iconography in the SAME control group.
+──────────────────────────────────────────────────────────────────────────────
+Where:
+  - "Back up now" primary button is a CroppedBitmap from a PNG with a magic
+    SourceRect "268,316,998,324" (MainWindow.xaml:407-434).
+  - Pause button is a CroppedBitmap sprite "1047,410,375,159" (:448-457), but its
+    Resume state is a themed Segoe MDL2 vector glyph (:463-467), and Stop is a
+    Unicode glyph "⏹" (:1672). So one transport control group mixes a raster
+    pause, a vector resume, and a glyph stop.
+Problems with the raster approach:
+  - Labels/icons are baked into bitmaps → not localizable, not theme-aware (fixed
+    colors in light AND dark), and raster-scaled at high DPI (soft despite
+    HighQuality).
+  - Magic pixel SourceRects are brittle: any change to the sprite sheet silently
+    misaligns every crop.
+Fix: replace the PNG/sprite buttons with the same themed vector-glyph + text
+treatment already used for Resume/Stop, so the whole transport group is consistent,
+crisp at any DPI, themeable, and localizable.
+
+──────────────────────────────────────────────────────────────────────────────
+C3 [LOW-MED] Two parallel button design languages.
+──────────────────────────────────────────────────────────────────────────────
+Controls.xaml defines PrimaryButtonGlow / SecondaryButtonAccent / CardElevated;
+MainWindow.xaml defines its own ToolbarButton / AccentButton / DangerButton /
+IconButton / NavButton. Two systems risk drift across screens (dialogs likely use
+the Controls.xaml set; the shell uses its own). Consolidate into one named button
+scale (Primary / Secondary / Ghost / Icon / Danger) in a single dictionary.
+
+──────────────────────────────────────────────────────────────────────────────
+C4 [LOW] Toggle knob jumps with no transition.
+──────────────────────────────────────────────────────────────────────────────
+Where: ToggleSwitch swaps Knob HorizontalAlignment Left↔Right on IsChecked
+(MainWindow.xaml:262-273) — an instant teleport, no slide. A 120ms eased
+translation reads far more "modern/production-grade".
+
+================================================================================
+3. ACCESSIBILITY (systemic gaps)
+================================================================================
+
+A11Y-1 [HIGH] Zero AutomationProperties in the entire main window.
+  A full-file grep returns NO AutomationProperties.* anywhere. Icon-only buttons
+  use symbol glyphs as Content ("◀","▶","▲","🔍","⏹") with only a ToolTip
+  (MainWindow.xaml:1282-1299, 1487-1495, 1672, 1742-1750). Screen readers fall
+  back to reading the GLYPH CODEPOINT, not "Back"/"Forward"/"Search". ToolTip is
+  NOT a reliable accessible name.
+  Fix: add AutomationProperties.Name to every icon/glyph/raster control:
+    <Button Content="&#x25C0;" ToolTip="Back"
+            AutomationProperties.Name="Back"
+            Command="{Binding GoBackCommand}"/>
+    <!-- raster buttons need it most: -->
+    <Button Command="{Binding StartBackupCommand}" ToolTip="Start a manual backup"
+            AutomationProperties.Name="Back up now"> ... </Button>
+
+A11Y-2 [HIGH] Pie legend is not keyboard-operable (see PIE-5).
+  Fix: make each legend row a focusable, keyboard-activatable control and expose
+  the chart's data through it. Minimal version — template the row as a ListBoxItem
+  or Button:
+    <ItemsControl x:Name="LegendList" KeyboardNavigation.TabNavigation="Continue">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Button Style="{StaticResource GhostRowButton}" Click="Legend_Click"
+                  Focusable="True"
+                  AutomationProperties.Name="{Binding Name}"
+                  AutomationProperties.HelpText="{Binding SizeDisplay}">
+            <!-- existing legend Grid content -->
+          </Button>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  And give the chart container AutomationProperties.Name="Space distribution chart"
+  with an itemized description, so the donut isn't a silent void to a screen reader.
+
+A11Y-3 [MED] No visible keyboard-focus indicator on custom-templated controls.
+  ToolbarButton/PrimaryButtonGlow/etc. define IsMouseOver/IsPressed but no
+  focus-visual. Tab through the app and you can't tell what's focused.
+  Fix: add a shared FocusVisualStyle (a 1–2px AccentBrush ring) and apply it on
+  the base button styles:
+    <Style x:Key="AccentFocusVisual">
+      <Setter Property="Control.Template">
+        <Setter.Value>
+          <ControlTemplate>
+            <Rectangle Margin="-2" RadiusX="9" RadiusY="9"
+                       Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                       SnapsToDevicePixels="True"/>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <!-- then on the button styles: -->
+    <Setter Property="FocusVisualStyle" Value="{StaticResource AccentFocusVisual}"/>
+
+A11Y-4 [MED] Color used as the sole channel in two places.
+  - Legend % text is painted in the SLICE color on SurfaceBrush
+    (PieChartControl.xaml:97-99). Several palette colors fail WCAG 4.5:1 on the
+    light surface (e.g. amber ≈ #E89008 on #FFFFFF ≈ 2:1; green ≈ #2EBD60 ≈ 2.8:1).
+    The % numbers become hard to read in light mode. Use PrimaryTextBrush for the
+    number and keep color only on the swatch (which already encodes the mapping
+    alongside the icon + name).
+  - Dashboard "Healthy/At Risk" relies on red/green; it DOES pair color with text
+    labels (good) — keep that pattern and don't regress to color-only.
+
+A11Y-5 [LOW] Toggle switches have no programmatic label association.
+  The Options toggles (LaunchAtStartup, StartMinimized, throttle, etc.) are
+  ToggleButtons with adjacent TextBlocks but no AutomationProperties.Name or
+  LabeledBy. Add AutomationProperties.Name to each.
+
+A11Y-6 [verify] Tab order & access keys. No KeyboardNavigation.TabIndex or AccessKey
+  (Alt-underline) mnemonics were observed. Verify logical tab order through the
+  toolbar → panes, and consider AccessText mnemonics on primary actions.
+
+================================================================================
+4. NON-FUNCTIONAL BUTTONS / AREAS
+================================================================================
+Result of the audit: NO dead Command bindings found — every Command={Binding …}
+maps to an existing VM RelayCommand, and the rest use Click= handlers
+(OpenSplitPane_Click, BackupWizard_Click, OptionsButton_Click, OpenFaq_Click,
+context-menu *_Click) wired in MainWindow.xaml.cs (769 lines). So buttons are
+"functional" in the wiring sense.
+
+Caveats worth a manual pass (not provable from markup alone):
+  - The pie LEGEND and SLICES are functionally inert for keyboard users (PIE-5 /
+    A11Y-2) — i.e. a real "non-functional area" for non-mouse input.
+  - Context-menu Paste (Paste_Click, :1386) implies clipboard state — verify it's
+    disabled/greyed when nothing is cut/copied, otherwise it's a no-op the user
+    can click. Same for Cut/Copy on empty selection.
+  - Mixed Command vs Click is a maintainability/consistency smell: some toolbar
+    actions are MVVM commands, others jump to code-behind. Prefer commands so
+    enable/disable (CanExecute) state is uniform and testable.
+
+================================================================================
+5. CLEAN / MODERN LOOK — OBSERVATIONS
+================================================================================
+  - The violet-on-navy dark theme is cohesive and contemporary. Good.
+  - The command bar is heavy: an 84px raster logo + a 26px BOLD title with a violet
+    DropShadow glow (MainWindow.xaml:390-399) in a 96px bar. A startup-grade shell
+    usually trims chrome; consider a ~32–40px logo + 16–18px wordmark and drop the
+    text glow (glows on text read dated and hurt legibility).
+  - Status pills, drive tiles, and cards share radius/spacing language — coherent.
+  - Biggest thing standing between this and "production-grade polish" is C1: make
+    the light theme actually work on the dashboard.
+
+================================================================================
+6. PRIORITIZED FIX LIST
+================================================================================
+  P0  C1  — De-hardcode dashboard/crash-banner colors → restore light theme.
+            (Mechanical, high impact, low risk.)
+  P0  PIE-1 — Fix hover scale origin (pie center, not bbox).
+  P1  A11Y-1 / A11Y-2 / A11Y-3 — AutomationProperties.Name on icon/raster buttons,
+            keyboard-operable legend, visible focus ring.
+  P1  C2  — Replace raster sprite buttons with themed vector glyphs (consistency,
+            DPI, theming, localization).
+  P2  A11Y-4 — Stop painting legend % in slice color (light-mode contrast).
+  P2  PIE-3 / PIE-4 — Donut center color = surface; clamp center label width.
+  P2  C3 / C4 — Unify the two button systems; animate the toggle knob.
+  P3  PIE-2 — Single min-visible threshold; suppress invisible legend rows.
+  P3  Trim command-bar chrome; drop the text glow.
+
+================================================================================
+7. SUGGESTED VALIDATION
+================================================================================
+  - Flip to Light mode and screenshot the dashboard, crash banner (force
+    IsCrashBannerVisible), and pie legend — these are where breakage concentrates.
+  - Run Accessibility Insights for Windows (or Narrator) over the shell: confirm
+    every control announces a name, focus is visible, and the pie legend is
+    reachable/operable by keyboard.
+  - Hover pie slices before/after PIE-1 to confirm radial pop (no drift).
+  - High-DPI (150%/200%) pass to confirm raster buttons are the only soft elements
+    (justifying C2).
+
+================================================================================
+END — advisory only; no source files were modified. All code above is a proposal.
+================================================================================

@@ -32,6 +32,11 @@ public partial class App : Application
 
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _showSignal;
+    // Persists BeetTelemetry events (operation durations, backup throughput) to a JSONL
+    // file the external PerformanceMonitor/BenchmarkHarness ingest. Started as early as
+    // possible so it captures BOTH the headless --run-job backup path and the foreground
+    // UI. Purely additive observation — disposed in OnExit.
+    private Telemetry.TelemetryFileSink? _telemetrySink;
     // RegisteredWaitHandle fires an OS callback when _showSignal is set, instead of a
     // polling Task.Run that wakes every second. Disposed in OnExit via Unregister.
     private RegisteredWaitHandle? _showSignalRegistration;
@@ -78,6 +83,17 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
+        // Start performance telemetry BEFORE the headless branch below, so scheduled
+        // backups (which never reach the UI path) still emit BackupCompleted timings.
+        // Best-effort: a telemetry failure must never block startup.
+        try
+        {
+            _telemetrySink = new Telemetry.TelemetryFileSink();
+            Telemetry.BeetTelemetry.Log.AppStarted(
+                Telemetry.BuildInfo.Version, Telemetry.BuildInfo.GitCommit, Telemetry.BuildInfo.BuildTag);
+        }
+        catch { /* telemetry is observe-only; never fail startup over it */ }
 
         // Tag the process with the shared AUMID before any window is shown, so the taskbar
         // entry the WPF window registers itself under matches the launcher stub's icon.
@@ -314,6 +330,8 @@ public partial class App : Application
         // until any in-flight callback completes.
         _showSignalRegistration?.Unregister(_showSignal);
         _showSignal?.Dispose();
+        // Stop telemetry last so any final events from a shutting-down operation still land.
+        try { _telemetrySink?.Dispose(); } catch { /* best-effort */ }
         try { _singleInstanceMutex?.ReleaseMutex(); }
         catch (ApplicationException) { /* Mutex not owned — second instance path */ }
         _singleInstanceMutex?.Dispose();
