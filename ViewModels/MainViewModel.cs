@@ -1739,6 +1739,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var progress = new Progress<string>(OnTransferProgress);
         var progressPercent = new Progress<int>(OnTransferPercent);
         long throttle = job.ThrottleMBps * 1024L * 1024L;
+        // Wall-clock for this manual run, so the emitted telemetry reports transfer speed
+        // (bytes/duration) the same way the scheduled path does in SchedulerService.
+        var runStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var versioning = job.EnableVersioning
@@ -1767,6 +1770,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     throttleBytesPerSec: throttle,
                     versioning: versioning);
             }
+            runStopwatch.Stop();
+            // Emit the same BackupCompleted event the scheduled/headless paths emit, so manual
+            // "Back up now" runs are captured by the 3.0->4.0 verification tooling as field data.
+            SchedulerService.EmitBackupTelemetry(job.Name, job.TransferMode.ToString(), result,
+                runStopwatch.Elapsed.TotalMilliseconds, job.DestinationPath);
             var summary = TransferReporter.FormatSummary(result);
             FileLogger.Info($"Backup completed: {summary}");
             EndTransfer(summary);

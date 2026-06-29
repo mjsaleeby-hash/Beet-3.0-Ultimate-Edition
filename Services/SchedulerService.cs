@@ -633,8 +633,11 @@ public sealed class SchedulerService : IDisposable
     /// prove the FAT/exFAT incremental re-copy fix (run-2 filesCopied should drop to ~0 on
     /// a FAT/exFAT destination). Best-effort and side-effect-free — a telemetry failure
     /// must never affect the backup outcome or the caller.
+    /// Shared with the foreground "Back up now" / wizard "Run now" path
+    /// (<see cref="ViewModels.MainViewModel.RunWizardBackupAsync"/>) so manual runs are
+    /// captured as field data, not just scheduled and headless runs.
     /// </summary>
-    private static void EmitBackupTelemetry(
+    internal static void EmitBackupTelemetry(
         string jobName, string mode, TransferResult result, double durationMs, string destinationPath)
     {
         try
