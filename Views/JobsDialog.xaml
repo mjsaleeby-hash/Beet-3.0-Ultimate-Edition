@@ -28,18 +28,36 @@
                   BorderThickness="1"
                   Foreground="{DynamicResource PrimaryTextBrush}"
                   MouseDoubleClick="JobsList_MouseDoubleClick">
-            <!-- Override the default selection style so the row text stays readable on the accent highlight.
-                 Without this, WPF's default ListViewItem keeps the unselected Foreground, which can
-                 wash out against the selection background. -->
+            <!-- Full ControlTemplate (not just setters) so the selection background actually paints.
+                 The default theme ListViewItem template ignores a Background setter on selection and
+                 draws its own pale highlight, so a Foreground="White" setter alone left white text on a
+                 near-white highlight (unreadable). Mirrors MainWindow's ListViewItem: SelectionBrush
+                 fill + accent left-border + readable primary text, consistent with the rest of the app. -->
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
-                    <Style.Triggers>
-                        <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-                            <Setter Property="Foreground" Value="White"/>
-                        </Trigger>
-                    </Style.Triggers>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListViewItem">
+                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                        BorderThickness="2,0,0,0" BorderBrush="Transparent"
+                                        SnapsToDevicePixels="True">
+                                    <GridViewRowPresenter Margin="0,2"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                                        <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
             </ListView.ItemContainerStyle>
             <ListView.View>
