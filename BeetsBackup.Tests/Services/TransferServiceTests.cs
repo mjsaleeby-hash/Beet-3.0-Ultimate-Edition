@@ -508,4 +508,109 @@ public class TransferServiceTests
         };
         contents.Should().BeEquivalentTo(new[] { "one", "two" });
     }
+
+    // ============================================================
+    //  IS-DESTINATION-STALE — FAT-family timestamp granularity (Wave 1)
+    //  Proves the skip decision tolerates coarse-resolution destination
+    //  timestamps (FAT32 2 s / exFAT 10 ms) instead of re-copying forever.
+    // ============================================================
+
+    // Builds a FileInfo for a real temp file with a fixed length and last-write time. A fresh
+    // FileInfo is returned so it reflects the just-set timestamp (FileInfo caches on first access).
+    private static FileInfo MakeFile(string dir, string name, int length, DateTime lastWriteUtc)
+    {
+        var path = Path.Combine(dir, name);
+        File.WriteAllBytes(path, new byte[length]);
+        File.SetLastWriteTimeUtc(path, lastWriteUtc);
+        return new FileInfo(path);
+    }
+
+    [Fact]
+    public void IsDestinationStale_TruncatedDestWithinTolerance_NotStale()
+    {
+        // T1 — the bug: source has full-resolution mtime, dest was truncated by a FAT-family
+        // filesystem to a coarser boundary (here 1.7 s older), same length. Must NOT be stale.
+        using var tmp = new TempDirectory();
+        var basis = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var source = MakeFile(tmp.Path, "src.bin", 100, basis.AddSeconds(1.7));
+        var dest = MakeFile(tmp.Path, "dst.bin", 100, basis);
+
+        TransferService.IsDestinationStale(source, dest).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsDestinationStale_SourceNewerBeyondTolerance_Stale()
+    {
+        // T2 — a genuine change: source modified well beyond the 2 s tolerance, same length.
+        using var tmp = new TempDirectory();
+        var basis = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var source = MakeFile(tmp.Path, "src.bin", 100, basis.AddSeconds(10));
+        var dest = MakeFile(tmp.Path, "dst.bin", 100, basis);
+
+        TransferService.IsDestinationStale(source, dest).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsDestinationStale_DifferentLength_Stale()
+    {
+        // T3 — length always dominates, regardless of timestamps.
+        using var tmp = new TempDirectory();
+        var basis = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var source = MakeFile(tmp.Path, "src.bin", 200, basis);
+        var dest = MakeFile(tmp.Path, "dst.bin", 100, basis);
+
+        TransferService.IsDestinationStale(source, dest).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsDestinationStale_DestinationNewer_NotStale()
+    {
+        // T4 — destination newer than source (edited/restored backup): preserve original semantics,
+        // treat as unchanged. We only re-copy when the SOURCE is newer beyond the tolerance.
+        using var tmp = new TempDirectory();
+        var basis = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var source = MakeFile(tmp.Path, "src.bin", 100, basis.AddHours(-1));
+        var dest = MakeFile(tmp.Path, "dst.bin", 100, basis);
+
+        TransferService.IsDestinationStale(source, dest).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsDestinationStale_SourceNewerByExactlyTolerance_NotStale()
+    {
+        // Boundary — source newer by exactly 2 s is within tolerance (comparison is strictly '>').
+        using var tmp = new TempDirectory();
+        var basis = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var source = MakeFile(tmp.Path, "src.bin", 100, basis.AddSeconds(2));
+        var dest = MakeFile(tmp.Path, "dst.bin", 100, basis);
+
+        TransferService.IsDestinationStale(source, dest).Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task CopyAsync_SkipExisting_DestTruncatedLikeFat_SecondRunSkips()
+    {
+        // T5 — end-to-end regression: an unchanged file whose destination mtime was rounded down by
+        // ~1.7 s (as a FAT32 target would). Before the tolerance fix this re-copied every run; now
+        // it must be skipped.
+        using var tmp = new TempDirectory();
+        var src = Path.Combine(tmp.Path, "src");
+        var dest = Path.Combine(tmp.Path, "dest");
+        Directory.CreateDirectory(src);
+        Directory.CreateDirectory(dest);
+
+        File.WriteAllBytes(Path.Combine(src, "file.bin"), new byte[100]);
+        File.WriteAllBytes(Path.Combine(dest, "file.bin"), new byte[100]);
+        // Simulate FAT truncation: destination stamped ~1.7 s BEFORE the (full-resolution) source.
+        var srcMtime = File.GetLastWriteTimeUtc(Path.Combine(src, "file.bin"));
+        File.SetLastWriteTimeUtc(Path.Combine(dest, "file.bin"), srcMtime.AddSeconds(-1.7));
+
+        var result = await _transfer.CopyAsync(
+            new[] { Path.Combine(src, "file.bin") }, dest,
+            stripPermissions: false, TransferMode.SkipExisting);
+
+        result.FilesSkipped.Should().Be(1);
+        result.FilesCopied.Should().Be(0);
+    }
 }
