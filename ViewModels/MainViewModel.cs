@@ -1090,7 +1090,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var options = new EnumerationOptions
             {
-                AttributesToSkip = FileAttributes.None,
+                // Skip junctions/symlinks at the enumerator level so we don't have to
+                // stat each subdirectory again below, and so we never recurse into a
+                // reparse point (which could loop or escape the search root).
+                AttributesToSkip = FileAttributes.ReparsePoint,
                 IgnoreInaccessible = true,
                 RecurseSubdirectories = false
             };
@@ -1125,16 +1128,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (token.IsCancellationRequested) return;
 
-                // Skip junction points / symbolic links to avoid infinite recursion
-                // and to match Windows Explorer behavior.
-                try
-                {
-                    var dirAttr = File.GetAttributes(dirPath);
-                    if (dirAttr.HasFlag(FileAttributes.ReparsePoint))
-                        continue;
-                }
-                catch { continue; }
-
+                // No reparse-point guard needed here: the enumerator above is
+                // configured with AttributesToSkip = ReparsePoint, so junctions and
+                // symlinks are never yielded (and the extra File.GetAttributes syscall
+                // per subdirectory is gone).
                 if (!isExtensionSearch)
                 {
                     var dirName = Path.GetFileName(dirPath);
@@ -1254,7 +1251,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var options = new EnumerationOptions
             {
-                AttributesToSkip = FileAttributes.None,
+                // Skip junctions/symlinks at the enumerator level so we don't have to
+                // stat each subdirectory again below, and so we never recurse into a
+                // reparse point (which could loop or escape the search root).
+                AttributesToSkip = FileAttributes.ReparsePoint,
                 IgnoreInaccessible = true,
                 RecurseSubdirectories = false
             };
@@ -1289,14 +1289,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (token.IsCancellationRequested) return;
 
-                try
-                {
-                    var dirAttr = File.GetAttributes(dirPath);
-                    if (dirAttr.HasFlag(FileAttributes.ReparsePoint))
-                        continue;
-                }
-                catch { continue; }
-
+                // No reparse-point guard needed here: the enumerator above is
+                // configured with AttributesToSkip = ReparsePoint, so junctions and
+                // symlinks are never yielded (and the extra File.GetAttributes syscall
+                // per subdirectory is gone).
                 if (!isExtensionSearch)
                 {
                     var dirName = Path.GetFileName(dirPath);
