@@ -139,10 +139,14 @@ public sealed class FileSystemItem : INotifyPropertyChanged
     /// </summary>
     public static string FormatBytes(long bytes)
     {
-        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
         double value = bytes;
         int i = 0;
-        while (value >= 1024 && i < suffixes.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.##} {suffixes[i]}";
+        while (value >= 1024 && i < ByteSuffixes.Length - 1) { value /= 1024; i++; }
+        return $"{value:0.##} {ByteSuffixes[i]}";
     }
+
+    // Allocated ONCE for the whole process instead of on every call. FormatBytes
+    // is invoked very frequently (every file-size label, dashboard figure, and
+    // pie-chart slice), so re-allocating this tiny array each time was pure waste.
+    private static readonly string[] ByteSuffixes = ["B", "KB", "MB", "GB", "TB"];
 }
