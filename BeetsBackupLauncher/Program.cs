@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using BeetsBackup.Shared;
 
 namespace BeetsBackupLauncher;
 
@@ -26,11 +27,12 @@ namespace BeetsBackupLauncher;
 /// </summary>
 internal static class Program
 {
-    /// <summary>Must match the name used in App.xaml.cs.</summary>
-    private const string ShowSignalName = "BeetsBackup_ShowWindow_Signal";
-
-    /// <summary>Must match the AUMID set by App.xaml.cs so the taskbar groups both processes.</summary>
-    private const string AppUserModelId = "BeetSoftware.BeetsBackup";
+    // Both names come from the shared IpcNames class (linked into this project),
+    // which is the single source of truth. App.xaml.cs uses the exact same class,
+    // so the two processes can never drift apart. The local aliases keep the rest
+    // of this file readable.
+    private const string ShowSignalName = IpcNames.ShowWindowSignal;
+    private const string AppUserModelId = IpcNames.AppUserModelId;
 
     private static readonly string LogPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
