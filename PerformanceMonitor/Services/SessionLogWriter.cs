@@ -27,9 +27,29 @@ public sealed class SessionLogWriter : IDisposable
         Directory.CreateDirectory(_logDirectory);
 
         var ts = metadata.StartedAt.ToLocalTime().ToString("yyyy-MM-dd_HHmmss");
-        _logFilePath = Path.Combine(_logDirectory, $"session_{ts}_{metadata.ProcessId}.jsonl");
+        var baseName = $"session_{ts}_{metadata.ProcessId}";
 
-        var fs = new FileStream(_logFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+        // Two monitor sessions for the same process can start within the same
+        // second (e.g. a quick restart), which collides on the timestamp+PID
+        // filename. FileMode.CreateNew throws IOException on collision, so walk
+        // a suffix until we claim a free name instead of crashing the monitor.
+        FileStream fs;
+        var attempt = 0;
+        while (true)
+        {
+            var suffix = attempt == 0 ? string.Empty : $"_{attempt}";
+            _logFilePath = Path.Combine(_logDirectory, $"{baseName}{suffix}.jsonl");
+            try
+            {
+                fs = new FileStream(_logFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+                break;
+            }
+            catch (IOException) when (File.Exists(_logFilePath) && attempt < 1000)
+            {
+                attempt++;
+            }
+        }
+
         _writer = new StreamWriter(fs) { AutoFlush = false };
 
         WriteLine(new { type = "session_start", metadata });
