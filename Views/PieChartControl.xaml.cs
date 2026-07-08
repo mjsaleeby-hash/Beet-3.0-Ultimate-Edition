@@ -199,8 +199,11 @@ public partial class PieChartControl : UserControl
             Stroke = sliceBorderBrush,
             StrokeThickness = 1.5,
             Cursor = Cursors.Hand,
-            RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform = new ScaleTransform(1, 1)
+            // Scale the slice about the PIE's center (cx,cy), not the slice's own
+            // bounding-box center. ScaleTransform's 3rd/4th args are the fixed center
+            // point in the same coordinate space the geometry uses, so the wedge now
+            // grows radially outward on hover instead of drifting sideways.
+            RenderTransform = new ScaleTransform(1, 1, cx, cy)
         };
 
         if (slice.SweepAngle >= 359.9)

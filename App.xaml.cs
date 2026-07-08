@@ -1,5 +1,6 @@
 using BeetsBackup.Helpers;
 using BeetsBackup.Services;
+using BeetsBackup.Shared;
 using BeetsBackup.ViewModels;
 using BeetsBackup.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,14 +41,6 @@ public partial class App : Application
     // RegisteredWaitHandle fires an OS callback when _showSignal is set, instead of a
     // polling Task.Run that wakes every second. Disposed in OnExit via Unregister.
     private RegisteredWaitHandle? _showSignalRegistration;
-
-    /// <summary>
-    /// Shared AppUserModelID. Both this elevated process and the non-elevated launcher stub
-    /// (BeetsBackupLauncher.exe) tag themselves with this so Windows groups them in a single
-    /// taskbar slot — the pinned launcher icon picks up the running-app indicator from the
-    /// main window.
-    /// </summary>
-    private const string AppUserModelId = "BeetSoftware.BeetsBackup";
 
     /// <summary>How long the OnExit watchdog waits before force-terminating the process.
     /// Sized to comfortably exceed <see cref="ServiceDisposeTimeout"/> plus the show-signal
@@ -97,7 +90,7 @@ public partial class App : Application
 
         // Tag the process with the shared AUMID before any window is shown, so the taskbar
         // entry the WPF window registers itself under matches the launcher stub's icon.
-        try { SetCurrentProcessExplicitAppUserModelID(AppUserModelId); }
+        try { SetCurrentProcessExplicitAppUserModelID(IpcNames.AppUserModelId); }
         catch { /* AUMID grouping is cosmetic; never fail startup over it */ }
 
         // Headless path: Windows Task Scheduler launches `BeetsBackup.exe --run-job <guid>`
@@ -118,18 +111,18 @@ public partial class App : Application
         bool createdNew;
         try
         {
-            _singleInstanceMutex = new Mutex(true, "BeetsBackup_SingleInstance_Mutex", out createdNew);
+            _singleInstanceMutex = new Mutex(true, IpcNames.SingleInstanceMutex, out createdNew);
         }
         catch (AbandonedMutexException)
         {
-            _singleInstanceMutex = new Mutex(true, "BeetsBackup_SingleInstance_Mutex");
+            _singleInstanceMutex = new Mutex(true, IpcNames.SingleInstanceMutex);
             createdNew = true;
         }
         if (!createdNew)
         {
             try
             {
-                using var signal = EventWaitHandle.OpenExisting("BeetsBackup_ShowWindow_Signal");
+                using var signal = EventWaitHandle.OpenExisting(IpcNames.ShowWindowSignal);
                 signal.Set();
             }
             catch { /* first instance hasn't created the signal yet — rare race condition */ }
@@ -146,7 +139,7 @@ public partial class App : Application
         //      gets UnauthorizedAccessException without an explicit grant.
         //   2. Mandatory label — Windows' no-write-up policy blocks Medium IL from writing
         //      to a High IL object regardless of DACL. We lower the label to Low IL.
-        _showSignal = CreateShowSignalCrossIL("BeetsBackup_ShowWindow_Signal");
+        _showSignal = CreateShowSignalCrossIL(IpcNames.ShowWindowSignal);
         StartShowSignalListener();
 
         FileLogger.Info("═══ Application starting ═══");

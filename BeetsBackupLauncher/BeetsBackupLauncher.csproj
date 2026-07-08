@@ -29,6 +29,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
+  <!-- Link the single source of truth for the cross-process IPC names. This file
+       physically lives in the main project's Shared\ folder; compiling the same
+       file into both executables guarantees the mutex/signal/AUMID strings can
+       never drift apart between the app and this launcher stub. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\IpcNames.cs" Link="Shared\IpcNames.cs" />
+  </ItemGroup>
+
   <!-- After publish, copy the launcher exe two levels up — out of the project folder and out
        of the repo root — so it lands in C:\Users\Owner\Documents\ next to BeetsBackup.exe,
        which the main app's CopyExeToRoot target also writes to ("$(MSBuildProjectDirectory)\.."

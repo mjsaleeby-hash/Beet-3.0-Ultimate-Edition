@@ -179,11 +179,29 @@
             </Setter>
         </Style>
 
+        <!-- A clearly-visible keyboard focus ring. WPF draws a control's
+             FocusVisualStyle on top of the control when it has KEYBOARD focus, so
+             this does not affect mouse users or change layout. Applied to the base
+             ToolbarButton style below, so every derived button (Accent/Danger/Icon/
+             Nav) gets a visible focus indicator for keyboard users. -->
+        <Style x:Key="AccentFocusVisual">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Rectangle Margin="-2" RadiusX="9" RadiusY="9"
+                                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                                   SnapsToDevicePixels="True"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ================================================================
              TOOLBAR BUTTON: CornerRadius 8, transparent bg, pill hover
              Sized to match header.png reference (~38px tall, generous padding)
              ================================================================ -->
         <Style x:Key="ToolbarButton" TargetType="Button">
+            <Setter Property="FocusVisualStyle" Value="{StaticResource AccentFocusVisual}"/>
             <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
@@ -407,6 +425,7 @@
                 <Button DockPanel.Dock="Left" Margin="10,0,4,0" Cursor="Hand"
                         Command="{Binding StartBackupCommand}"
                         ToolTip="Start a manual backup"
+                        AutomationProperties.Name="Back up now"
                         Background="Transparent" BorderThickness="0"
                         Padding="0">
                     <Button.Template>
@@ -440,6 +459,7 @@
                     <!-- Pause / Resume — sprite button for pause, accent text for resume -->
                     <Button Margin="0,0,2,0"
                             Command="{Binding PauseResumeTransferCommand}"
+                            AutomationProperties.Name="Pause or resume transfer"
                             IsEnabled="{Binding IsTransferring}"
                             Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand">
                         <Button.Template>
@@ -485,6 +505,7 @@
                     </Button>
                     <!-- Stop — sprite button -->
                     <Button Command="{Binding StopTransferCommand}"
+                            AutomationProperties.Name="Stop transfer"
                             IsEnabled="{Binding IsTransferring}"
                             Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand">
                         <Button.Template>
@@ -1280,12 +1301,15 @@
                             </Grid.ColumnDefinitions>
 
                             <Button Grid.Column="0" Content="&#x25C0;" ToolTip="Back"
+                                    AutomationProperties.Name="Back"
                                     Style="{StaticResource NavButton}" Margin="0,0,2,0"
                                     Command="{Binding GoBackCommand}"/>
                             <Button Grid.Column="1" Content="&#x25B6;" ToolTip="Forward"
+                                    AutomationProperties.Name="Forward"
                                     Style="{StaticResource NavButton}" Margin="0,0,2,0"
                                     Command="{Binding GoForwardCommand}"/>
                             <Button Grid.Column="2" Content="&#x25B2;" ToolTip="Up one level"
+                                    AutomationProperties.Name="Up one level"
                                     Style="{StaticResource NavButton}" Margin="0,0,6,0"
                                     Command="{Binding GoUpCommand}"/>
 
@@ -1295,6 +1319,7 @@
                                      Style="{StaticResource NavTextBox}"/>
 
                             <Button Grid.Column="4" Content="&#x1F50D;" ToolTip="Search"
+                                    AutomationProperties.Name="Search"
                                     Style="{StaticResource NavButton}" Margin="6,0,4,0"
                                     Command="{Binding ExecuteDeepSearchCommand}"/>
 
@@ -1485,12 +1510,15 @@
                                     </Border>
 
                                     <Button Grid.Column="1" Content="&#x25C0;" ToolTip="Back"
+                                            AutomationProperties.Name="Back"
                                             Style="{StaticResource NavButton}" Margin="0,0,2,0"
                                             Command="{Binding GoBackCommand}"/>
                                     <Button Grid.Column="2" Content="&#x25B6;" ToolTip="Forward"
+                                            AutomationProperties.Name="Forward"
                                             Style="{StaticResource NavButton}" Margin="0,0,2,0"
                                             Command="{Binding GoForwardCommand}"/>
                                     <Button Grid.Column="3" Content="&#x25B2;" ToolTip="Up one level"
+                                            AutomationProperties.Name="Up one level"
                                             Style="{StaticResource NavButton}" Margin="0,0,6,0"
                                             Command="{Binding GoUpCommand}"/>
 
@@ -1655,6 +1683,7 @@
                         <!-- Inline Pause / Stop controls -->
                         <StackPanel Grid.Column="4" Orientation="Horizontal">
                             <Button Margin="0,0,4,0"
+                                    AutomationProperties.Name="Pause or resume transfer"
                                     Command="{Binding PauseResumeTransferCommand}">
                                 <Button.Style>
                                     <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
@@ -1670,6 +1699,7 @@
                                 </Button.Style>
                             </Button>
                             <Button Content="&#x23F9;" ToolTip="Stop"
+                                    AutomationProperties.Name="Stop transfer"
                                     Style="{StaticResource NavButton}"
                                     Command="{Binding StopTransferCommand}"/>
                         </StackPanel>
