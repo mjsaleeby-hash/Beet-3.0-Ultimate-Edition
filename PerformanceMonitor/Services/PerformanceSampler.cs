@@ -36,10 +36,23 @@ public sealed class PerformanceSampler
             _lastProcTime = TimeSpan.Zero;
         }
 
-        if (NativeMethods.GetProcessIoCounters(_process.Handle, out var io))
+        // _process.Handle can throw Win32Exception (Access denied) or
+        // InvalidOperationException if the target exits or is inaccessible
+        // between launch and this first sample. Baselines of zero are harmless
+        // (the first real delta just measures from zero), so degrade instead of
+        // taking down the whole monitor.
+        try
         {
-            _lastIoRead = io.ReadTransferCount;
-            _lastIoWrite = io.WriteTransferCount;
+            if (NativeMethods.GetProcessIoCounters(_process.Handle, out var io))
+            {
+                _lastIoRead = io.ReadTransferCount;
+                _lastIoWrite = io.WriteTransferCount;
+            }
+        }
+        catch
+        {
+            _lastIoRead = 0;
+            _lastIoWrite = 0;
         }
 
         NativeMethods.GetSystemTimes(out _lastSysIdle, out _lastSysKernel, out _lastSysUser);
@@ -72,14 +85,23 @@ public sealed class PerformanceSampler
 
         ulong ioReadTotal = 0, ioWriteTotal = 0;
         long ioReadPerSec = 0, ioWritePerSec = 0;
-        if (NativeMethods.GetProcessIoCounters(_process.Handle, out var io))
+        // Same Handle hazard as InitializeBaselines: a mid-run access-denied
+        // must not crash the monitor. Skip the IO counters for this tick instead.
+        try
         {
-            ioReadTotal = io.ReadTransferCount;
-            ioWriteTotal = io.WriteTransferCount;
-            ioReadPerSec = (long)((ioReadTotal - _lastIoRead) / Math.Max(elapsed.TotalSeconds, 0.001));
-            ioWritePerSec = (long)((ioWriteTotal - _lastIoWrite) / Math.Max(elapsed.TotalSeconds, 0.001));
-            _lastIoRead = ioReadTotal;
-            _lastIoWrite = ioWriteTotal;
+            if (NativeMethods.GetProcessIoCounters(_process.Handle, out var io))
+            {
+                ioReadTotal = io.ReadTransferCount;
+                ioWriteTotal = io.WriteTransferCount;
+                ioReadPerSec = (long)((ioReadTotal - _lastIoRead) / Math.Max(elapsed.TotalSeconds, 0.001));
+                ioWritePerSec = (long)((ioWriteTotal - _lastIoWrite) / Math.Max(elapsed.TotalSeconds, 0.001));
+                _lastIoRead = ioReadTotal;
+                _lastIoWrite = ioWriteTotal;
+            }
+        }
+        catch
+        {
+            // leave IO metrics at zero for this sample
         }
 
         double sysCpu = 0;
