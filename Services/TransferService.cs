@@ -59,6 +59,42 @@ public sealed class TransferService
         RecurseSubdirectories = false
     };
 
+    /// <summary>
+    /// Last-write-time comparison tolerance for the SkipExisting / Mirror "has this file changed?"
+    /// decision. FAT-family destinations store last-write time at a coarse resolution — FAT32 at
+    /// 2 seconds, exFAT at 10 ms — so when we copy a file and stamp dest.mtime = src.mtime, the
+    /// destination filesystem silently rounds it. A later exact comparison can then see the
+    /// full-resolution source as strictly newer than the rounded destination and re-copy the
+    /// (unchanged) file on every run. 2 seconds covers FAT32 (the coarsest case) and therefore
+    /// exFAT too. This mirrors robocopy's /FFT behavior.
+    /// </summary>
+    private static readonly TimeSpan TimestampGranularityTolerance = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Decides whether an already-present destination file is out of date relative to
+    /// <paramref name="source"/> for SkipExisting / Mirror semantics. A file is considered changed
+    /// when its length differs, OR when the source was modified MORE than
+    /// <see cref="TimestampGranularityTolerance"/> after the destination. The tolerance absorbs
+    /// filesystem timestamp-resolution mismatches (NTFS 100 ns vs FAT32 2 s / exFAT 10 ms) so an
+    /// unchanged file on a FAT-family target is not re-copied forever. Semantics are preserved from
+    /// the original predicate: a destination that is NEWER than the source is treated as unchanged
+    /// (we only re-copy when the source is genuinely newer, beyond the tolerance).
+    /// </summary>
+    /// <remarks>
+    /// This is a length+mtime heuristic, identical in spirit to the original code; it does not
+    /// detect a same-length edit whose mtime lands within the tolerance. Use VerifyChecksums for
+    /// byte-exact guarantees — that path is unaffected by this decision (it runs after the copy,
+    /// not as part of the skip choice).
+    /// </remarks>
+    internal static bool IsDestinationStale(FileInfo source, FileInfo dest)
+    {
+        if (source.Length != dest.Length)
+            return true;
+        // Re-copy only when the source is newer than the destination by more than the tolerance.
+        // (source - dest) is negative when the destination is newer → not stale.
+        return source.LastWriteTimeUtc - dest.LastWriteTimeUtc > TimestampGranularityTolerance;
+    }
+
     public TransferService(FileSystemService fs)
     {
         _fs = fs;
@@ -642,7 +678,7 @@ public sealed class TransferService
                     case TransferMode.Mirror:
                         var sourceInfo = new FileInfo(sourcePath);
                         var destInfo = new FileInfo(destFile);
-                        if (sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc)
+                        if (IsDestinationStale(sourceInfo, destInfo))
                         {
                             // If versioning was requested and archiving fails, DO NOT destroy the
                             // destination — the user asked us to protect it. Record a failure and skip.
@@ -1506,7 +1542,7 @@ public sealed class TransferService
                     {
                         var sourceInfo = new FileInfo(sourcePath);
                         var destInfo = new FileInfo(destFile);
-                        bool changed = sourceInfo.Length != destInfo.Length || sourceInfo.LastWriteTimeUtc > destInfo.LastWriteTimeUtc;
+                        bool changed = IsDestinationStale(sourceInfo, destInfo);
                         plan.Files.Add(new FileWorkItem(sourcePath, destFile,
                             changed ? FileAction.Replace : FileAction.SkipIdentical,
                             sourceSize));
