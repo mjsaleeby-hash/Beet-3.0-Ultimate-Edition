@@ -2,6 +2,13 @@
 
 Focus: bug-free before feature-complete. No new features unless critical.
 
+> **Current work is NOT tracked in this file.** The active 3.0→4.0 plan and its
+> execution checklist live in `improvements/IMPLEMENTATION-PLAN.txt` (§9 is ticked
+> and records outcomes, not just checkboxes). As of 2026-07-16: Wave 1 done and
+> field-stable, Wave 2.1 done, next is the stale `v3.0.0` label then Wave 2.2.
+> This file remains the roadmap for the items below, which that plan does not cover
+> (VSS elevation, launcher rename, deferred features).
+
 ---
 
 ### Tier 1 — Visibility (do first, enables everything else)

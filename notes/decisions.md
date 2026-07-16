@@ -1,3 +1,55 @@
+## 2026-07-16 — 4.0-candidate tagging, and Wave 2.1 theme tokens
+
+### Version bumped 3.0.0 → 4.0.0 alongside the BuildTag flip (commit `e75accc`)
+
+**Decision: flip `BuildTag` to `4.0-candidate` AND bump the version block, not just the tag.**
+
+- The `BuildTag` alone drives the cohort split — `BeetDataPaths.Resolve` prefers the tag
+  stamped on telemetry. But it *falls back* to `DeriveTagFromVersion` (major >= 4 →
+  candidate) when telemetry is unavailable. Left at 3.0.0, that fallback would have
+  reported this build as `3.0-baseline` — contradicting its own tag, and reproducing the
+  exact mislabeling we were fixing.
+- Cost accepted: the app reports itself as 4.0.0 while Wave 2 is still in progress. That's
+  what "candidate" means; it isn't shipping to anyone.
+- **By-product:** the hard-coded `Text="v3.0.0"` label in `MainWindow.xaml` is now stale.
+  Deliberately NOT fixed in the same commit (rule R2, one logical change per commit) —
+  logged as a follow-up in `improvements/IMPLEMENTATION-PLAN.txt` §9.
+
+### Wave 2.1: a new `EmphasisTextColor` token rather than reusing `PrimaryTextBrush`
+
+**Decision: literal `White` maps to a NEW token (dark `#FFFFFF`, light `#111111`), not to
+the existing `PrimaryTextBrush`.**
+
+- `PrimaryTextBrush`'s dark value is `#E8E8EC`, not `#FFFFFF`. Pointing the old `White`
+  literals at it would have shifted dark mode — breaching plan rule R4 ("every new dark
+  token value must equal the exact current hex so dark renders byte-identical"). The
+  delta is imperceptible, but R4 exists precisely because the dark theme is currently good
+  and must not drift; bending it silently is how drift starts.
+- R4 was verified **mechanically** (scripted each of the 17 new dark values against the
+  literal it replaced), not by eye. Recommend the same for any future theme work.
+
+### Wave 2.1 scope: named colours are in, brand decoration is out
+
+**Decision: `White` literals are in scope; the rainbow gradient and title glow are not.**
+
+- The `uxui-assessment` C1 audit grepped only for `#hex` and therefore missed literal
+  `White` — which was the more damaging bug. The app title was `White` on the light
+  toolbar (`#F4F4F9`) and the card action rows `White` on `#F7F7FC`: both already
+  invisible in light mode before this change. **De-hardcoding only the hex would have made
+  light mode worse**, not better — a newly-pale status banner still carrying `White` body
+  text is white-on-pale-pink. So "restore the light theme" required the named colours too.
+- **Generalises:** when an audit doc enumerates literals, re-grep for named colours. The
+  doc's list is a starting point, not an inventory.
+- Three `White` literals are deliberately KEPT and commented in place: the check on the
+  green shield, the `!` on the red triangle, and the toggle knob. Each sits ON a saturated
+  fill that stays saturated in both themes, so they must not follow the theme.
+- The rainbow gradient (`#4CC2FF→#FF6B8A→#4ade80`) and the title's violet glow (`#9F7CFF`)
+  remain literal. They are saturated brand decoration that reads correctly on both themes —
+  re-theming them is a design decision, not a mechanical de-hardcoding, and it is the
+  user's call to make.
+
+---
+
 ## 2026-04-18 — Performance Phase 1 & Zombie Fix
 
 ### Server GC enabled
