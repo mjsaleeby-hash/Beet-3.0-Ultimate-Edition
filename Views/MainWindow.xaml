@@ -5,6 +5,7 @@
         xmlns:m="clr-namespace:BeetsBackup.Models"
         xmlns:h="clr-namespace:BeetsBackup.Helpers"
         xmlns:views="clr-namespace:BeetsBackup.Views"
+        xmlns:tel="clr-namespace:BeetsBackup.Telemetry"
         Title="Beet's Backup"
         Icon="/Assets/Beets Backup IMG.ico"
         MinWidth="900" MinHeight="600"
@@ -416,7 +417,13 @@
                                 <DropShadowEffect Color="#9F7CFF" BlurRadius="18" ShadowDepth="0" Opacity="0.6"/>
                             </TextBlock.Effect>
                         </TextBlock>
-                        <TextBlock Text="v3.0.0" FontSize="11"
+                        <!-- Version reads itself from the assembly (BuildInfo.Version, the same
+                             value telemetry stamps) rather than being typed in here. This was
+                             hard-coded "v3.0.0" and silently went stale the moment the csproj
+                             bumped to 4.0.0 — a label that lies about the build is worse than
+                             no label. Now it cannot drift: bump the csproj, the UI follows. -->
+                        <TextBlock Text="{Binding Source={x:Static tel:BuildInfo.Version}, StringFormat=v{0}, Mode=OneTime}"
+                                   FontSize="11"
                                    Foreground="{DynamicResource TertiaryTextBrush}"
                                    Margin="0,-2,0,0"/>
                     </StackPanel>
