@@ -43,7 +43,7 @@
                      because TreeViewItem's default template doesn't propagate stretch. -->
                 <Border Visibility="{Binding IsDrive, Converter={StaticResource BoolToVisibilityConverter}}"
                         Background="{DynamicResource SurfaceBrush}"
-                        BorderBrush="#3A3075" BorderThickness="1"
+                        BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                         CornerRadius="10" Padding="10,8" Margin="0,3,4,3"
                         Width="190" Height="58"
                         HorizontalAlignment="Left">
@@ -376,11 +376,12 @@
              ended uncleanly. One-shot: dismissed or self-clears after export.
              ================================================================ -->
         <Border Grid.Row="0"
-                Background="#3A2A1A" BorderBrush="#D49A2A" BorderThickness="0,0,0,1"
+                Background="{DynamicResource BannerWarnBgBrush}"
+                BorderBrush="{DynamicResource BannerWarnBorderBrush}" BorderThickness="0,0,0,1"
                 Visibility="{Binding IsCrashBannerVisible, Converter={StaticResource BoolToVisibilityConverter}}">
             <DockPanel Margin="12,8">
                 <TextBlock DockPanel.Dock="Left" Text="&#x26A0;" FontSize="18"
-                           Foreground="#D49A2A" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                           Foreground="{DynamicResource BannerWarnIconBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <Button DockPanel.Dock="Right" Content="Dismiss" Margin="6,0,0,0" Padding="10,3"
                         Style="{StaticResource ToolbarButton}"
                         Command="{Binding DismissCrashBannerCommand}"/>
@@ -388,7 +389,7 @@
                         Style="{StaticResource AccentButton}"
                         Command="{Binding ExportDiagnosticsCommand}"/>
                 <TextBlock Text="{Binding CrashBannerMessage}"
-                           Foreground="#F0D08A" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource BannerWarnTextBrush}" FontSize="13" FontWeight="SemiBold"
                            VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
             </DockPanel>
         </Border>
@@ -410,7 +411,7 @@
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Beet's Backup"
                                    FontSize="26" FontWeight="Bold"
-                                   Foreground="White">
+                                   Foreground="{DynamicResource EmphasisTextBrush}">
                             <TextBlock.Effect>
                                 <DropShadowEffect Color="#9F7CFF" BlurRadius="18" ShadowDepth="0" Opacity="0.6"/>
                             </TextBlock.Effect>
@@ -833,7 +834,7 @@
                         <!-- TOTAL CAPACITY footer tile -->
                         <Border DockPanel.Dock="Bottom"
                                 Background="{DynamicResource SurfaceBrush}"
-                                BorderBrush="#3A3075" BorderThickness="1"
+                                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                                 CornerRadius="10" Margin="8,10,12,10" Padding="12,10">
                             <StackPanel>
                                 <TextBlock Text="TOTAL CAPACITY" FontSize="10" FontWeight="SemiBold"
@@ -900,12 +901,12 @@
                             BorderThickness="1">
                         <Border.Style>
                             <Style TargetType="Border">
-                                <Setter Property="Background" Value="#1A0507"/>
-                                <Setter Property="BorderBrush" Value="#6E070A"/>
+                                <Setter Property="Background" Value="{DynamicResource StatusRiskBgBrush}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource StatusRiskBorderBrush}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsProtected}" Value="True">
-                                        <Setter Property="Background" Value="#0A2519"/>
-                                        <Setter Property="BorderBrush" Value="#1E5140"/>
+                                        <Setter Property="Background" Value="{DynamicResource StatusOkBgBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource StatusOkBorderBrush}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -921,8 +922,10 @@
                             <Grid Grid.Column="0" Width="44" Height="44" Margin="0,0,14,0" VerticalAlignment="Center">
                                 <!-- Protected: filled green shield with white check -->
                                 <Grid Visibility="{Binding IsProtected, Converter={StaticResource BoolToVisibilityConverter}}">
-                                    <Path Fill="#3DD68C" Stretch="Uniform"
+                                    <Path Fill="{DynamicResource StatusOkFgBrush}" Stretch="Uniform"
                                           Data="M 12,1 L 22,5 L 22,11 C 22,17 18,21 12,23 C 6,21 2,17 2,11 L 2,5 Z"/>
+                                    <!-- Check stays literal White: it sits ON the saturated shield fill,
+                                         which is saturated in both themes, so it must not follow the theme. -->
                                     <Path Stroke="White" StrokeThickness="2.4"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                           Stretch="Uniform" Width="18" Height="18"
@@ -930,8 +933,9 @@
                                 </Grid>
                                 <!-- At Risk: filled crimson warning triangle with white ! -->
                                 <Grid Visibility="{Binding IsProtected, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                                    <Path Fill="#E04E5C" Stretch="Uniform"
+                                    <Path Fill="{DynamicResource StatusRiskFgBrush}" Stretch="Uniform"
                                           Data="M 12,2 L 23,21 L 1,21 Z"/>
+                                    <!-- "!" stays literal White for the same reason as the shield check above. -->
                                     <TextBlock Text="!" Foreground="White" FontSize="22" FontWeight="Bold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Margin="0,4,0,0"/>
@@ -943,17 +947,17 @@
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Text" Value="At risk"/>
-                                            <Setter Property="Foreground" Value="#E04E5C"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource StatusRiskFgBrush}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsProtected}" Value="True">
                                                     <Setter Property="Text" Value="You are protected"/>
-                                                    <Setter Property="Foreground" Value="#3DD68C"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource StatusOkFgBrush}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <TextBlock Foreground="White" FontSize="11" Margin="0,2,0,6">
+                                <TextBlock Foreground="{DynamicResource EmphasisTextBrush}" FontSize="11" Margin="0,2,0,6">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Text" Value="Your last backup did not complete successfully. Review the log for details."/>
@@ -975,7 +979,7 @@
                                          comment above for the rationale (Run.Text writable-probe on attach). -->
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0">
                                         <TextBlock Text="Last backup: " FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}"/>
-                                        <TextBlock Text="{Binding LastBackupDisplay, Mode=OneWay}" FontSize="11" Foreground="White"/>
+                                        <TextBlock Text="{Binding LastBackupDisplay, Mode=OneWay}" FontSize="11" Foreground="{DynamicResource EmphasisTextBrush}"/>
                                     </StackPanel>
 
                                     <!-- Next backup -->
@@ -984,7 +988,7 @@
                                                VerticalAlignment="Center" Margin="0,0,5,0"/>
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock Text="Next backup: " FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}"/>
-                                        <TextBlock Text="{Binding NextBackupDisplay, Mode=OneWay}" FontSize="11" Foreground="White"/>
+                                        <TextBlock Text="{Binding NextBackupDisplay, Mode=OneWay}" FontSize="11" Foreground="{DynamicResource EmphasisTextBrush}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </StackPanel>
@@ -992,14 +996,14 @@
                             <!-- View details button: outlined rectangular, not a pill -->
                             <Border Grid.Column="2" CornerRadius="6" Padding="12,7"
                                     Background="Transparent"
-                                    BorderBrush="#3A5249" BorderThickness="1"
+                                    BorderBrush="{DynamicResource StatusActionBorderBrush}" BorderThickness="1"
                                     VerticalAlignment="Center" Cursor="Hand"
                                     MouseLeftButtonUp="ViewDetails_Click">
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="View details" Foreground="White" FontSize="11.5" FontWeight="Medium"
+                                    <TextBlock Text="View details" Foreground="{DynamicResource EmphasisTextBrush}" FontSize="11.5" FontWeight="Medium"
                                                VerticalAlignment="Center" Margin="0,0,6,0"/>
                                     <TextBlock Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="10"
-                                               Foreground="White" VerticalAlignment="Center"/>
+                                               Foreground="{DynamicResource EmphasisTextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -1010,7 +1014,7 @@
 
                         <!-- ===== Card 1: PROTECTION SUMMARY ===== -->
                         <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="10"
-                                BorderBrush="#3A3075" BorderThickness="1"
+                                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                                 Margin="4,0" Padding="14,12">
                             <StackPanel>
                                 <TextBlock Text="PROTECTION SUMMARY" FontSize="10" FontWeight="SemiBold"
@@ -1040,11 +1044,11 @@
                                 <Grid Margin="0,6,0,0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <TextBlock Text="&#xE930;" FontFamily="Segoe MDL2 Assets" FontSize="11"
-                                               Foreground="#5AE0A4" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                               Foreground="{DynamicResource StatusOkAccentBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                     <TextBlock Grid.Column="1" Text="Data verified" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="11.5" VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                        <TextBlock Text="&#xE930;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="#5AE0A4" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                        <TextBlock Text="Healthy" Foreground="#5AE0A4" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="&#xE930;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="{DynamicResource StatusOkAccentBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                        <TextBlock Text="Healthy" Foreground="{DynamicResource StatusOkAccentBrush}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
@@ -1052,7 +1056,7 @@
 
                         <!-- ===== Card 2: BACKUP SCHEDULE ===== -->
                         <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="10"
-                                BorderBrush="#3A3075" BorderThickness="1"
+                                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                                 Margin="4,0" Padding="14,12">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -1066,7 +1070,7 @@
 
                                 <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="28"
-                                               Foreground="#F0B860" HorizontalAlignment="Center"/>
+                                               Foreground="{DynamicResource ScheduleIconBrush}" HorizontalAlignment="Center"/>
                                     <TextBlock Text="Automatic backups" FontSize="10.5"
                                                Foreground="{DynamicResource SecondaryTextBrush}" HorizontalAlignment="Center" Margin="0,6,0,2"/>
                                     <TextBlock Text="{Binding ScheduleTimeDisplay}" FontSize="13" FontWeight="SemiBold"
@@ -1075,10 +1079,10 @@
                                     <Border CornerRadius="10" Padding="8,3" Margin="0,8,0,0" HorizontalAlignment="Center">
                                         <Border.Style>
                                             <Style TargetType="Border">
-                                                <Setter Property="Background" Value="#1AF87171"/>
+                                                <Setter Property="Background" Value="{DynamicResource StatusPillRiskBgBrush}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsScheduleEnabled}" Value="True">
-                                                        <Setter Property="Background" Value="#1A5AE0A4"/>
+                                                        <Setter Property="Background" Value="{DynamicResource StatusPillOkBgBrush}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -1087,10 +1091,11 @@
                                             <Ellipse Width="6" Height="6" VerticalAlignment="Center" Margin="0,0,5,0">
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
-                                                        <Setter Property="Fill" Value="#F87171"/>
+                                                        <!-- DangerBrush's dark value IS #F87171, so dark is unchanged. -->
+                                                        <Setter Property="Fill" Value="{DynamicResource DangerBrush}"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsScheduleEnabled}" Value="True">
-                                                                <Setter Property="Fill" Value="#5AE0A4"/>
+                                                                <Setter Property="Fill" Value="{DynamicResource StatusOkAccentBrush}"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -1100,11 +1105,11 @@
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="Text" Value="Not scheduled"/>
-                                                        <Setter Property="Foreground" Value="#F87171"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsScheduleEnabled}" Value="True">
                                                                 <Setter Property="Text" Value="Enabled"/>
-                                                                <Setter Property="Foreground" Value="#5AE0A4"/>
+                                                                <Setter Property="Foreground" Value="{DynamicResource StatusOkAccentBrush}"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -1118,7 +1123,7 @@
                                         Padding="10,6" HorizontalAlignment="Stretch" Margin="0,10,0,0" Cursor="Hand">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Edit schedule" Foreground="White" FontSize="11" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Edit schedule" Foreground="{DynamicResource EmphasisTextBrush}" FontSize="11" HorizontalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                                                    Foreground="{DynamicResource SecondaryTextBrush}"/>
                                     </Grid>
@@ -1128,7 +1133,7 @@
 
                         <!-- ===== Card 3: WHAT'S INCLUDED ===== -->
                         <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="10"
-                                BorderBrush="#3A3075" BorderThickness="1"
+                                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                                 Margin="4,0" Padding="14,12">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -1153,7 +1158,7 @@
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Text="&#xE977;" FontFamily="Segoe MDL2 Assets" FontSize="13"
-                                                               Foreground="#7C5CFF" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                               Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
                                                                Foreground="{DynamicResource PrimaryTextBrush}" FontSize="11.5"
                                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
@@ -1176,7 +1181,7 @@
                                         Padding="10,6" HorizontalAlignment="Stretch" Margin="0,10,0,0" Cursor="Hand">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Manage backup set" Foreground="White" FontSize="11" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Manage backup set" Foreground="{DynamicResource EmphasisTextBrush}" FontSize="11" HorizontalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                                                    Foreground="{DynamicResource SecondaryTextBrush}"/>
                                     </Grid>
@@ -1186,7 +1191,7 @@
 
                         <!-- ===== Card 4: RECENT BACKUPS ===== -->
                         <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="10"
-                                BorderBrush="#3A3075" BorderThickness="1"
+                                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                                 Margin="4,0" Padding="14,12">
                             <StackPanel>
                                 <Grid Margin="0,0,0,8">
@@ -1213,10 +1218,10 @@
                                                     <Ellipse>
                                                         <Ellipse.Style>
                                                             <Style TargetType="Ellipse">
-                                                                <Setter Property="Fill" Value="#1AF87171"/>
+                                                                <Setter Property="Fill" Value="{DynamicResource StatusPillRiskBgBrush}"/>
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding Status}" Value="Complete">
-                                                                        <Setter Property="Fill" Value="#1A5AE0A4"/>
+                                                                        <Setter Property="Fill" Value="{DynamicResource StatusPillOkBgBrush}"/>
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
@@ -1227,11 +1232,11 @@
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock">
                                                                 <Setter Property="Text" Value="&#xE711;"/>
-                                                                <Setter Property="Foreground" Value="#F87171"/>
+                                                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding Status}" Value="Complete">
                                                                         <Setter Property="Text" Value="&#xE930;"/>
-                                                                        <Setter Property="Foreground" Value="#5AE0A4"/>
+                                                                        <Setter Property="Foreground" Value="{DynamicResource StatusOkAccentBrush}"/>
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
@@ -1251,7 +1256,7 @@
                                                            FontSize="10.5" VerticalAlignment="Center" Margin="6,0,0,0">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
-                                                            <Setter Property="Foreground" Value="#F87171"/>
+                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                                             <Setter Property="FontWeight" Value="SemiBold"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding Status}" Value="Complete">
@@ -1277,7 +1282,7 @@
 
                     <!-- File browser — card container matching dashboard cards, aligned with their borders -->
                     <Border Grid.Row="2" Margin="10,4,10,10"
-                            CornerRadius="10" BorderBrush="#3A3075" BorderThickness="1"
+                            CornerRadius="10" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                             Background="{DynamicResource SurfaceBrush}">
                         <Grid>
                             <Grid.RowDefinitions>

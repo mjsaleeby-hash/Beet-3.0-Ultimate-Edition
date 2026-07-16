@@ -30,6 +30,76 @@
     <Color x:Key="PaneDstBorderColor">#2D8A50</Color>
     <Color x:Key="PaneDstBgColor">#142218</Color>
 
+    <!-- ============================================================================
+         Dashboard + crash-banner tokens (Wave 2.1).
+         These used to be hard-coded hex literals in MainWindow.xaml, which meant the
+         home dashboard stayed dark-mode-coloured even in light theme. Every DARK value
+         below is the EXACT literal that was previously inline, so dark mode renders
+         identically to before this change; only Light.xaml's values are new.
+         ============================================================================ -->
+
+    <!-- Card outline. Note this is NOT BorderColor: the dashboard cards use a
+         violet-tinted outline that is deliberately stronger than the generic border. -->
+    <Color x:Key="CardBorderColor">#3A3075</Color>
+
+    <!-- Crash-recovery banner (amber "previous session ended uncleanly" strip). -->
+    <Color x:Key="BannerWarnBgColor">#3A2A1A</Color>
+    <Color x:Key="BannerWarnBorderColor">#D49A2A</Color>
+    <!-- Icon is its own token, not shared with the border: on a LIGHT amber background
+         the border tint is too pale to read as a warning glyph, so light mode needs a
+         darker amber here. Both dark values are the same literal, so dark is unchanged. -->
+    <Color x:Key="BannerWarnIconColor">#D49A2A</Color>
+    <Color x:Key="BannerWarnTextColor">#F0D08A</Color>
+
+    <!-- "You are protected" status banner (green) and its At-Risk counterpart (red).
+         Fg = the saturated shield/triangle + headline colour; Accent = the slightly
+         lighter green used by the summary check-marks and the schedule-enabled dot.
+         They are separate tokens only because they are two DIFFERENT dark hexes;
+         collapsing them would change dark rendering. -->
+    <Color x:Key="StatusOkBgColor">#0A2519</Color>
+    <Color x:Key="StatusOkBorderColor">#1E5140</Color>
+    <Color x:Key="StatusOkFgColor">#3DD68C</Color>
+    <Color x:Key="StatusOkAccentColor">#5AE0A4</Color>
+    <Color x:Key="StatusRiskBgColor">#1A0507</Color>
+    <Color x:Key="StatusRiskBorderColor">#6E070A</Color>
+    <Color x:Key="StatusRiskFgColor">#E04E5C</Color>
+
+    <!-- Text that dark mode deliberately renders PURE white (not PrimaryTextColor's
+         #E8E8EC) for extra punch on a tinted/!chrome surface: the status-banner body,
+         the card action rows, the app title. Was literal White everywhere — correct on
+         dark, invisible on light (the light toolbar is #F4F4F9, the light banner a pale
+         wash). Kept at #FFFFFF here so dark is byte-identical. -->
+    <Color x:Key="EmphasisTextColor">#FFFFFF</Color>
+    <!-- Outline of the banner's "View details" button (transparent fill). -->
+    <Color x:Key="StatusActionBorderColor">#3A5249</Color>
+
+    <!-- Status pills: a 10%-alpha wash of the status colour (#1A = 10% alpha) behind a
+         state dot/glyph. Used by BOTH the schedule card's enabled/disabled pill and the
+         recent-backups list's per-row status dot, so these are named for the pattern,
+         not for one card. Light values are the light theme's success/danger hues at the
+         same alpha. -->
+    <Color x:Key="StatusPillOkBgColor">#1A5AE0A4</Color>
+    <Color x:Key="StatusPillRiskBgColor">#1AF87171</Color>
+    <Color x:Key="ScheduleIconColor">#F0B860</Color>
+
+    <SolidColorBrush x:Key="CardBorderBrush" Color="{StaticResource CardBorderColor}"/>
+    <SolidColorBrush x:Key="BannerWarnBgBrush" Color="{StaticResource BannerWarnBgColor}"/>
+    <SolidColorBrush x:Key="BannerWarnBorderBrush" Color="{StaticResource BannerWarnBorderColor}"/>
+    <SolidColorBrush x:Key="BannerWarnIconBrush" Color="{StaticResource BannerWarnIconColor}"/>
+    <SolidColorBrush x:Key="BannerWarnTextBrush" Color="{StaticResource BannerWarnTextColor}"/>
+    <SolidColorBrush x:Key="StatusOkBgBrush" Color="{StaticResource StatusOkBgColor}"/>
+    <SolidColorBrush x:Key="StatusOkBorderBrush" Color="{StaticResource StatusOkBorderColor}"/>
+    <SolidColorBrush x:Key="StatusOkFgBrush" Color="{StaticResource StatusOkFgColor}"/>
+    <SolidColorBrush x:Key="StatusOkAccentBrush" Color="{StaticResource StatusOkAccentColor}"/>
+    <SolidColorBrush x:Key="StatusRiskBgBrush" Color="{StaticResource StatusRiskBgColor}"/>
+    <SolidColorBrush x:Key="StatusRiskBorderBrush" Color="{StaticResource StatusRiskBorderColor}"/>
+    <SolidColorBrush x:Key="StatusRiskFgBrush" Color="{StaticResource StatusRiskFgColor}"/>
+    <SolidColorBrush x:Key="EmphasisTextBrush" Color="{StaticResource EmphasisTextColor}"/>
+    <SolidColorBrush x:Key="StatusActionBorderBrush" Color="{StaticResource StatusActionBorderColor}"/>
+    <SolidColorBrush x:Key="StatusPillOkBgBrush" Color="{StaticResource StatusPillOkBgColor}"/>
+    <SolidColorBrush x:Key="StatusPillRiskBgBrush" Color="{StaticResource StatusPillRiskBgColor}"/>
+    <SolidColorBrush x:Key="ScheduleIconBrush" Color="{StaticResource ScheduleIconColor}"/>
+
     <!-- Dedicated overrides (dark mode uses existing semantic values) -->
     <Color x:Key="ToggleTrackOffColor">#2A3068</Color>
     <Color x:Key="RingTrackColor">#1F2550</Color>

@@ -30,6 +30,64 @@
     <Color x:Key="PaneDstBorderColor">#4DB878</Color>       <!-- #7: deeper green border for contrast -->
     <Color x:Key="PaneDstBgColor">#EEFBF2</Color>
 
+    <!-- ============================================================================
+         Dashboard + crash-banner tokens (Wave 2.1) — the light half.
+         Dark.xaml documents what each token is for. These values are NEW (the dashboard
+         previously hard-coded dark hexes and so ignored the light theme entirely).
+         Rule followed here: any colour carrying TEXT or an ICON is deepened to hold at
+         least ~4.5:1 against the surface it sits on, matching the existing intent in
+         SuccessColor (:21) and PaneDstBorderColor (:30).
+         ============================================================================ -->
+
+    <!-- Cards: the dark theme's violet outline becomes the standard light border —
+         a violet-tinted line on white reads as a smudge rather than an edge. -->
+    <Color x:Key="CardBorderColor">#DDDDE4</Color>
+
+    <!-- Crash banner: pale amber wash, with border/icon/text deepening in that order
+         so the strip reads as a warning without shouting. -->
+    <Color x:Key="BannerWarnBgColor">#FDF4E3</Color>
+    <Color x:Key="BannerWarnBorderColor">#E0A93A</Color>
+    <Color x:Key="BannerWarnIconColor">#B45309</Color>    <!-- deepened: the glyph must read on #FDF4E3 -->
+    <Color x:Key="BannerWarnTextColor">#8A5A00</Color>
+
+    <!-- Status banner: pale tint backgrounds; foregrounds reuse the light theme's
+         already-contrast-checked success/danger hues rather than inventing new ones. -->
+    <Color x:Key="StatusOkBgColor">#EAFBF1</Color>
+    <Color x:Key="StatusOkBorderColor">#A8DCC0</Color>
+    <Color x:Key="StatusOkFgColor">#148C3E</Color>        <!-- = SuccessColor, 4.5:1 on white -->
+    <Color x:Key="StatusOkAccentColor">#148C3E</Color>    <!-- dark's two greens converge in light -->
+    <Color x:Key="StatusRiskBgColor">#FDECEC</Color>
+    <Color x:Key="StatusRiskBorderColor">#F3B7B7</Color>
+    <Color x:Key="StatusRiskFgColor">#C62828</Color>
+
+    <!-- Near-black, since every surface this sits on is pale in light mode. Matches
+         PrimaryTextColor's value, but stays a separate token because dark needs pure
+         #FFFFFF here rather than PrimaryTextColor's softer #E8E8EC. -->
+    <Color x:Key="EmphasisTextColor">#111111</Color>
+    <Color x:Key="StatusActionBorderColor">#B8CFC2</Color>
+
+    <Color x:Key="StatusPillOkBgColor">#1A148C3E</Color>    <!-- 10% alpha of SuccessColor -->
+    <Color x:Key="StatusPillRiskBgColor">#1ADC2626</Color>  <!-- 10% alpha of DangerColor -->
+    <Color x:Key="ScheduleIconColor">#B45309</Color>
+
+    <SolidColorBrush x:Key="CardBorderBrush" Color="{StaticResource CardBorderColor}"/>
+    <SolidColorBrush x:Key="BannerWarnBgBrush" Color="{StaticResource BannerWarnBgColor}"/>
+    <SolidColorBrush x:Key="BannerWarnBorderBrush" Color="{StaticResource BannerWarnBorderColor}"/>
+    <SolidColorBrush x:Key="BannerWarnIconBrush" Color="{StaticResource BannerWarnIconColor}"/>
+    <SolidColorBrush x:Key="BannerWarnTextBrush" Color="{StaticResource BannerWarnTextColor}"/>
+    <SolidColorBrush x:Key="StatusOkBgBrush" Color="{StaticResource StatusOkBgColor}"/>
+    <SolidColorBrush x:Key="StatusOkBorderBrush" Color="{StaticResource StatusOkBorderColor}"/>
+    <SolidColorBrush x:Key="StatusOkFgBrush" Color="{StaticResource StatusOkFgColor}"/>
+    <SolidColorBrush x:Key="StatusOkAccentBrush" Color="{StaticResource StatusOkAccentColor}"/>
+    <SolidColorBrush x:Key="StatusRiskBgBrush" Color="{StaticResource StatusRiskBgColor}"/>
+    <SolidColorBrush x:Key="StatusRiskBorderBrush" Color="{StaticResource StatusRiskBorderColor}"/>
+    <SolidColorBrush x:Key="StatusRiskFgBrush" Color="{StaticResource StatusRiskFgColor}"/>
+    <SolidColorBrush x:Key="EmphasisTextBrush" Color="{StaticResource EmphasisTextColor}"/>
+    <SolidColorBrush x:Key="StatusActionBorderBrush" Color="{StaticResource StatusActionBorderColor}"/>
+    <SolidColorBrush x:Key="StatusPillOkBgBrush" Color="{StaticResource StatusPillOkBgColor}"/>
+    <SolidColorBrush x:Key="StatusPillRiskBgBrush" Color="{StaticResource StatusPillRiskBgColor}"/>
+    <SolidColorBrush x:Key="ScheduleIconBrush" Color="{StaticResource ScheduleIconColor}"/>
+
     <!-- Dedicated overrides for stubborn light-mode elements -->
     <Color x:Key="ToggleTrackOffColor">#BBBBBB</Color>     <!-- toggle off-state track -->
     <Color x:Key="RingTrackColor">#D0D0D0</Color>          <!-- drive usage ring empty arc -->

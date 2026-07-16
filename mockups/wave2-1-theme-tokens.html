@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wave 2.1 — Dashboard theme tokens: dark vs light</title>
+<style>
+  /* ============================================================
+     Wave 2.1 sign-off sheet.
+     Every colour below is the LITERAL value now in Themes/Dark.xaml
+     and Themes/Light.xaml. The dark column must look exactly like
+     today's app (rule R4); the light column is what's new.
+     ============================================================ */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    background: #15151c; color: #e8e8ec;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: #8a90c7; font-size: 13px; margin-bottom: 28px; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+
+  .col-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    margin-bottom: 10px; color: #8a90c7;
+  }
+  .col-label .tag { font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+  /* Theme scopes — token values mirror the two XAML dictionaries exactly. */
+  .theme {
+    padding: 16px; border-radius: 12px;
+    --emphasis: #FFFFFF;
+    --secondary: #9AA1D3;
+  }
+  .theme.dark {
+    --bg: #0B1020; --surface: #1A2045; --surface-raised: #1F2550;
+    --card-border: #3A3075;
+    --banner-warn-bg: #3A2A1A; --banner-warn-border: #D49A2A;
+    --banner-warn-icon: #D49A2A; --banner-warn-text: #F0D08A;
+    --ok-bg: #0A2519; --ok-border: #1E5140; --ok-fg: #3DD68C; --ok-accent: #5AE0A4;
+    --risk-bg: #1A0507; --risk-border: #6E070A; --risk-fg: #E04E5C;
+    --emphasis: #FFFFFF; --action-border: #3A5249;
+    --pill-ok: #1A5AE0A4; --pill-risk: #1AF87171;
+    --sched-icon: #F0B860; --danger: #F87171; --accent: #7C5CFF;
+    --secondary: #9AA1D3;
+    background: var(--bg);
+  }
+  .theme.light {
+    --bg: #F2F2EF; --surface: #FFFFFF; --surface-raised: #F7F7FC;
+    --card-border: #DDDDE4;
+    --banner-warn-bg: #FDF4E3; --banner-warn-border: #E0A93A;
+    --banner-warn-icon: #B45309; --banner-warn-text: #8A5A00;
+    --ok-bg: #EAFBF1; --ok-border: #A8DCC0; --ok-fg: #148C3E; --ok-accent: #148C3E;
+    --risk-bg: #FDECEC; --risk-border: #F3B7B7; --risk-fg: #C62828;
+    --emphasis: #111111; --action-border: #B8CFC2;
+    --pill-ok: #1A148C3E; --pill-risk: #1ADC2626;
+    --sched-icon: #B45309; --danger: #DC2626; --accent: #7C5CFF;
+    --secondary: #555555;
+    background: var(--bg);
+  }
+
+  /* ---- Crash banner ---- */
+  .crash {
+    background: var(--banner-warn-bg);
+    border-bottom: 1px solid var(--banner-warn-border);
+    padding: 10px 12px; display: flex; align-items: center; gap: 10px;
+    border-radius: 8px; margin-bottom: 14px;
+  }
+  .crash .icon { color: var(--banner-warn-icon); font-size: 18px; line-height: 1; }
+  .crash .msg { color: var(--banner-warn-text); font-size: 13px; font-weight: 600; }
+
+  /* ---- Status banner (protected / at risk) ---- */
+  .status {
+    border-radius: 10px; padding: 14px 18px; border: 1px solid;
+    display: flex; align-items: center; gap: 14px; margin-bottom: 12px;
+  }
+  .status.ok   { background: var(--ok-bg);   border-color: var(--ok-border); }
+  .status.risk { background: var(--risk-bg); border-color: var(--risk-border); }
+  .shield { width: 34px; height: 34px; flex: none; display: grid; place-items: center;
+            border-radius: 50%; font-size: 16px; font-weight: 700; color: #fff; }
+  .status.ok .shield   { background: var(--ok-fg); }
+  .status.risk .shield { background: var(--risk-fg); }
+  .status .headline { font-size: 15px; font-weight: 600; }
+  .status.ok .headline   { color: var(--ok-fg); }
+  .status.risk .headline { color: var(--risk-fg); }
+  .status .body { font-size: 11px; color: var(--emphasis); margin-top: 2px; }
+  .status .meta { font-size: 11px; color: var(--secondary); margin-top: 6px; }
+  .status .meta b { color: var(--emphasis); font-weight: 400; }
+  .grow { flex: 1; }
+  .details {
+    border: 1px solid var(--action-border); border-radius: 6px;
+    padding: 7px 12px; font-size: 11.5px; color: var(--emphasis); white-space: nowrap;
+  }
+
+  /* ---- Cards ---- */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .card h3 {
+    font-size: 10px; letter-spacing: .08em; font-weight: 600;
+    color: var(--secondary); margin: 0 0 10px;
+  }
+  .row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; margin-top: 6px; }
+  .row .label { color: var(--secondary); flex: 1; }
+  .ok-accent { color: var(--ok-accent); font-weight: 600; }
+  .sched-icon { color: var(--sched-icon); font-size: 24px; text-align: center; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 10px; padding: 3px 8px; font-size: 11.5px; font-weight: 600;
+  }
+  .pill.on  { background: var(--pill-ok);   color: var(--ok-accent); }
+  .pill.off { background: var(--pill-risk); color: var(--danger); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .action {
+    background: var(--surface-raised); border-radius: 6px; padding: 6px 10px;
+    font-size: 11px; color: var(--emphasis); text-align: center; margin-top: 10px;
+  }
+  .recent { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .status-dot { width: 16px; height: 16px; border-radius: 50%; display: grid;
+                place-items: center; font-size: 9px; flex: none; }
+  .status-dot.ok   { background: var(--pill-ok);   color: var(--ok-accent); }
+  .status-dot.bad  { background: var(--pill-risk); color: var(--danger); }
+  .recent .when { font-size: 11px; color: var(--emphasis); }
+  .recent .job  { font-size: 9.5px; color: var(--secondary); }
+  .recent .size { margin-left: auto; font-size: 10.5px; color: var(--secondary); }
+  .recent .size.fail { color: var(--danger); font-weight: 600; }
+  .folder { color: var(--accent); }
+
+  /* ---- Swatch table ---- */
+  table { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 12px; }
+  th { text-align: left; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+       color: #8a90c7; padding: 8px 10px; border-bottom: 1px solid #2a3068; font-weight: 600; }
+  td { padding: 7px 10px; border-bottom: 1px solid #1f2550; font-family: Consolas, monospace; }
+  .sw { display: inline-block; width: 13px; height: 13px; border-radius: 3px;
+        border: 1px solid #ffffff26; vertical-align: -2px; margin-right: 7px; }
+  .note { color: #8a90c7; font-family: "Segoe UI", sans-serif; font-size: 11px; }
+</style>
+</head>
+<body>
+
+  <h1>Wave 2.1 — dashboard &amp; crash-banner tokens</h1>
+  <div class="sub">
+    Left is what the app looks like today and must keep looking like (rule R4: every dark
+    value is byte-identical to the literal it replaced). Right is the new light theme —
+    <strong>this is the column that needs your eye.</strong>
+  </div>
+
+  <div class="cols">
+    <!-- ============ DARK (must not change) ============ -->
+    <div>
+      <div class="col-label">Dark <span class="tag">— unchanged, for reference</span></div>
+      <div class="theme dark">
+        <div class="crash">
+          <span class="icon">&#9888;</span>
+          <span class="msg">Beet closed unexpectedly last session.</span>
+        </div>
+        <div class="status ok">
+          <div class="shield">&#10003;</div>
+          <div class="grow">
+            <div class="headline">You are protected</div>
+            <div class="body">Your last backup completed successfully.</div>
+            <div class="meta">Last backup: <b>Today, 11:15 AM</b> &nbsp; Next backup: <b>Tomorrow, 11:15 AM</b></div>
+          </div>
+          <div class="details">View details &rsaquo;</div>
+        </div>
+        <div class="status risk">
+          <div class="shield">!</div>
+          <div class="grow">
+            <div class="headline">At risk</div>
+            <div class="body">Your last backup did not complete successfully.</div>
+          </div>
+          <div class="details">View details &rsaquo;</div>
+        </div>
+        <div class="cards">
+          <div class="card">
+            <h3>PROTECTION SUMMARY</h3>
+            <div class="row"><span class="ok-accent">&#10003;</span><span class="label">Data verified</span><span class="ok-accent">Healthy</span></div>
+            <div class="recent"><div class="status-dot ok">&#10003;</div><div><div class="when">Yesterday</div><div class="job">Documents backup</div></div><span class="size">1.4 GB</span></div>
+            <div class="recent"><div class="status-dot bad">&#10005;</div><div><div class="when">Jul 11</div><div class="job">Photos backup</div></div><span class="size fail">Failed</span></div>
+          </div>
+          <div class="card">
+            <h3>BACKUP SCHEDULE</h3>
+            <div class="sched-icon">&#9200;</div>
+            <div style="text-align:center;margin-top:6px;">
+              <span class="pill on"><span class="dot"></span>Enabled</span>
+            </div>
+            <div style="text-align:center;margin-top:6px;">
+              <span class="pill off"><span class="dot"></span>Not scheduled</span>
+            </div>
+            <div class="action">Edit schedule</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ LIGHT (new — needs sign-off) ============ -->
+    <div>
+      <div class="col-label">Light <span class="tag">— new, please review</span></div>
+      <div class="theme light">
+        <div class="crash">
+          <span class="icon">&#9888;</span>
+          <span class="msg">Beet closed unexpectedly last session.</span>
+        </div>
+        <div class="status ok">
+          <div class="shield">&#10003;</div>
+          <div class="grow">
+            <div class="headline">You are protected</div>
+            <div class="body">Your last backup completed successfully.</div>
+            <div class="meta">Last backup: <b>Today, 11:15 AM</b> &nbsp; Next backup: <b>Tomorrow, 11:15 AM</b></div>
+          </div>
+          <div class="details">View details &rsaquo;</div>
+        </div>
+        <div class="status risk">
+          <div class="shield">!</div>
+          <div class="grow">
+            <div class="headline">At risk</div>
+            <div class="body">Your last backup did not complete successfully.</div>
+          </div>
+          <div class="details">View details &rsaquo;</div>
+        </div>
+        <div class="cards">
+          <div class="card">
+            <h3>PROTECTION SUMMARY</h3>
+            <div class="row"><span class="ok-accent">&#10003;</span><span class="label">Data verified</span><span class="ok-accent">Healthy</span></div>
+            <div class="recent"><div class="status-dot ok">&#10003;</div><div><div class="when">Yesterday</div><div class="job">Documents backup</div></div><span class="size">1.4 GB</span></div>
+            <div class="recent"><div class="status-dot bad">&#10005;</div><div><div class="when">Jul 11</div><div class="job">Photos backup</div></div><span class="size fail">Failed</span></div>
+          </div>
+          <div class="card">
+            <h3>BACKUP SCHEDULE</h3>
+            <div class="sched-icon">&#9200;</div>
+            <div style="text-align:center;margin-top:6px;">
+              <span class="pill on"><span class="dot"></span>Enabled</span>
+            </div>
+            <div style="text-align:center;margin-top:6px;">
+              <span class="pill off"><span class="dot"></span>Not scheduled</span>
+            </div>
+            <div class="action">Edit schedule</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Value table: the actual dictionary entries, for exact sign-off -->
+  <table>
+    <thead>
+      <tr><th>Token</th><th>Dark (unchanged)</th><th>Light (new)</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>CardBorderColor</td><td><span class="sw" style="background:#3A3075"></span>#3A3075</td><td><span class="sw" style="background:#DDDDE4"></span>#DDDDE4</td><td class="note">violet outline &rarr; standard light border</td></tr>
+      <tr><td>BannerWarnBgColor</td><td><span class="sw" style="background:#3A2A1A"></span>#3A2A1A</td><td><span class="sw" style="background:#FDF4E3"></span>#FDF4E3</td><td class="note">crash banner wash</td></tr>
+      <tr><td>BannerWarnBorderColor</td><td><span class="sw" style="background:#D49A2A"></span>#D49A2A</td><td><span class="sw" style="background:#E0A93A"></span>#E0A93A</td><td class="note"></td></tr>
+      <tr><td>BannerWarnIconColor</td><td><span class="sw" style="background:#D49A2A"></span>#D49A2A</td><td><span class="sw" style="background:#B45309"></span>#B45309</td><td class="note">split from border so the glyph reads on pale amber</td></tr>
+      <tr><td>BannerWarnTextColor</td><td><span class="sw" style="background:#F0D08A"></span>#F0D08A</td><td><span class="sw" style="background:#8A5A00"></span>#8A5A00</td><td class="note"></td></tr>
+      <tr><td>StatusOkBgColor</td><td><span class="sw" style="background:#0A2519"></span>#0A2519</td><td><span class="sw" style="background:#EAFBF1"></span>#EAFBF1</td><td class="note"></td></tr>
+      <tr><td>StatusOkBorderColor</td><td><span class="sw" style="background:#1E5140"></span>#1E5140</td><td><span class="sw" style="background:#A8DCC0"></span>#A8DCC0</td><td class="note"></td></tr>
+      <tr><td>StatusOkFgColor</td><td><span class="sw" style="background:#3DD68C"></span>#3DD68C</td><td><span class="sw" style="background:#148C3E"></span>#148C3E</td><td class="note">= existing SuccessColor (4.5:1 on white)</td></tr>
+      <tr><td>StatusOkAccentColor</td><td><span class="sw" style="background:#5AE0A4"></span>#5AE0A4</td><td><span class="sw" style="background:#148C3E"></span>#148C3E</td><td class="note">dark's 2 greens converge in light</td></tr>
+      <tr><td>StatusRiskBgColor</td><td><span class="sw" style="background:#1A0507"></span>#1A0507</td><td><span class="sw" style="background:#FDECEC"></span>#FDECEC</td><td class="note"></td></tr>
+      <tr><td>StatusRiskBorderColor</td><td><span class="sw" style="background:#6E070A"></span>#6E070A</td><td><span class="sw" style="background:#F3B7B7"></span>#F3B7B7</td><td class="note"></td></tr>
+      <tr><td>StatusRiskFgColor</td><td><span class="sw" style="background:#E04E5C"></span>#E04E5C</td><td><span class="sw" style="background:#C62828"></span>#C62828</td><td class="note"></td></tr>
+      <tr><td>EmphasisTextColor</td><td><span class="sw" style="background:#FFFFFF"></span>#FFFFFF</td><td><span class="sw" style="background:#111111"></span>#111111</td><td class="note">was literal <code>White</code> &mdash; invisible in light</td></tr>
+      <tr><td>StatusActionBorderColor</td><td><span class="sw" style="background:#3A5249"></span>#3A5249</td><td><span class="sw" style="background:#B8CFC2"></span>#B8CFC2</td><td class="note">"View details" outline</td></tr>
+      <tr><td>StatusPillOkBgColor</td><td><span class="sw" style="background:#5AE0A41A"></span>#1A5AE0A4</td><td><span class="sw" style="background:#148C3E1A"></span>#1A148C3E</td><td class="note">10% alpha wash</td></tr>
+      <tr><td>StatusPillRiskBgColor</td><td><span class="sw" style="background:#F871711A"></span>#1AF87171</td><td><span class="sw" style="background:#DC26261A"></span>#1ADC2626</td><td class="note">10% alpha wash</td></tr>
+      <tr><td>ScheduleIconColor</td><td><span class="sw" style="background:#F0B860"></span>#F0B860</td><td><span class="sw" style="background:#B45309"></span>#B45309</td><td class="note"></td></tr>
+    </tbody>
+  </table>
+
+</body>
+</html>
