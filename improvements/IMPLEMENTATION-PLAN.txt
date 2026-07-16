@@ -625,14 +625,30 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
 ================================================================================
 9. EXECUTION CHECKLIST (tick in order)
 ================================================================================
-  [ ] Wave 1.1  FAT timestamp fix + 4 unit tests; full suite green; manual re-run test
-  [ ] Wave 1.2  FormatBytes static array
-  [ ] Wave 1.3  Deep-search EnumerationOptions
-  [ ] Wave 1.4  Pie hover-origin
-  [ ] Wave 1.5  AutomationProperties.Name + FocusVisualStyle (Narrator pass)
-  [ ] Wave 1.6  Shared IPC constants (two-instance + taskbar smoke test)
-  [ ] --- review/stabilize; confirm field-stable ---
-  [ ] Wave 2.1  De-hardcode colors (dark=exact hex; light review) — light theme works
+  [x] Wave 1.1  FAT timestamp fix + 4 unit tests; full suite green; manual re-run test
+  [x] Wave 1.2  FormatBytes static array
+  [x] Wave 1.3  Deep-search EnumerationOptions
+  [x] Wave 1.4  Pie hover-origin
+  [x] Wave 1.5  AutomationProperties.Name + FocusVisualStyle (Narrator pass)
+  [x] Wave 1.6  Shared IPC constants (two-instance + taskbar smoke test)
+  [x] --- review/stabilize; confirm field-stable ---
+        Wave 1 merged cb72bee, in the field since 2026-07-08. Field-stable CONFIRMED
+        2026-07-16: 8 days, ZERO BeetsBackup.exe crashes in the Windows Application
+        log across 17 backups / 32 navigations / 27 folder-size runs. (Every crash in
+        that window was BeetsBackup.PerfMon.exe — the monitor, not the app — caused by
+        a stale collector binary; fixed by rebuilding it, see project memory.)
+  [x] Wave 2.1  De-hardcode colors (dark=exact hex; light review) — light theme works
+        Commit 6450775. 17 tokens; all dark values verified byte-identical to the
+        literals they replaced (R4). Light reviewed + signed off in-app 2026-07-16.
+        NOTE: the C1 audit grepped only for #hex and MISSED literal `White`, which was
+        the worse bug — app title was White on the #F4F4F9 light toolbar, card actions
+        White on #F7F7FC. Fixing only hex would have made light WORSE (White body text
+        on a newly-pale banner). Hence the EmphasisTextColor token (dark #FFFFFF, light
+        #111111) rather than PrimaryTextBrush, whose dark #E8E8EC would breach R4.
+        STILL LITERAL, deliberately: rainbow gradient + title glow (saturated brand
+        decoration, a design call, not a de-hardcoding).
+  [ ] FOLLOW-UP  "v3.0.0" version label in MainWindow.xaml is hard-coded and now stale
+        (build is 4.0.0 since e75accc). One-liner; kept separate per R2. Do next.
   [ ] Wave 2.2  RangeObservableCollection
   [ ] Wave 2.3  Filter debounce
   [ ] Wave 2.4  Drive-aware sizing
