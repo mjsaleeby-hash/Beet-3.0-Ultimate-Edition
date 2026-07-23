@@ -32,14 +32,32 @@ public sealed class CohortReport
 
     public string Build()
     {
-        var sessions = SessionLoader.Load(_logDirectory);
-        var telemetry = new TelemetryIngestor().Load();
+        var allSessions = SessionLoader.Load(_logDirectory);
+        var allTelemetry = new TelemetryIngestor().Load();
         var outcomes = new BackupLogIngestor().Load();
-        var timeline = BuildTimeline(telemetry, sessions);
+
+        // Build the timeline and assign tags from the UNFILTERED data. Tag assignment
+        // answers "which build was actually running when this backup/crash happened?",
+        // which is a question about reality, not about which data we intend to report
+        // on. Filtering first would delete the very markers that resolve the excluded
+        // period, and records inside it would then silently inherit the previous
+        // cohort's tag — reintroducing the exact contamination we are removing.
+        var timeline = BuildTimeline(allTelemetry, allSessions);
         var since = timeline.Count > 0 ? timeline[0].LocalStart.AddDays(-1) : DateTime.Now.AddDays(-30);
         var crashes = SafeLoadCrashes(since);
-
         AssignBuildTags(outcomes, crashes, timeline);
+
+        // NOW apply each cohort's valid-data window, uniformly, to every source. Doing
+        // it once here (rather than per section) is what guarantees the resource,
+        // latency, throughput, error and leak tables all describe the SAME days.
+        var sessions = allSessions
+            .Where(s => CohortWindows.Includes(s.BuildTag, s.StartedAt.ToLocalTime().DateTime)).ToList();
+        var telemetry = allTelemetry
+            .Where(r => CohortWindows.Includes(r.BuildTag, r.Timestamp.ToLocalTime().DateTime)).ToList();
+        var windowedOutcomes = outcomes.Where(o => CohortWindows.Includes(o.BuildTag, o.Timestamp)).ToList();
+        var windowedCrashes = crashes.Where(x => CohortWindows.Includes(x.BuildTag, x.Timestamp)).ToList();
+        int droppedEvents = allTelemetry.Count - telemetry.Count;
+        int droppedRuns = outcomes.Count - windowedOutcomes.Count;
 
         var tags = DetermineCohorts(sessions, telemetry);
         var sb = new StringBuilder();
@@ -47,7 +65,18 @@ public sealed class CohortReport
         sb.AppendLine();
         sb.AppendLine($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"Sessions: {sessions.Count}  |  Telemetry events: {telemetry.Count}  |  "
-                      + $"Backup runs: {outcomes.Count}  |  Crashes scanned since: {since:yyyy-MM-dd}");
+                      + $"Backup runs: {windowedOutcomes.Count}  |  Crashes scanned since: {since:yyyy-MM-dd}");
+        if (droppedEvents > 0 || droppedRuns > 0)
+        {
+            // State the exclusion out loud. A verdict that quietly drops a quarter of the
+            // data is indistinguishable from one computed over all of it, and the reader
+            // has no way to audit a filter they cannot see.
+            sb.AppendLine();
+            sb.AppendLine($"> **Excluded as out-of-window:** {droppedEvents} telemetry events, "
+                          + $"{droppedRuns} backup runs. Data is only counted inside its cohort's "
+                          + "window (see below); records outside one belong to a build whose tag "
+                          + "did not match the code that was actually deployed.");
+        }
         sb.AppendLine();
 
         if (tags.Baseline is null)
@@ -56,14 +85,16 @@ public sealed class CohortReport
             return sb.ToString();
         }
 
-        sb.AppendLine($"**Baseline:** `{tags.Baseline}`   **Candidate:** `{tags.Candidate ?? "(not measured yet)"}`");
+        sb.AppendLine($"**Baseline:** `{tags.Baseline}` ({CohortWindows.Describe(tags.Baseline)})   "
+                      + $"**Candidate:** `{tags.Candidate ?? "(not measured yet)"}` "
+                      + $"({CohortWindows.Describe(tags.Candidate)})");
         sb.AppendLine();
 
         AppendResourceSection(sb, sessions, tags);
         AppendTimingSection(sb, telemetry, tags);
         AppendThroughputSection(sb, telemetry, tags);
         AppendFatProofSection(sb, telemetry, tags);
-        AppendErrorSection(sb, outcomes, crashes, tags);
+        AppendErrorSection(sb, windowedOutcomes, windowedCrashes, tags);
         AppendLeakSection(sb, sessions, tags);
         AppendContentionNote(sb, sessions, tags);
 
