@@ -1,0 +1,91 @@
+============================================================
+ BEET EXPANSION IDEA - MEDIA LIBRARY FOLDER COMPARE
+ Captured: 2026-06-25
+ Status: FUTURE WORK - build AFTER current 4.0 work (~1-2 weeks out)
+ Not to start now.
+============================================================
+
+THE GOAL
+--------
+A "Media Library" button in Beet that launches a NEW WINDOW for
+comparing two folders side by side, so I can spot what's missing
+where without manually digging. My library has grown too large to
+eyeball by hand.
+
+This is a VIEWER, not an automated tool. Beet only LOOKS and HIGHLIGHTS.
+It never deletes, moves, or copies anything on its own. I decide what
+to do after I see the picture.
+
+
+CORE BEHAVIOR
+-------------
+- Two panes. Top = Folder A, bottom = Folder B.
+- Each pane lists the files/folders at the CURRENT level.
+- Color coding by PRESENCE:
+    * Top pane: items in A that are MISSING from B  -> GREEN text
+    * Bottom pane: items in B that are MISSING from A -> RED text
+    * Items present in BOTH -> normal/default text
+- I read down the columns; the colored ones jump out. I decide.
+
+
+DRILL-DOWN / LAZY COMPARISON  (important)
+-----------------------------------------
+- NO giant upfront scan of the whole library.
+- It only compares the LEVEL I'm currently looking at.
+- Subfolders themselves get colored too:
+    a green subfolder in the top pane = that whole folder doesn't
+    exist on the other side.
+- A subfolder present on BOTH sides shows normal. I DOUBLE-CLICK to
+  drill in, and THAT is when it compares the next level down.
+- Nothing deeper is checked until I actually navigate there.
+- Breadcrumb / back button to climb back out (normal browsing).
+- Cost is always tiny: one directory listing per side, per level
+  I actually visit.
+
+
+MATCHING RULE (to start)
+------------------------
+- Match by NAME (relative path as I drill down).
+- "Same name exists on both sides" = not colored.
+- Presence-only to start.
+- POSSIBLE LATER ADD: a third color for files present on BOTH sides
+  but DIFFERENT (e.g. half-copied / different size). Optional, not v1.
+
+
+SYNCED vs INDEPENDENT NAVIGATION  (decision still open)
+------------------------------------------------------
+- SYNCED (leaning this way): double-click a folder in the top pane,
+  the bottom pane auto-navigates into its matching folder too, so
+  I'm always comparing the same relative spot. Keeps green/red
+  meaningful.
+- INDEPENDENT: each pane navigates on its own; compares whatever two
+  folders happen to be open. More flexible for comparing
+  differently-named folders.
+- IDEA: synced by default, with a toggle to unlink.
+
+
+HOW IT FITS BEET (notes from Claude)
+------------------------------------
+- Ships in the SAME portable .exe. No new project needed.
+- New Window + ViewModel in Views/, launched the same way
+  SplitPaneWindow is (new Window(Vm){Owner=this}; .Show()).
+- Beet is ALREADY a dual-pane folder browser, so this is mostly a
+  "compare mode" overlay on existing navigation: a per-level
+  comparison pass + a text-color binding on the file rows.
+- Reuses existing file-list rendering and dark/light theming.
+
+
+OPEN QUESTIONS TO RESOLVE BEFORE BUILDING
+-----------------------------------------
+1. Synced vs independent pane navigation (lean: synced + unlink toggle).
+2. Do I want the optional "present but different" third color in v1,
+   or add later? (lean: later)
+3. Where does the "Media Library" button live in the main window?
+
+
+NEXT STEP
+---------
+Park this until 4.0 work is done. Then optionally have the design
+agent mock up the two-pane compare view with real folder names
+before building.
+============================================================

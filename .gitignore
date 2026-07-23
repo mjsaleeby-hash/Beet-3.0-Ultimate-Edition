@@ -11,5 +11,10 @@ revert-transfer-modes.sh
 BeetsBackup-Diagnostics-*/
 BeetsBackup_Log_*.csv
 
+# Windows Event Log exports taken while investigating a crash. Machine-specific
+# and mostly about OTHER processes, so they are evidence for one investigation,
+# not project content. Findings belong in notes/bugs.md; the dump stays local.
+Beets_Events_*.txt
+
 # Scratch UI experiments kept locally; not part of the shipped app.
 Test UI/
