@@ -73,7 +73,8 @@ the ticker.
 
 ## 2026-07-24 — Benign shutdown crash: DllNotFoundException in mixed-mode VSS teardown
 
-**Status: DIAGNOSED — fix proposed, not applied**
+**Status: FIXED** (this session; built + 200/200 tests green; awaiting a deploy-and-observe
+confirmation on the next real foreground exit)
 
 **Symptom:** One genuine `BeetsBackup.exe` 4.0.0.0 crash in the candidate window
 (2026-07-16 16:38:35), logged by the OS as Application Error + .NET Runtime + WER (exception
@@ -99,33 +100,50 @@ so the dispose-cancellation is routine; only occasionally does the mixed-mode un
 lose the teardown-ordering race and escalate to a FATAL `AppDomain.UnhandledException`.
 
 **Impact:** cosmetic but not free. No data at risk and no lost work (everything completed).
-But each occurrence (a) writes a crash dump, (b) records an OS Application Error that inflates
-crash telemetry, and (c) makes the next launch believe the previous session ended uncleanly
-(`DiagnosticsService.ConsumeUncleanShutdown`), which trips the crash banner. Note the current
-`RunHeadlessJob` fast-exits via `Environment.Exit` (skipping most managed teardown) while the
-foreground `OnExit` path lets the CLR run a full managed AppDomain unload — which is why this
-surfaces on the foreground exit, not the headless one.
+Each occurrence (a) writes a misleading FATAL `crash_dump.log` entry for a clean run, and
+(b) records an OS Application Error that inflates crash telemetry / the cohort crash count.
+It does NOT trip the unclean-shutdown banner — `OnExit` calls
+`DiagnosticsService.MarkExitedCleanly()` (`App.xaml.cs:331`) BEFORE the `Environment.Exit`
+that triggered the teardown, so the sentinel is already cleared; confirmed by the 16:43:55
+restart logging no "Previous session did not exit cleanly" (an earlier draft of this note
+wrongly claimed the banner tripped). The crash surfaces on the *foreground* exit specifically
+because that path let the CLR run a full managed AppDomain unload, which runs the mixed-mode
+module uninitializer; the headless `Environment.Exit` did not reproduce it in the window.
 
 **Diagnosis method:** matched the WER/Application-Error records to `crash_dump.log` and to
 `operational.log`; the "shutting down" line immediately preceding the FATAL, plus the
 identical benign dispose-cancellation on a clean exit, establishes teardown-ordering rather
 than a live fault.
 
-**Proposed fix (low-risk, does NOT touch the VSS "leave alone" core):**
-- In the shutdown path, call `DiagnosticsService.MarkExitedCleanly()` *before* the managed
-  AppDomain teardown that can throw (headless already marks clean in its `finally`; verify the
-  foreground `OnExit` marks clean before returning), so a benign teardown throw doesn't trip
-  the unclean-shutdown banner.
-- In `OnDomainUnhandledException`, treat a `DllNotFoundException` whose stack is in
-  `ModuleUninitializer`/CRT teardown *while already shutting down* as WARN, not FATAL — do not
-  write a crash dump for it. Guard narrowly (shutdown flag + exception type + frame) so real
-  faults are unaffected.
-- Optional hardening: fast-exit the foreground path (`Environment.Exit`) once dispose
-  completes, mirroring headless, so the CLR never runs the mixed-mode uninitializer at all.
+**Fix applied (`App.xaml.cs`, does NOT touch the VSS "leave alone" core):**
+1. `_isShuttingDown` flag set at the top of foreground `OnExit` and in the headless
+   `RunHeadlessJob` finally.
+2. `OnDomainUnhandledException`: once `_isShuttingDown`, an unhandled exception is logged at
+   WARN and NO crash dump is written — it is teardown noise, not a crash. (Guarded only by the
+   shutdown flag, so it also covers the headless `Environment.Exit` route; a real fault before
+   shutdown is unaffected.)
+3. Foreground `OnExit` now ends with `FileLogger.Flush()` + `TerminateProcess(GetCurrentProcess(),
+   exitCode)` instead of `Environment.Exit`. TerminateProcess ends the process at the kernel
+   level and runs NO CRT/module uninitializers, so the benign VSS-teardown throw cannot fire in
+   the first place — eliminating both the crash dump AND the OS Application Error. Safe because
+   by that point services + telemetry are disposed, the clean-exit sentinel is cleared, terminal
+   backup-log statuses are always written inline (never debounced — `BackupLogService.SaveNow`),
+   and the operational-log queue is flushed explicitly on the line before. Headless keeps
+   `Environment.Exit` (it did not crash and needs to return its exit code to Task Scheduler; the
+   layer-2 guard protects it).
 
-**Systemic risk:** any future mixed-mode/native dependency inherits this teardown hazard; the
-robust guard is the "already shutting down → downgrade + no dump" handler, which is
-dependency-agnostic.
+**Why not "suppress the dump only":** that would silence our log but leave the OS still
+recording the crash (the exception still escapes the process), so the cohort crash count would
+not improve. Skipping the teardown callbacks is what actually prevents the OS-level fault.
+
+**Verification:** builds clean, 200/200 tests pass. The shutdown P/Invoke path can't be
+unit-tested (can't terminate the test host); the real confirmation is the next foreground exit
+producing no `crash_dump.log` entry and no Application-Error record — a deploy-and-observe step.
+
+**Systemic risk:** any future mixed-mode/native dependency inherits this teardown hazard. Two
+defenses now cover it dependency-agnostically: the foreground hard-terminate avoids the
+teardown entirely, and the "already shutting down → downgrade + no dump" handler catches any
+teardown throw on a path that still exits gracefully.
 
 ---
 

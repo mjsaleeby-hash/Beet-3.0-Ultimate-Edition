@@ -33,6 +33,15 @@ public partial class App : Application
 
     private Mutex? _singleInstanceMutex;
     private EventWaitHandle? _showSignal;
+
+    /// <summary>
+    /// Set once we have entered a deliberate shutdown (foreground <see cref="OnExit"/> or the
+    /// headless <see cref="RunHeadlessJob"/> finally). Read by <see cref="OnDomainUnhandledException"/>
+    /// so an exception thrown DURING teardown — after all real work is done — is logged as a
+    /// benign shutdown event rather than a FATAL crash. Volatile because the throwing thread is
+    /// not necessarily the one that set it.
+    /// </summary>
+    private static volatile bool _isShuttingDown;
     // Persists BeetTelemetry events (operation durations, backup throughput) to a JSONL
     // file the external PerformanceMonitor/BenchmarkHarness ingest. Started as early as
     // possible so it captures BOTH the headless --run-job backup path and the foreground
@@ -259,6 +268,9 @@ public partial class App : Application
         }
         finally
         {
+            // Entering teardown — see OnDomainUnhandledException: a throw from here on is benign
+            // shutdown noise (the run above already finished), not a crash to dump.
+            _isShuttingDown = true;
             // Bounded dispose: if a service hangs, don't hold the process open waiting forever.
             try
             {
@@ -304,10 +316,13 @@ public partial class App : Application
     /// </summary>
     protected override void OnExit(System.Windows.ExitEventArgs e)
     {
+        // Announce shutdown BEFORE anything can throw, so OnDomainUnhandledException can tell a
+        // teardown-time exception (benign — all work is done) from a real in-flight crash.
+        _isShuttingDown = true;
         FileLogger.Info("═══ Application shutting down ═══");
-        // Arm the watchdog before we start disposing anything. If Environment.Exit hangs at the
-        // bottom of this method (stuck finalizer, COM RCW release blocking), the watchdog kills
-        // the process so the user never sees an invisible zombie Beet in Task Manager.
+        // Arm the watchdog before we start disposing anything. If the exit path hangs (stuck
+        // finalizer, COM RCW release blocking), the watchdog kills the process so the user never
+        // sees an invisible zombie Beet in Task Manager.
         ArmShutdownWatchdog(ShutdownWatchdogTimeout, "OnExit");
         // Dispose services on a background thread with a timeout to avoid
         // deadlocking the UI thread if a scheduler job is in progress
@@ -330,9 +345,24 @@ public partial class App : Application
         _singleInstanceMutex?.Dispose();
         DiagnosticsService.MarkExitedCleanly();
         base.OnExit(e);
-        // Failsafe: if WPF's dispatcher loop doesn't exit cleanly (rare edge cases with
-        // background threads or WinForms interop), force-terminate the process.
-        Environment.Exit(e.ApplicationExitCode);
+        // Hard-terminate instead of returning or calling Environment.Exit.
+        //
+        // WHY (this fixes a real, intermittent shutdown crash): a normal managed exit runs the
+        // C++/CLI (mixed-mode) module uninitializers as the AppDomain unloads. Beet pulls in a
+        // mixed-mode native VSS-interop satellite for the shadow-copy fallback, and on some exits
+        // its uninitializer raises DllNotFoundException from the CRT's type_info teardown
+        // (__std_type_info_destroy_list ← ModuleUninitializer.SingletonDomainUnload). Because that
+        // fires on a teardown thread it escapes as an unhandled exception, so Windows records a
+        // process CRASH — even though every backup has already completed and the clean-exit
+        // sentinel above is already cleared. TerminateProcess ends the process at the kernel level
+        // WITHOUT running those user-mode teardown callbacks, so the benign race simply can't fire.
+        //
+        // Safe to skip graceful teardown here: services are disposed, telemetry is disposed, the
+        // clean-exit sentinel is cleared, and terminal backup-log statuses are written inline (never
+        // debounced — see BackupLogService.SaveNow). The only unflushed state is the operational
+        // log's background queue, which we flush explicitly on the next line. Nothing durable is lost.
+        FileLogger.Flush();
+        TerminateProcess(GetCurrentProcess(), (uint)e.ApplicationExitCode);
     }
 
     /// <summary>Logs UI-thread exceptions and marks them handled to prevent a crash.</summary>
@@ -345,8 +375,22 @@ public partial class App : Application
     /// <summary>Logs fatal unhandled exceptions from non-UI threads.</summary>
     private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-        if (e.ExceptionObject is Exception ex)
-            FileLogger.WriteCrashDump("AppDomain.UnhandledException", ex);
+        if (e.ExceptionObject is not Exception ex) return;
+
+        // An exception raised AFTER we began shutting down is teardown noise, not a crash: all
+        // real work has finished and the clean-exit sentinel is already cleared. The known case is
+        // the mixed-mode VSS-interop uninitializer's DllNotFoundException (see OnExit). Writing a
+        // FATAL crash dump for it is misleading — it makes a clean run look like it crashed. Log it
+        // at WARN for the record and skip the dump. The foreground path hard-terminates before this
+        // can fire; this guard covers the headless Environment.Exit path and any future exit route.
+        if (_isShuttingDown)
+        {
+            FileLogger.Warn($"Ignoring exception during shutdown teardown (not a crash): "
+                            + $"{ex.GetType().Name}: {ex.Message}");
+            return;
+        }
+
+        FileLogger.WriteCrashDump("AppDomain.UnhandledException", ex);
     }
 
     /// <summary>Logs and observes unobserved Task exceptions to prevent process termination.</summary>
@@ -511,6 +555,17 @@ public partial class App : Application
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr LocalFree(IntPtr mem);
+
+    // Pseudo-handle to the current process (constant -1); no cleanup needed, so no SafeHandle.
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    // Immediate kernel-level process termination. Unlike Environment.Exit it runs NO managed
+    // AppDomain unload and NO CRT/mixed-mode module uninitializers — which is exactly the point:
+    // those are what throw the benign VSS-teardown DllNotFoundException the OS records as a crash.
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
 
     private enum SE_OBJECT_TYPE
     {

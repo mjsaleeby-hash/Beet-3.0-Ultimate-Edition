@@ -1,3 +1,51 @@
+## 2026-07-24 — Field-defect triage from the cohort report (shutdown crash + double-run)
+
+### Shutdown crash: hard-terminate, not suppress-the-dump (fix applied)
+
+**Decision: end the foreground process with `TerminateProcess` after flushing, instead of only
+silencing the crash dump.**
+
+- The crash is a benign mixed-mode VSS-interop teardown race (`DllNotFoundException` from the
+  C++/CLI module uninitializer during `Environment.Exit`'s AppDomain unload; full root cause in
+  `notes/bugs.md`). All work has finished by then; it does NOT trip the unclean-shutdown banner
+  (`MarkExitedCleanly` runs first). Harm is a misleading FATAL crash dump + an OS Application
+  Error that inflates the cohort crash count.
+- **Why not just suppress our crash dump:** that leaves the exception escaping the process, so
+  Windows still logs the Application Error and the cohort still counts a crash. It would hide the
+  symptom from our own log while changing nothing the verification system sees. Skipping the
+  teardown callbacks (TerminateProcess runs no CRT/module uninitializers) is what actually
+  prevents the OS-level fault.
+- **Why it's safe to skip graceful teardown here:** services + telemetry are already disposed,
+  the clean-exit sentinel is cleared, terminal backup-log statuses are written inline and never
+  debounced (`BackupLogService.SaveNow`), and the operational-log queue is flushed explicitly
+  first. The only droppable state is a transient progress %. A second guard (`_isShuttingDown` →
+  log WARN, no dump in `OnDomainUnhandledException`) covers the headless `Environment.Exit` route,
+  which keeps `Environment.Exit` because it must return an exit code to Task Scheduler.
+
+### Double-run / phantom "Failed": DEFERRED, not fixed now
+
+**Decision: do NOT patch the 7/17 scheduled-job double-run this pass; leave it DIAGNOSED.**
+
+- Every safe-looking quick fix (suppress the "Interrupted" relabel; skip a job whose `NextRun`
+  already advanced) risks a FALSE NEGATIVE — hiding a genuinely interrupted backup. For a backup
+  tool, silently not reporting a real failure is worse than a phantom failure that's explained.
+- The correct fix (stop two schedulers from both executing a job) touches the proven
+  scheduler-dispatch + cross-process log-reconciliation core, which the master plan gates behind
+  characterization tests (Section 7 entry bar; R5 "leave alone"). Rushing it in is exactly the
+  move that plan warns against. Recorded in `notes/bugs.md` with a proposed fix for when the
+  characterization suite exists.
+
+### Correction: the headless path no longer arms a shutdown watchdog
+
+- The 2026-04-18 entry below and the old `bugs.md` zombie note say the watchdog is "Armed at 30s
+  in `RunHeadlessJob`, 15s in `OnExit`." Current code (`App.xaml.cs`) arms it ONLY in `OnExit`,
+  at 10s (`ShutdownWatchdogTimeout`); `RunHeadlessJob` relies on its bounded 5s dispose +
+  `Environment.Exit` with no watchdog. So a *hung* headless job today has no hard backstop — a
+  latent gap, noted here so it isn't rediscovered from scratch. Not fixed this pass (out of the
+  crash's scope); candidate for the same scheduler-hardening work as the double-run.
+
+---
+
 ## 2026-07-16 — 4.0-candidate tagging, and Wave 2.1 theme tokens
 
 ### Version bumped 3.0.0 → 4.0.0 alongside the BuildTag flip (commit `e75accc`)
