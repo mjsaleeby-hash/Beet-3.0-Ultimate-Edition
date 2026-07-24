@@ -1,3 +1,134 @@
+## 2026-07-24 — Scheduled "Users" backup ran twice, leaving a phantom "Failed" entry
+
+**Status: DIAGNOSED — fix proposed, not applied** (surfaced by the cohort report's
+"candidate 1 failed run / 17"; investigated read-only, no deploy)
+
+**Symptom:** The 4.0-candidate cohort showed one failed backup run. The `backup_log.json`
+entry (`afd04ae9`, job "Users", 2026-07-17 11:15:07) read `Status=Failed, FilesCopied=0`,
+`Message="Interrupted — the application closed while this job was running."` A backup that
+looked like it silently died mid-run.
+
+**What actually happened (the opposite of a failure):** the Users job *succeeded* on 7/17
+— it just ran TWICE. `operational.log` on one clock:
+
+```
+11:15:01.104  === Headless run: job 16e1a3e1 ===         (Windows Task Scheduler --run-job)
+11:15:01.196  Scheduled job started: 'Users'
+11:15:55.770  Scheduled job completed: 'Users' — 376 copied, 89918 skipped, 11 deleted
+11:15:55.798  === Headless run complete: ran ===          (RunHeadlessJob's post-run log)
+11:15:55.939  Scheduled job started: 'Users'              (SECOND run — NO "Headless run" marker)
+11:16:41.630  Scheduled job completed: 'Users' — 2 copied, 90292 skipped
+```
+
+Two `BackupCompleted` telemetry events confirm two full runs. The second run re-walked all
+~90k files (~45 s of wasted I/O) and copied the 2 files the first run had just missed.
+
+**Root cause — two schedulers firing the same job.** Feature F runs backups when the app is
+closed via a Windows Task Scheduler `--run-job` task; when the app is *open*, its in-process
+minute-ticker (`SchedulerService.RunAsync`) also fires due jobs. Both fired Users at 11:15.
+The second run has no `=== Headless run: job ===` marker, so it came from a *different
+process* — a foreground Beet that started 2026-07-16 16:43:55 (the restart after the shutdown
+crash below) and was still open. The per-job cross-process `JobMutex` is `TryAcquire` —
+non-blocking, skip-if-busy (`SchedulerService.cs:488`). That prevents *overlapping* double
+runs, but the two fired ~1 minute apart and did NOT overlap: headless took the mutex, ran,
+released it at 11:15:55.8, and the foreground ticker then acquired it 141 ms later and ran
+again. The foreground process acted on a **stale `NextRun`** — headless had advanced it in
+`jobs.json`, but the foreground's in-memory `_jobs` copy hadn't reconciled via its file
+watcher yet, so it still believed Users was due.
+
+The phantom "Failed" entry is a second-order effect: with both processes mutating the shared
+`backup_log.json`, one process's `Running` placeholder was left stranded (its completion lost
+to the cross-process write/merge window), and a later launch's `ReloadFromDisk` housekeeping
+(`BackupLogService.cs:147-153`) flipped any pre-process-start `Running` entry to
+`Failed`/"Interrupted." So a successful run is reported as a failure.
+
+**Scope:** one-off. Across all 16 scheduled fires in the 8-day window, only this one
+double-ran; every other fire logged exactly one run. It requires a foreground instance to be
+open at the same minute Task Scheduler fires the same job — uncommon, but it corrupts the
+error metric and shows the user a red "Failed" for a backup that worked.
+
+**Diagnosis method:** reconciled `backup_log.json` (local), telemetry JSONL (UTC → local; the
+UTC/local offset nearly mis-set the whole timeline), the Windows event log (VSS), and
+`operational.log` onto one clock; then counted runs per fire with a `grep` of the "Headless
+run"/"Scheduled job started|completed" markers across the window.
+
+**Proposed fix (needs characterization tests first — touches the proven scheduler/log core,
+Wave-3 territory per the plan):**
+- Make the in-process ticker defer to the Windows task: when a job has a registered
+  `--run-job` task, the foreground scheduler should not *also* execute it (or should
+  re-check `NextRun` from disk immediately before dispatch, under the JobMutex, so a
+  just-advanced `NextRun` is seen).
+- Alternatively, have `ExecuteJobAsync` re-read the authoritative `NextRun` after acquiring
+  the JobMutex and bail if it has already advanced past this fire — closes the stale-snapshot
+  window regardless of which two schedulers race.
+- Separately, the reconciliation should not label a run "Failed/Interrupted" when a
+  *completed* entry for the same JobId + fire exists — that would stop the phantom even if a
+  double-run slips through.
+
+**Systemic risk:** the same stale-in-memory-`NextRun` window exists for the manual "Back up
+now" button racing a scheduled fire. Any fix should target the shared dispatch gate, not just
+the ticker.
+
+---
+
+## 2026-07-24 — Benign shutdown crash: DllNotFoundException in mixed-mode VSS teardown
+
+**Status: DIAGNOSED — fix proposed, not applied**
+
+**Symptom:** One genuine `BeetsBackup.exe` 4.0.0.0 crash in the candidate window
+(2026-07-16 16:38:35), logged by the OS as Application Error + .NET Runtime + WER (exception
+`0xe0434352`, faulting module KERNELBASE.dll). `crash_dump.log` records
+`System.DllNotFoundException: "Dll was not found."` with the stack:
+
+```
+at __std_type_info_destroy_list(__type_info_node*)
+at __scrt_uninitialize_type_info()
+at _app_exit_callback()
+at <CrtImplementationDetails>.ModuleUninitializer.SingletonDomainUnload(...)
+```
+
+**Root cause:** a *shutdown-teardown race*, not a runtime failure. `operational.log` shows the
+crash fired AFTER "═══ Application shutting down ═══" — all backup work was already complete
+(uptime 2h38m). The `<CrtImplementationDetails>.ModuleUninitializer` frame is C++/CLI
+(mixed-mode) module cleanup: during AppDomain unload, a native satellite of the VSS interop
+(AlphaVSS-style `.Native.x64.dll`, loaded on demand for the shadow-copy fallback) is
+uninitialized, and the CRT's type_info teardown tries to touch a DLL the exiting process can
+no longer resolve → `DllNotFoundException`. The same "Error disposing services:
+AggregateException (A task was canceled)" appears on the *clean* 13:41 shutdown that same day,
+so the dispose-cancellation is routine; only occasionally does the mixed-mode uninitializer
+lose the teardown-ordering race and escalate to a FATAL `AppDomain.UnhandledException`.
+
+**Impact:** cosmetic but not free. No data at risk and no lost work (everything completed).
+But each occurrence (a) writes a crash dump, (b) records an OS Application Error that inflates
+crash telemetry, and (c) makes the next launch believe the previous session ended uncleanly
+(`DiagnosticsService.ConsumeUncleanShutdown`), which trips the crash banner. Note the current
+`RunHeadlessJob` fast-exits via `Environment.Exit` (skipping most managed teardown) while the
+foreground `OnExit` path lets the CLR run a full managed AppDomain unload — which is why this
+surfaces on the foreground exit, not the headless one.
+
+**Diagnosis method:** matched the WER/Application-Error records to `crash_dump.log` and to
+`operational.log`; the "shutting down" line immediately preceding the FATAL, plus the
+identical benign dispose-cancellation on a clean exit, establishes teardown-ordering rather
+than a live fault.
+
+**Proposed fix (low-risk, does NOT touch the VSS "leave alone" core):**
+- In the shutdown path, call `DiagnosticsService.MarkExitedCleanly()` *before* the managed
+  AppDomain teardown that can throw (headless already marks clean in its `finally`; verify the
+  foreground `OnExit` marks clean before returning), so a benign teardown throw doesn't trip
+  the unclean-shutdown banner.
+- In `OnDomainUnhandledException`, treat a `DllNotFoundException` whose stack is in
+  `ModuleUninitializer`/CRT teardown *while already shutting down* as WARN, not FATAL — do not
+  write a crash dump for it. Guard narrowly (shutdown flag + exception type + frame) so real
+  faults are unaffected.
+- Optional hardening: fast-exit the foreground path (`Environment.Exit`) once dispose
+  completes, mirroring headless, so the CLR never runs the mixed-mode uninitializer at all.
+
+**Systemic risk:** any future mixed-mode/native dependency inherits this teardown hazard; the
+robust guard is the "already shutting down → downgrade + no dump" handler, which is
+dependency-agnostic.
+
+---
+
 ## 2026-07-16 — PerfMon collector crashed 7x in 8 days on a stale binary
 
 **Status: FIXED** (this session)
