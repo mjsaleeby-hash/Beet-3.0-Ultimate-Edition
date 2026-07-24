@@ -126,23 +126,68 @@ public sealed class CohortReport
 
     private void AppendTimingSection(StringBuilder sb, IReadOnlyList<TelemetryRecord> tel, Cohorts t)
     {
-        sb.AppendLine("## Operation latency (telemetry)");
+        sb.AppendLine("## Operation latency (telemetry, normalized per unit of work)");
+        sb.AppendLine();
+        // WHY NORMALIZED, NOT RAW ms (this is the whole point of the section):
+        //   Field cohorts do NOT share a workload. The baseline week and the candidate
+        //   week navigated different folders and sized different trees. A raw-millisecond
+        //   median therefore measures "how big were the folders that week", not "how fast
+        //   is the code" — which is how an earlier version of this report printed folder
+        //   sizing as "+2521%" while throughput was flat. Each event carries the size of
+        //   the work it did (items listed, directories sized/scanned), so we divide time
+        //   by work and compare the RATE, which is comparable across different workloads.
+        //   Controlled same-workload latency proof is the BenchmarkHarness's job (Stream
+        //   1); this field section exists to catch a rate regression, not to headline one.
+        sb.AppendLine("_Raw millisecond medians are not comparable across field cohorts that ran "
+                      + "different workloads, so each latency is divided by the work it did. Median "
+                      + "workload per cohort is shown beneath the table so the normalization is auditable._");
         sb.AppendLine();
         StartTable(sb);
-        AddTimingRow(sb, tel, t, "NavigationCompleted", "elapsedMs", "Navigation (ms)");
-        AddTimingRow(sb, tel, t, "SearchCompleted", "elapsedMs", "Deep search (ms)");
-        AddTimingRow(sb, tel, t, "FolderSizeCompleted", "elapsedMs", "Folder sizing (ms)");
-        AddTimingRow(sb, tel, t, "FilterRefreshed", "elapsedMs", "Filter refresh (ms)");
+        AddNormalizedTimingRow(sb, tel, t, "NavigationCompleted", "itemCount", "Navigation (ms per item)");
+        AddNormalizedTimingRow(sb, tel, t, "SearchCompleted", "directoriesScanned", "Deep search (ms per dir scanned)");
+        AddNormalizedTimingRow(sb, tel, t, "FolderSizeCompleted", "directoryCount", "Folder sizing (ms per dir)");
+        AddNormalizedTimingRow(sb, tel, t, "FilterRefreshed", "itemCount", "Filter refresh (ms per item)");
+        sb.AppendLine();
+
+        // The workload context that makes the normalization honest: if the candidate's
+        // per-item rate looks worse, this line reveals whether it also handled far bigger
+        // batches (fixed per-operation overhead spread thinner on the baseline's tiny ones).
+        AppendWorkloadLine(sb, tel, t, "NavigationCompleted", "itemCount", "Navigation", "items");
+        AppendWorkloadLine(sb, tel, t, "SearchCompleted", "directoriesScanned", "Deep search", "dirs");
+        AppendWorkloadLine(sb, tel, t, "FolderSizeCompleted", "directoryCount", "Folder sizing", "dirs");
+        AppendWorkloadLine(sb, tel, t, "FilterRefreshed", "itemCount", "Filter refresh", "items");
         sb.AppendLine();
     }
 
-    private void AddTimingRow(StringBuilder sb, IReadOnlyList<TelemetryRecord> tel, Cohorts t,
-        string evt, string field, string label)
+    /// <summary>
+    /// A latency row expressed as elapsed-ms PER UNIT OF WORK. Each event's rate is
+    /// elapsedMs / workload; events reporting zero work are dropped (a rate is undefined
+    /// there, and dividing would manufacture an infinity). The median of the per-event
+    /// rates is the comparable figure.
+    /// </summary>
+    private void AddNormalizedTimingRow(StringBuilder sb, IReadOnlyList<TelemetryRecord> tel, Cohorts t,
+        string evt, string workloadField, string label)
     {
-        var b = tel.Where(r => r.EventName == evt && r.BuildTag == t.Baseline).Select(r => r.Number(field)).Where(v => !double.IsNaN(v));
-        var c = t.Candidate is null ? Enumerable.Empty<double>()
-            : tel.Where(r => r.EventName == evt && r.BuildTag == t.Candidate).Select(r => r.Number(field)).Where(v => !double.IsNaN(v));
-        Row(sb, label, b, c, Dir.LowerIsBetter, "F1");
+        IEnumerable<double> Rates(string? tag) => tag is null ? Enumerable.Empty<double>()
+            : tel.Where(r => r.EventName == evt && r.BuildTag == tag)
+                 .Select(r => (ms: r.Number("elapsedMs"), work: r.Number(workloadField)))
+                 .Where(x => !double.IsNaN(x.ms) && !double.IsNaN(x.work) && x.work > 0)
+                 .Select(x => x.ms / x.work);
+        Row(sb, label, Rates(t.Baseline), Rates(t.Candidate), Dir.LowerIsBetter, "F3");
+    }
+
+    private static void AppendWorkloadLine(StringBuilder sb, IReadOnlyList<TelemetryRecord> tel, Cohorts t,
+        string evt, string workloadField, string label, string unit)
+    {
+        IEnumerable<double> Work(string? tag) => tag is null ? Enumerable.Empty<double>()
+            : tel.Where(r => r.EventName == evt && r.BuildTag == tag)
+                 .Select(r => r.Number(workloadField)).Where(v => !double.IsNaN(v) && v > 0);
+        var b = Work(t.Baseline).ToArray();
+        var c = Work(t.Candidate).ToArray();
+        if (b.Length == 0 && c.Length == 0) return;
+        string bMed = b.Length == 0 ? "—" : Stats.Percentile(b, 0.50).ToString("F0", CultureInfo.InvariantCulture);
+        string cMed = c.Length == 0 ? "—" : Stats.Percentile(c, 0.50).ToString("F0", CultureInfo.InvariantCulture);
+        sb.AppendLine($"- {label} median workload: baseline **{bMed}** {unit}, candidate **{cMed}** {unit}.");
     }
 
     private void AppendThroughputSection(StringBuilder sb, IReadOnlyList<TelemetryRecord> tel, Cohorts t)
@@ -154,10 +199,23 @@ public sealed class CohortReport
         var c = t.Candidate is null ? Enumerable.Empty<double>() : ThroughputMbps(tel, t.Candidate);
         Row(sb, "Throughput (MB/s)", b, c, Dir.HigherIsBetter, "F1");
 
+        // Duration is DESCRIPTIVE ONLY — deliberately Dir.Neutral, so it carries no ✓/✗.
+        // A backup's duration is just bytesTransferred / throughput, and the cohorts moved
+        // different numbers of bytes, so a cross-cohort duration delta measures backup SIZE,
+        // not speed. It read "+940%" here purely because the candidate ran bigger jobs.
+        // Throughput above is the normalized speed verdict; duration stays only to show the
+        // absolute wall-clock range a run took.
         var bd = tel.Where(r => r.EventName == "BackupCompleted" && r.BuildTag == t.Baseline).Select(r => r.Number("durationMs")).Where(v => !double.IsNaN(v) && v > 0);
         var cd = t.Candidate is null ? Enumerable.Empty<double>()
             : tel.Where(r => r.EventName == "BackupCompleted" && r.BuildTag == t.Candidate).Select(r => r.Number("durationMs")).Where(v => !double.IsNaN(v) && v > 0);
-        Row(sb, "Backup duration (ms)", bd, cd, Dir.LowerIsBetter, "F0");
+        Row(sb, "Backup duration (ms, descriptive)", bd, cd, Dir.Neutral, "F0");
+
+        // Bytes moved per run — the workload context for both rows above, so a reader can
+        // see WHY the durations differ before reading anything into them.
+        var bb = tel.Where(r => r.EventName == "BackupCompleted" && r.BuildTag == t.Baseline).Select(r => r.Number("bytesTransferred")).Where(v => !double.IsNaN(v) && v > 0).Select(v => v / 1048576.0);
+        var cb = t.Candidate is null ? Enumerable.Empty<double>()
+            : tel.Where(r => r.EventName == "BackupCompleted" && r.BuildTag == t.Candidate).Select(r => r.Number("bytesTransferred")).Where(v => !double.IsNaN(v) && v > 0).Select(v => v / 1048576.0);
+        Row(sb, "Bytes per run (MB, descriptive)", bb, cb, Dir.Neutral, "F1");
         sb.AppendLine();
     }
 
