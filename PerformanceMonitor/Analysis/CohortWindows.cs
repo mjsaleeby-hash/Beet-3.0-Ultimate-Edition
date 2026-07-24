@@ -47,9 +47,12 @@ public static class CohortWindows
             // rather than split a day around a deploy timestamp we drop the whole day.
             ["3.0-baseline"] = (new DateTime(2026, 6, 24), new DateTime(2026, 7, 8)),
 
-            // Opened when the tag flip and the deploy finally happened together.
-            // Left open-ended so the window keeps collecting until it is closed here.
-            ["4.0-candidate"] = (new DateTime(2026, 7, 16), null),
+            // CLOSED at 07-24 exclusive (captures 07-16..07-23). The window ran its full
+            // ~7 days clean; closing it here fixes the cohort against a stable set of days.
+            // The boundary is also a deploy fence: commit 164d720 (the shutdown-crash fix)
+            // shipped 07-24, so anything from that day on is a different build and must not
+            // fold into the candidate — the same deploy/tag drift that contaminated 07-08..07-15.
+            ["4.0-candidate"] = (new DateTime(2026, 7, 16), new DateTime(2026, 7, 24)),
         };
 
     /// <summary>

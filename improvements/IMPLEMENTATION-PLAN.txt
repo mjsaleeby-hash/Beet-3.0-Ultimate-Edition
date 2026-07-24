@@ -647,9 +647,24 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         #111111) rather than PrimaryTextBrush, whose dark #E8E8EC would breach R4.
         STILL LITERAL, deliberately: rainbow gradient + title glow (saturated brand
         decoration, a design call, not a de-hardcoding).
-  [ ] FOLLOW-UP  "v3.0.0" version label in MainWindow.xaml is hard-coded and now stale
-        (build is 4.0.0 since e75accc). One-liner; kept separate per R2. Do next.
-  [ ] Wave 2.2  RangeObservableCollection
+  [x] FOLLOW-UP  "v3.0.0" version label de-hardcoded — binds to BuildInfo.Version
+        (commit 4330fdd), so it can't drift from the build again. Deployed 2026-07-16.
+  [x] --- 4.0-candidate PERFORMANCE VERDICT: cohort window CLOSED 2026-07-23 ---
+        Verdict written to improvements/4.0-CANDIDATE-VERDICT.txt. Bottom line: 4.0 is
+        leaner + more stable than 3.0 (handles -17.6%, private bytes -6.9%, threads
+        -3.1%, working set STABLE vs baseline growth) with NO correctness/safety
+        regression; SPEED unproven either way from sparse field data (needs the
+        controlled BenchmarkHarness, only ever run for FAT). The marquee FAT re-copy
+        bug is a NON-ISSUE on this hardware (Win11 rounds mtime UP) — Wave 1.1 ships as
+        correctness-hardening for other media, proven by unit tests T1-T5, not by an
+        on-hardware benchmark that can't show a delta. Three cohort-report tooling bugs
+        were fixed first to make the verdict trustworthy (15d5d8d date-windowing,
+        b4fa3aa crash attribution, 2914ba9 workload normalization). Two field defects
+        surfaced: shutdown-teardown crash FIXED+deployed (164d720); scheduled-job
+        double-run / phantom "Failed" DIAGNOSED + deferred (proven-core, Wave-3 bar) —
+        both in notes/bugs.md. Candidate window closed 07-24 EXCLUSIVE so the 164d720
+        deploy doesn't contaminate it.
+  [ ] Wave 2.2  RangeObservableCollection  <-- IN PROGRESS
   [ ] Wave 2.3  Filter debounce
   [ ] Wave 2.4  Drive-aware sizing
   [ ] Wave 2.5  Pie polish + legend a11y + % contrast

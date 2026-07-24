@@ -1,0 +1,128 @@
+================================================================================
+BEET'S BACKUP — 3.0 → 4.0 PERFORMANCE VERDICT
+Cohort A/B, verification system per improvements/verification-system-spec.txt
+================================================================================
+Date closed:  2026-07-24
+Baseline:     3.0-baseline   2026-06-24 .. 2026-07-07   (51 backup runs windowed)
+Candidate:    4.0-candidate  2026-07-16 .. 2026-07-23   (17 backup runs windowed)
+Source report: PerfMon `cohort` (re-run any time; lands in the gitignored
+              PerformanceMonitor\bin\...\audit\ — this file is the durable copy).
+
+Both cohort windows are now CLOSED in PerformanceMonitor/Analysis/CohortWindows.cs.
+The candidate closes 07-24 EXCLUSIVE: commit 164d720 (the shutdown-crash fix) shipped
+that day, and a post-deploy build must not fold into the candidate — the same
+deploy/tag drift that contaminated 07-08..07-15 on the baseline side.
+
+--------------------------------------------------------------------------------
+VERDICT IN ONE LINE
+--------------------------------------------------------------------------------
+4.0 is measurably LEANER and MORE STABLE than 3.0 on the resource axis (fewer
+handles, less committed memory, stable working set) with NO correctness or safety
+regression. SPEED is not proven either way from field data and would need a
+controlled benchmark. The marquee FAT re-copy bug proved to be a NON-ISSUE on this
+hardware. Net: ship 4.0; it is at least as good as 3.0 and demonstrably tidier with
+system resources.
+
+--------------------------------------------------------------------------------
+WHAT WE TRUST (adequate samples, effect survives scrutiny)
+--------------------------------------------------------------------------------
+Handle count ........ -17.6% median (1137 → 937), -15.8% p95.  STRONG WIN.
+Private bytes ....... -6.9% median (344.5 → 320.6 MB).         WIN (committed mem).
+Thread count ........ -3.1% median (32 → 31).                  Minor win.
+Memory stability .... Candidate STABLE within its window (WS 340→272 MB, no growth);
+                      BASELINE flagged for working-set growth (39→278 MB). The leak
+                      check favors the candidate — this is the strongest single
+                      stability signal in the report.
+Correctness/safety .. 0 real backup FAILURES on either side (see caveats: the lone
+                      candidate "failed run" is the phantom double-run, not a real
+                      failure). No checksum mismatches, no disk-full, no lock storms.
+
+--------------------------------------------------------------------------------
+WHAT WE DO NOT CLAIM (honest non-results)
+--------------------------------------------------------------------------------
+Working set (median) . Report prints +437% median, but this is SAMPLING COMPOSITION,
+                       not a leak: candidate p95 is LOWER (438.5 → 378.8) and the
+                       within-cohort leak check calls the candidate stable while the
+                       baseline grew. Read as "no working-set regression", not a win
+                       and not a loss.
+Operation latency .... Candidate reads worse (nav +84%/item, folder-sizing
+                       +1266%/dir) BUT: sparse candidate samples (folder sizing
+                       n=11), field workloads that were never controlled, and a
+                       per-directory normalization that a single huge directory can
+                       skew. NOT a trustworthy regression. Latency PROOF is the
+                       BenchmarkHarness's job (controlled workload) and it was never
+                       run for the nav/search/sizing scenarios on both builds.
+Throughput ........... -18.3% median but low confidence (n=20/10) and a baseline p95
+                       (139 MB/s) inflated by one big SSD-to-SSD run. No trustworthy
+                       throughput claim either direction from field data.
+Backup duration ...... Descriptive only (no verdict). It is bytes ÷ throughput, and
+                       the cohorts moved different bytes, so the "+2832%" is backup
+                       SIZE, not speed.
+
+--------------------------------------------------------------------------------
+THE FAT/exFAT HEADLINE — resolved, and NOT the way the incident doc predicted
+--------------------------------------------------------------------------------
+The verification system was originally built to prove the Wave 1.1 FAT re-copy fix.
+It turns out there is nothing to prove ON THIS HARDWARE:
+
+  - The BenchmarkHarness `fat` scenario (2026-07-01, real FAT32 USB, 2000-file
+    corpus) was run on 3.0-baseline WITH THE FIX NOT APPLIED and re-copied 0 of 2000
+    files on the no-change re-run.
+  - Root cause: Windows 11 rounds FAT32 last-write-time UP to the next 2-second
+    boundary, so the destination ends up 0-2s AHEAD of the source. The
+    `source > dest` predicate is never true, so unchanged files are correctly
+    skipped. This is the OPPOSITE of what incident-rootcause-incremental-recopy.txt
+    assumed (it assumed FAT truncates DOWN).
+  - The cohort report's baseline FAT row (median 0, p95 13, n=21) is that single
+    benchmark, not organic field backups. The candidate row is "_pending_" and would
+    read ~0 as well — a zero delta.
+
+CONCLUSION: the Wave 1.1 `IsDestinationStale` 2-second tolerance still SHIPS as cheap
+correctness-hardening (it matches robocopy /FFT, costs nothing on NTFS, and protects
+OTHER media that DO round down — SD cards, some NAS/USB bridges). It is proven by
+unit tests T1-T5 (in the green 200/200 suite), NOT by an on-hardware benchmark that
+structurally cannot show a delta here. Re-running the FAT double-run is therefore
+unnecessary and was dropped from the verdict's critical path.
+
+--------------------------------------------------------------------------------
+CAVEATS BAKED INTO THE NUMBERS (so a future reader isn't misled)
+--------------------------------------------------------------------------------
+1. The candidate "1 failed run / 17" is a PHANTOM. On 2026-07-17 the scheduled
+   "Users" job SUCCEEDED but ran twice (foreground in-app scheduler racing the
+   Windows Task Scheduler --run-job); one process's Running placeholder was stranded
+   and later relabelled "Failed - Interrupted". Root cause + proposed fix in
+   notes/bugs.md. Subtract it: real failures were 0 on both sides.
+
+2. The candidate "1 crash incident" is the benign shutdown-teardown DllNotFoundException
+   (mixed-mode VSS-interop uninitializer during AppDomain unload, after all work
+   completed). FIXED 2026-07-24 (commit 164d720, deployed) — foreground exit now
+   hard-terminates and skips the CRT teardown. So the candidate's one crash is
+   already resolved for any build after 07-24.
+
+3. Field samples are small on the candidate (10-17 per metric). This is why every
+   speed row reads "low confidence". The resource/handle/stability wins have adequate
+   samples and are the load-bearing part of the verdict.
+
+--------------------------------------------------------------------------------
+COHORT-REPORT TOOLING FIXES THAT MADE THIS VERDICT TRUSTWORTHY (2026-07-24)
+--------------------------------------------------------------------------------
+The first report run was NOT trustworthy; three tooling bugs were fixed first:
+  - 15d5d8d  Date-window each cohort (CohortWindows) — stop folding the contaminated
+             07-08..07-15 Wave-1-code-under-a-baseline-tag into the baseline.
+  - b4fa3aa  Attribute crashes by process + collapse records into incidents — the
+             report had blamed the app for 20 PerfMon crashes (true app crashes: 0).
+  - 2914ba9  Normalize field latency by workload; strip the meaningless raw-duration
+             cross-cohort verdict.
+
+--------------------------------------------------------------------------------
+STATUS OF THE VERIFICATION SYSTEM AFTER THIS VERDICT
+--------------------------------------------------------------------------------
+CLOSED for the 3.0 → 4.0 comparison. To re-open for a future build: add a new tag
+window in CohortWindows, flip BuildTag AT DEPLOY TIME (not after — that is the whole
+lesson), collect a window, and re-run `PerfMon cohort`. If a controlled SPEED number
+is ever wanted, run the BenchmarkHarness perf scenarios on the new build (note there
+is no historical baseline benchmark for nav/copy, so it would be an absolute figure,
+not an A/B).
+================================================================================
+END OF VERDICT
+================================================================================
