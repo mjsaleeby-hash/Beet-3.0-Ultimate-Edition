@@ -43,7 +43,12 @@ public sealed record BackupOutcome
     public int TotalErrors => FilesFailed + DirectoriesFailed + DiskFullErrors + ChecksumMismatches;
 }
 
-/// <summary>A Beet-related crash / unhandled-exception entry from the Windows Application log.</summary>
+/// <summary>
+/// One Beet crash INCIDENT from the Windows Application log — not one log record.
+/// Windows writes several records per fault (Application Error + .NET Runtime + WER);
+/// <see cref="Services.EventLogIngestor"/> collapses those into a single entry so the
+/// report counts crashes rather than paperwork.
+/// </summary>
 public sealed record BeetEventLogEntry(
     DateTime Timestamp,
     string Level,
@@ -51,6 +56,11 @@ public sealed record BeetEventLogEntry(
     string Message)
 {
     public string BuildTag { get; set; } = "unknown"; // assigned by timeline correlation
+
+    /// <summary>The executable that actually faulted. Recorded so a crash count can be
+    /// audited back to a process — the report once blamed Beet for the monitor's crashes
+    /// because attribution was a substring test.</summary>
+    public string ProcessName { get; set; } = "";
 }
 
 /// <summary>A point in time when a particular build started running (from telemetry AppStarted).

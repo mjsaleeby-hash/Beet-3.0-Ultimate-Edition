@@ -218,7 +218,20 @@ public sealed class CohortReport
         int bCrash = crashes.Count(x => x.BuildTag == t.Baseline);
         int cCrash = t.Candidate is null ? 0 : crashes.Count(x => x.BuildTag == t.Candidate);
         sb.AppendLine($"- Failed runs: baseline **{bFail}** / {bRuns.Count}, candidate **{cFail}** / {cRuns.Count}");
-        sb.AppendLine($"- Process crashes (Application event log): baseline **{bCrash}**, candidate **{cCrash}**");
+        sb.AppendLine($"- BeetsBackup.exe crash incidents: baseline **{bCrash}**, candidate **{cCrash}** "
+                      + "_(one incident per fault, not per event-log record; excludes "
+                      + "BeetsBackup.PerfMon.exe — the monitor is not the app)_");
+
+        // List the incidents. A bare count invites the reader to trust it; the timestamps
+        // let them go and read the actual event, which is how the one real crash in this
+        // data was found to be a shutdown-path fault rather than a runtime one.
+        var listed = crashes.OrderBy(x => x.Timestamp).ToList();
+        if (listed.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (var c in listed)
+                sb.AppendLine($"  - `{c.Timestamp:yyyy-MM-dd HH:mm:ss}` [{c.BuildTag}] {c.Source}");
+        }
         sb.AppendLine();
     }
 
