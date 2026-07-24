@@ -664,7 +664,18 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         double-run / phantom "Failed" DIAGNOSED + deferred (proven-core, Wave-3 bar) —
         both in notes/bugs.md. Candidate window closed 07-24 EXCLUSIVE so the 164d720
         deploy doesn't contaminate it.
-  [ ] Wave 2.2  RangeObservableCollection  <-- IN PROGRESS
+  [x] Wave 2.2  RangeObservableCollection — code-complete + 9 unit tests (209/209 green)
+        Added Models/RangeObservableCollection.cs (AddRange/ReplaceAll = ONE Reset, not N
+        Adds). TopPaneItems/BottomPaneItems retyped to it. Navigation fills via AddRange
+        (kept the early Clear() so empty-during-load + cancelled-nav-leaves-empty behaviour
+        is preserved — chose behaviour-preservation over the reference's Clear-less
+        ReplaceAll, R6). Both deep-search paths now AddRange each batch instead of looping
+        Add. R6 note: AddRange raises Reset, which can bump a SCROLLED ListView to the top
+        per batch during a streaming search — the one behaviour difference; acceptable while
+        results fill, flagged for the R7 manual smoke test. NOT yet deployed (rides the next
+        deploy; needs the manual pass: navigate a big folder, run a deep search, confirm
+        selection-dependent commands still work).
+  [ ] Wave 2.3  Filter debounce
   [ ] Wave 2.3  Filter debounce
   [ ] Wave 2.4  Drive-aware sizing
   [ ] Wave 2.5  Pie polish + legend a11y + % contrast

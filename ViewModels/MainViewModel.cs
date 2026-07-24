@@ -63,8 +63,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<DriveItem> Drives { get; } = new();
     public ObservableCollection<FolderTreeItem> TopTreeItems { get; } = new();
     public ObservableCollection<FolderTreeItem> BottomTreeItems { get; } = new();
-    public ObservableCollection<FileSystemItem> TopPaneItems { get; } = new();
-    public ObservableCollection<FileSystemItem> BottomPaneItems { get; } = new();
+    // RangeObservableCollection (not plain ObservableCollection) so a folder load or a search
+    // batch populates the pane with ONE Reset notification instead of one Add per item — see
+    // Wave 2.2. Still an ObservableCollection<FileSystemItem>, so every existing use (Clear,
+    // Add, Count, indexing, the filtered ICollectionView) is unchanged; the bulk callers just
+    // additionally get AddRange.
+    public RangeObservableCollection<FileSystemItem> TopPaneItems { get; } = new();
+    public RangeObservableCollection<FileSystemItem> BottomPaneItems { get; } = new();
 
     // Filtered views for search
     private ICollectionView? _filteredTopView;
@@ -797,8 +802,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var children = await Task.Run(() => _fs.GetChildren(path).ToList());
         // If a newer navigation has started, discard these results.
         if (navCts.IsCancellationRequested) return;
-        foreach (var item in children)
-            TopPaneItems.Add(item);
+        // One Reset for the whole folder instead of one Add per child (Wave 2.2). The pane was
+        // already cleared above, so this only fills — the empty-during-load behaviour is kept.
+        TopPaneItems.AddRange(children);
         navSw.Stop();
         Telemetry.BeetTelemetry.Log.NavigationCompleted("top", TopPaneItems.Count, navSw.Elapsed.TotalMilliseconds);
         _filteredTopView?.Refresh();
@@ -847,8 +853,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var children = await Task.Run(() => _fs.GetChildren(path).ToList());
         // If a newer navigation has started, discard these results.
         if (navCts.IsCancellationRequested) return;
-        foreach (var item in children)
-            BottomPaneItems.Add(item);
+        // One Reset for the whole folder instead of one Add per child (Wave 2.2). The pane was
+        // already cleared above, so this only fills — the empty-during-load behaviour is kept.
+        BottomPaneItems.AddRange(children);
         navSw.Stop();
         Telemetry.BeetTelemetry.Log.NavigationCompleted("bottom", BottomPaneItems.Count, navSw.Elapsed.TotalMilliseconds);
         _filteredBottomView?.Refresh();
@@ -1115,11 +1122,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     {
                         var items = batch.ToList();
                         batch.Clear();
-                        dispatcher.BeginInvoke(() =>
-                        {
-                            foreach (var item in items)
-                                TopPaneItems.Add(item);
-                        });
+                        // AddRange = one Reset per batch instead of SearchBatchSize Adds (Wave 2.2).
+                        dispatcher.BeginInvoke(() => TopPaneItems.AddRange(items));
                     }
                 }
             }
@@ -1142,11 +1146,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         {
                             var items = batch.ToList();
                             batch.Clear();
-                            dispatcher.BeginInvoke(() =>
-                            {
-                                foreach (var item in items)
-                                    TopPaneItems.Add(item);
-                            });
+                            // AddRange = one Reset per batch instead of SearchBatchSize Adds (Wave 2.2).
+                            dispatcher.BeginInvoke(() => TopPaneItems.AddRange(items));
                         }
                     }
                 }
@@ -1158,11 +1159,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (batch.Count > 0)
             {
                 var remaining = batch.ToList();
-                dispatcher.BeginInvoke(() =>
-                {
-                    foreach (var item in remaining)
-                        TopPaneItems.Add(item);
-                });
+                dispatcher.BeginInvoke(() => TopPaneItems.AddRange(remaining));
             }
         }
         catch (UnauthorizedAccessException) { }
@@ -1276,11 +1273,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     {
                         var items = batch.ToList();
                         batch.Clear();
-                        dispatcher.BeginInvoke(() =>
-                        {
-                            foreach (var item in items)
-                                BottomPaneItems.Add(item);
-                        });
+                        // AddRange = one Reset per batch instead of SearchBatchSize Adds (Wave 2.2).
+                        dispatcher.BeginInvoke(() => BottomPaneItems.AddRange(items));
                     }
                 }
             }
@@ -1303,11 +1297,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         {
                             var items = batch.ToList();
                             batch.Clear();
-                            dispatcher.BeginInvoke(() =>
-                            {
-                                foreach (var item in items)
-                                    BottomPaneItems.Add(item);
-                            });
+                            // AddRange = one Reset per batch instead of SearchBatchSize Adds (Wave 2.2).
+                            dispatcher.BeginInvoke(() => BottomPaneItems.AddRange(items));
                         }
                     }
                 }
@@ -1318,11 +1309,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (batch.Count > 0)
             {
                 var remaining = batch.ToList();
-                dispatcher.BeginInvoke(() =>
-                {
-                    foreach (var item in remaining)
-                        BottomPaneItems.Add(item);
-                });
+                dispatcher.BeginInvoke(() => BottomPaneItems.AddRange(remaining));
             }
         }
         catch (UnauthorizedAccessException) { }
