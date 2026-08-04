@@ -1,3 +1,37 @@
+## 2026-08-04 — Wave 2.3 (live-filter debounce) dropped as verified-N/A
+
+**Decision: drop Wave 2.3 entirely rather than implement it. The optimization targets a
+property nothing writes to.**
+
+- `MainViewModel.SearchFilter` has **no writer anywhere in the product**. A full-repo grep
+  returns only the property definition (`ViewModels/MainViewModel.cs:90`), its own
+  doc-comment (`:598`), and three advisory reports in `improvements/` that assume it is live.
+- The pane search boxes bind `DeepSearchQuery` (`Views/MainWindow.xaml:1345`,
+  `Views/SplitPaneWindow.xaml:312`) — that is the deep-search path, which populates pane
+  results. It is a different mechanism and does not flow through this filter.
+- Consequence: the predicate's `if (string.IsNullOrEmpty(_searchFilter)) return true` guard
+  short-circuits on **every** call. A 150 ms debounce would coalesce keystrokes on a property
+  that receives none — a measurable nothing.
+- **How the item got planned:** the performance report reached P5 by reading the setter and
+  correctly noting it calls `Refresh()` on two `ICollectionView`s per assignment. It then
+  assumed keystrokes flowed in. Nobody checked for a writer. Same failure mode as the FAT
+  re-copy assumption — a finding that *looks* right is not true until checked.
+- **What is NOT dead:** `CreateFilteredView` and both `ICollectionView` properties are live —
+  the panes bind them as `ItemsSource`. Only the always-empty filter *string* is dead, so the
+  views must stay. Retiring the unused property + unreachable predicate branch is folded into
+  Wave 2.6 (de-dup/cleanup), where it belongs with the other behaviour-preserving tidying.
+- **Why not wire up a real filter box instead:** that would be a new feature, outside Wave 2's
+  behaviour-neutral scope. If it is ever built, reopen 2.3 then — and re-check for a writer
+  before trusting §FIX F again.
+
+**Also recorded this session:** the Wave 2.2 R7 manual pass PASSED (big-folder navigation,
+deep search, selection-dependent commands), and the `v4.0.0` version label was confirmed
+rendering. That binding fails silently, so a blank label would have been the only tell. Both
+verifications had been owed since 7/24. Wave 2.2's deploy state was also corrected — it shipped
+7/29 riding `72f3364`, not "pending" as the plan had said.
+
+---
+
 ## 2026-07-24 — Field-defect triage from the cohort report (shutdown crash + double-run)
 
 ### Shutdown crash: hard-terminate, not suppress-the-dump (fix applied)

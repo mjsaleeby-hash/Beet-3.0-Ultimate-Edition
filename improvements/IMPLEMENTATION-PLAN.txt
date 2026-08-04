@@ -86,7 +86,8 @@ VERIFIED TRUE but needs CARE (implement with tests + review, Wave 2):
   - RangeObservableCollection bulk-load (perf P3). Safe in principle (NavigateTop
     already does Clear()+Add; one Reset is fewer events, same end state). Touches a
     widely-used field; do it with a focused test and a manual click-through.
-  - Filter debounce (perf P5) — introduces a 150 ms delay (a deliberate UX change).
+  - Filter debounce (perf P5) — DROPPED 2026-08-04, verified N/A (SearchFilter has no
+    writer; see §9). It would have introduced a 150 ms delay as a deliberate UX change.
   - Drive-aware folder sizing (perf P1, partial) — reuse DriveTypeService for the
     parallelism degree; trivial and safe. The CACHE and the per-item-update BATCHING
     are bigger and go later.
@@ -134,7 +135,7 @@ WAVE 2 — Real value, medium risk. One change per commit, each with a test and 
 manual pass. Requires the Wave-1 changes merged and green.
   2.1 De-hardcode dashboard + crash-banner colors (restore light theme)     [ux]
   2.2 RangeObservableCollection for pane + search population                 [perf]
-  2.3 Live-filter debounce                                                   [perf]
+  2.3 Live-filter debounce — DROPPED, verified N/A (dead property)          [perf]
   2.4 Drive-aware folder-size parallelism (DriveTypeService)                 [perf]
   2.5 Pie polish: donut-center = surface, clamp center label, single tiny-
       slice threshold; legend keyboard-operability + stop coloring % text    [ux/a11y]
@@ -531,8 +532,11 @@ commenting standard and the dark-theme safety rule below).
      RISK NOTE: a Reset clears ListView selection — but NavigateTop already cleared
      it, so no behaviour change. Verify selection-dependent commands still work.
 
-2.3  Live-filter debounce (perf P5). 150 ms debounce in the SearchFilter setter
-     (full code in perf report §FIX F). This is a deliberate, small UX change.
+2.3  Live-filter debounce (perf P5). DROPPED 2026-08-04 — VERIFIED N/A, not deferred.
+     The premise is false: SearchFilter is never assigned anywhere in the product, so
+     there are no keystrokes to coalesce and the debounce would be measurably nothing.
+     Evidence and the Wave 2.6 follow-up are recorded in §9. Do not re-plan this item
+     off the perf report's §FIX F without first re-checking for a writer.
 
 2.4  Drive-aware folder sizing (perf P1, safe subset only). In
      CalculateFolderSizesWithProgressAsync set MaxDegreeOfParallelism from
@@ -549,6 +553,10 @@ commenting standard and the dark-theme safety rule below).
      commit + test: ProgressPercent(result), IOExceptionClassifier
      (IsSharingViolation/IsDiskFull for 0x20/0x70), collapse the 4 uniqueness
      helpers to 2, BackupLogEntryFactory. These reduce drift risk for FUTURE bugs.
+     ALSO (added 2026-08-04, inherited from the dropped 2.3): retire the dead
+     SearchFilter property and the unreachable filter branch in CreateFilteredView.
+     KEEP CreateFilteredView itself and both ICollectionView properties — the panes
+     bind to them as ItemsSource, so only the always-empty filter STRING is dead.
 
 ================================================================================
 6. WAVE 2 TESTS (add alongside each item)
@@ -615,7 +623,8 @@ R5. DO NOT TOUCH THE "LEAVE ALONE" LIST: cross-IL show-signal DACL/label code,
     debounced log saves. Repackage (e.g. shared constants) but never rewrite the
     mechanisms.
 R6. PRESERVE OBSERVABLE BEHAVIOUR unless a change is explicitly a behaviour change
-    (only 1.1 fixes a bug; 2.1/2.3/2.5 are intentional UX changes — call them out
+    (only 1.1 fixes a bug; 2.1/2.5 are intentional UX changes — 2.3 was too, before
+    it was dropped as N/A on 2026-08-04 — call them out
     in the PR). Everything else must be behaviour-neutral.
 R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a small
     copy AND a small SkipExisting re-run (expect 0 re-copies), toggle light/dark,
@@ -672,11 +681,25 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         ReplaceAll, R6). Both deep-search paths now AddRange each batch instead of looping
         Add. R6 note: AddRange raises Reset, which can bump a SCROLLED ListView to the top
         per batch during a streaming search — the one behaviour difference; acceptable while
-        results fill, flagged for the R7 manual smoke test. NOT yet deployed (rides the next
-        deploy; needs the manual pass: navigate a big folder, run a deep search, confirm
-        selection-dependent commands still work).
-  [ ] Wave 2.3  Filter debounce
-  [ ] Wave 2.3  Filter debounce
+        results fill, flagged for the R7 manual smoke test. DEPLOYED 2026-07-29 (rode the
+        72f3364 deploy; verified 2026-08-03 off Documents\BeetsBackup.exe ProductVersion
+        4.0.0+72f3364, which is downstream of 995e063). R7 manual pass PASSED 2026-08-04:
+        big-folder navigation, deep search, and selection-dependent commands all confirmed
+        working by the user; the v4.0.0 version label was confirmed rendering at the same
+        time (that binding fails silently, so a blank label would have been the tell).
+  [~] Wave 2.3  Filter debounce — N/A, the target property is dead. See note below.
+        SearchFilter has NO writer anywhere in the product: a full-repo grep finds only the
+        property definition (MainViewModel.cs:90), its own doc-comment (:598), and three
+        advisory reports that assume it is live. The pane search boxes bind DeepSearchQuery
+        (MainWindow.xaml:1345, SplitPaneWindow.xaml:312), which is the deep-search path, not
+        this filter. So the predicate's `if (string.IsNullOrEmpty(_searchFilter)) return true`
+        short-circuits on every call and a 150 ms debounce would coalesce keystrokes on a
+        property that receives none. The perf report reached P5 by reading the setter and
+        assuming keystrokes flowed in; nobody checked for a writer. The filtered VIEWS are
+        live (they are the pane ItemsSources via CreateFilteredView) — only the filter STRING
+        is dead, so the views must stay. Retiring the unused property + dead predicate branch
+        is folded into Wave 2.6 (de-dup/cleanup). Reopen 2.3 only if a real live-filter box
+        is ever wired up, which would be a feature, not a Wave 2 behaviour-neutral change.
   [ ] Wave 2.4  Drive-aware sizing
   [ ] Wave 2.5  Pie polish + legend a11y + % contrast
   [ ] Wave 2.6  De-dup helpers (one commit each)

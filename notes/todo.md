@@ -4,15 +4,19 @@ Focus: bug-free before feature-complete. No new features unless critical.
 
 > **Current work is NOT tracked in this file.** The active 3.0→4.0 plan and its
 > execution checklist live in `improvements/IMPLEMENTATION-PLAN.txt` (§9 is ticked
-> and records outcomes, not just checkboxes). As of 2026-07-24: Wave 1 done and
-> field-stable; Wave 2.1 done; the stale `v3.0.0` label is fixed (binds to
-> `BuildInfo.Version`, commit `4330fdd`). The 4.0-candidate cohort window closed 7/23;
-> its A/B report tooling had three bugs now fixed (date-windowing, crash attribution,
-> workload normalization) — a final verdict still needs FAT/exFAT candidate data (run
-> a backup to the USB stick twice). Two field defects were triaged from the report:
-> the shutdown-teardown crash is FIXED; the scheduled-job double-run / phantom "Failed"
+> and records outcomes, not just checkboxes). As of 2026-08-04: Wave 1 done and
+> field-stable; Waves 2.1 and 2.2 done, deployed 7/29, and manually verified 8/4
+> (big-folder nav, deep search, selection-dependent commands, and the `v4.0.0` label
+> all confirmed). The 4.0-candidate verdict is CLOSED — 4.0 is leaner and stabler with
+> no correctness regression; speed remains unproven either way (see
+> `improvements/4.0-CANDIDATE-VERDICT.txt`). The FAT/exFAT re-run was dropped from the
+> critical path: that bug does not reproduce on this hardware, so the run could not
+> have shown a delta. Two field defects were triaged from the report: the
+> shutdown-teardown crash is FIXED; the scheduled-job double-run / phantom "Failed"
 > is DIAGNOSED-only and deferred (touches the proven scheduler core — see
-> `notes/bugs.md` + `notes/decisions.md`). Next code item is Wave 2.2. This file
+> `notes/bugs.md` + `notes/decisions.md`). Wave 2.3 (filter debounce) was DROPPED on
+> 8/4 as verified-N/A — its target property is dead code. Next code item is Wave 2.4
+> (drive-aware folder sizing). This file
 > remains the roadmap for the items below, which that plan does not cover (VSS
 > elevation, launcher rename, deferred features).
 
