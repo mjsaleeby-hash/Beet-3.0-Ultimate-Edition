@@ -18,3 +18,12 @@ Beets_Events_*.txt
 
 # Scratch UI experiments kept locally; not part of the shipped app.
 Test UI/
+
+# Third-party design skills installed by `uipro init --ai claude`
+# (npm: ui-ux-pro-max-cli). ~2.8 MB of vendor content, regenerable at any time by
+# re-running that command, and mostly aimed at web stacks this desktop app doesn't
+# use — only the wpf/winui stack tables are relevant here. Treated as local tooling
+# like node_modules rather than project source.
+# NOTE: scoped to skills/ deliberately — .claude/agents/ and .claude/settings.local.json
+# ARE tracked and must stay that way.
+.claude/skills/
