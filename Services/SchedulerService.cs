@@ -963,8 +963,26 @@ public sealed class SchedulerService : IDisposable
         // as that can deadlock when Dispose is called from the UI thread
         if (_runTask != null)
         {
-            if (!_runTask.Wait(SchedulerLoopShutdownTimeout))
-                FileLogger.Warn($"Scheduler task did not exit within {SchedulerLoopShutdownTimeout.TotalSeconds}s — abandoning wait");
+            // _cts was cancelled two lines up, so the loop ends in the Canceled state and Wait()
+            // republishes that as AggregateException(TaskCanceledException). That is the EXPECTED
+            // outcome of a clean shutdown, but it used to escape Dispose, and the damage was not
+            // just a stray log line:
+            //   1. everything below this block (per-job CTS disposal, pause-gate disposal,
+            //      _cts.Dispose) was skipped, leaking those handles; and
+            //   2. ServiceProvider disposes its singletons in ONE unguarded reverse-order loop,
+            //      so the throw aborted that loop and every service constructed before this one
+            //      (BackupLogService, TransferService, FileSystemService, ThemeService,
+            //      SettingsService) was never disposed at all.
+            // Swallow cancellation only — a genuine fault out of the loop still propagates.
+            try
+            {
+                if (!_runTask.Wait(SchedulerLoopShutdownTimeout))
+                    FileLogger.Warn($"Scheduler task did not exit within {SchedulerLoopShutdownTimeout.TotalSeconds}s — abandoning wait");
+            }
+            catch (AggregateException ex) when (ex.InnerExceptions.All(inner => inner is OperationCanceledException))
+            {
+                // Clean, requested cancellation — the loop did exactly what Cancel() asked of it.
+            }
         }
 
         // Now that workers have had their cancellation window, dispose their resources.

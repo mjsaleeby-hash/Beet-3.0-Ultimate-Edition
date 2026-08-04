@@ -18,10 +18,38 @@ namespace BeetsBackup.Services;
 /// </remarks>
 public static class FileLogger
 {
-    /// <summary>Directory where all log files are stored (%LocalAppData%\Beet's Backup).</summary>
-    public static readonly string LogDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Beet's Backup");
+    /// <summary>
+    /// Environment variable that redirects all log output to another directory. Set ONLY by the
+    /// test host (see BeetsBackup.Tests <c>TestLogRedirect</c>); the shipping app never sets it,
+    /// so production behaviour is unchanged.
+    /// </summary>
+    public const string LogDirectoryOverrideVariable = "BEETSBACKUP_LOG_DIR";
+
+    /// <summary>Directory where all log files are stored (%LocalAppData%\Beet's Backup, unless
+    /// redirected by <see cref="LogDirectoryOverrideVariable"/>).</summary>
+    public static readonly string LogDirectory = ResolveLogDirectory();
+
+    /// <summary>
+    /// Picks the log directory, honouring the test-only override.
+    /// </summary>
+    /// <remarks>
+    /// WHY THIS EXISTS: the test suite exercises the real static <see cref="FileLogger"/>, so
+    /// before the override every <c>dotnet test</c> run appended thousands of lines to the USER'S
+    /// operational log — including <c>[ERROR] VSS failed ... Access is denied</c> from unelevated
+    /// test hosts, which is indistinguishable from a genuine field failure when reading the log or
+    /// feeding the cohort reports. Worse, the log rotates at 10 MB, so test noise was evicting real
+    /// field history. Tests now write to their own temp directory and the user's log stays clean.
+    /// </remarks>
+    private static string ResolveLogDirectory()
+    {
+        var overrideDir = Environment.GetEnvironmentVariable(LogDirectoryOverrideVariable);
+        if (!string.IsNullOrWhiteSpace(overrideDir))
+            return overrideDir;
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Beet's Backup");
+    }
 
     private static readonly string LogPath = Path.Combine(LogDirectory, "operational.log");
     private static readonly string CrashDumpPath = Path.Combine(LogDirectory, "crash_dump.log");

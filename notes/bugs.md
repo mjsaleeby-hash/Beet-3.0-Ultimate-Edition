@@ -1,3 +1,79 @@
+## 2026-08-04 — Every clean shutdown aborted service disposal partway through
+
+**Status: FIXED** (`SchedulerService.Dispose`) — found while checking whether Beet was still
+running; the shutdown path had been logging an ERROR on every exit since at least 2026-07-06.
+
+**Symptom:** every foreground shutdown wrote
+`[ERROR] Error disposing services: AggregateException: One or more errors occurred. (One or
+more errors occurred. (A task was canceled.))` — **96 occurrences** in `operational.log`,
+including one on today's 09:40:04 exit. Easy to dismiss as teardown noise; it was not.
+
+**Root cause:** `SchedulerService.Dispose()` cancels `_cts` and then immediately calls
+`_runTask.Wait(SchedulerLoopShutdownTimeout)`. Cancelling the token is what *ends* that loop,
+so the task completes in the `Canceled` state, and `Task.Wait` republishes that as
+`AggregateException(TaskCanceledException)`. The expected outcome of a clean shutdown was
+being thrown as a failure.
+
+**Why it mattered beyond the log line** — the throw escaped `Dispose` mid-method:
+
+1. Everything after the wait was skipped: per-job `CancellationTokenSource` cancel + dispose,
+   pause-gate (`ManualResetEventSlim`) dispose, `_runningCts`/`_pauseGates` clear, and
+   `_cts.Dispose()` — all leaked.
+2. Worse, `ServiceProvider.Dispose()` walks its singletons in **one unguarded reverse-creation-order
+   loop**. The exception aborted that loop, so every service constructed *before*
+   `SchedulerService` — `BackupLogService`, `TransferService`, `FileSystemService`,
+   `ThemeService`, `SettingsService` — was **never disposed at all**.
+
+**No data was lost:** `BackupLogService.Dispose` only stops its watcher and cancels a pending
+reload — it performs no final save, and terminal backup statuses are written inline via
+`SaveNow`. The cost was leaked handles plus a misleading ERROR on every exit. It would have
+become a real defect the moment any of those `Dispose` methods took on durable work.
+
+**Why the suite never caught it:** every existing `SchedulerServiceTests` case built a scheduler
+but never called `Start()`, leaving `_runTask` null and skipping the throwing branch entirely.
+The suite stayed green while every real shutdown hit the bug.
+
+**Fix:** catch only `AggregateException` whose inners are all `OperationCanceledException` —
+the requested-cancellation case. A genuine fault from the loop still propagates. Two regression
+tests added: `Dispose_AfterStart_DoesNotThrow`, and
+`Dispose_AfterStart_DoesNotAbortTheContainersRemainingDisposals`, which builds a real
+`ServiceProvider` with a probe disposable constructed before the scheduler and asserts the probe
+still gets disposed.
+
+---
+
+## 2026-08-04 — Test runs wrote thousands of lines into the user's production log
+
+**Status: FIXED** (`FileLogger` + `BeetsBackup.Tests/Infrastructure/TestLogRedirect.cs`)
+
+**Symptom:** a single `dotnet test` run appended **~22,000 lines** to
+`%LocalAppData%\Beet's Backup\operational.log` — 22,011 `FileLoggerConcurrent` lines from the
+concurrency test and 932 lines referencing `Temp\BeetsBackupTests\...`, including
+`[ERROR] VSS failed for C:\: Access is denied. (0x80070005)` raised by the unelevated test host.
+
+**Why it mattered:** those ERROR lines are indistinguishable from genuine field VSS failures to
+anyone reading the log or to the cohort/verdict reports that consume it. And the log rotates at
+10 MB — it was sitting at 9.2 MB, so test noise was actively evicting real field history.
+
+**Root cause:** the suite exercises the real static `FileLogger`, whose `LogDirectory` is a
+`static readonly` resolved once from `%LocalAppData%`. Nothing separated test output from
+production output.
+
+**Fix:** `FileLogger.LogDirectory` now honours a `BEETSBACKUP_LOG_DIR` override
+(`FileLogger.LogDirectoryOverrideVariable`). The shipping app never sets it, so production
+behaviour is unchanged. The test assembly sets it to a per-run temp directory from a
+`[ModuleInitializer]` — needed because `LogDirectory` is resolved by the type initializer on
+first touch, which an xUnit fixture cannot reliably precede.
+
+**Verified:** across a full 213-test run the production log's SHA256, size, and
+LastWriteTime were byte-identical before and after, while the run's output (2,001
+`FileLoggerConcurrent` lines) landed in the temp directory instead.
+
+**Not addressed:** the ~22,000 already-written lines remain in the existing `operational.log`.
+Purging them is a separate call — it edits live user data.
+
+---
+
 ## 2026-07-24 — Scheduled "Users" backup ran twice, leaving a phantom "Failed" entry
 
 **Status: DIAGNOSED — fix proposed, not applied** (surfaced by the cohort report's

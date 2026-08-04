@@ -1,4 +1,5 @@
 using BeetsBackup.Services;
+using BeetsBackup.Tests.Infrastructure;
 using FluentAssertions;
 
 namespace BeetsBackup.Tests.Services;
@@ -43,6 +44,47 @@ public class FileLoggerTests
         FileLogger.Info($"{marker}-final");
         FileLogger.Flush();
         ReadLogTail().Should().Contain($"{marker}-final");
+    }
+
+    // ============================================================
+    //  LOG REDIRECTION (test runs must not touch the user's real log)
+    // ============================================================
+
+    /// <summary>
+    /// The suite used to append ~22,000 lines per run — including unelevated-VSS ERROR lines that
+    /// read like real field failures — straight into %LocalAppData%\Beet's Backup\operational.log,
+    /// evicting genuine field history through the 10 MB rotation. This asserts the redirect is
+    /// actually in force, because the failure mode is silent: everything still passes while
+    /// quietly polluting the user's log.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void LogDirectory_UnderTest_IsRedirectedAwayFromTheRealUserLog()
+    {
+        var realUserLogDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Beet's Backup");
+
+        FileLogger.LogDirectory.Should().Be(TestLogRedirect.Directory,
+            "the module initializer must redirect logging before any test touches FileLogger");
+        FileLogger.LogDirectory.Should().NotBe(realUserLogDir,
+            "a test run must never write into the user's production log directory");
+    }
+
+    /// <summary>Writes through the real logging path, then proves the line landed in the temp
+    /// directory and that the production log file was not created alongside it.</summary>
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void Log_UnderTest_WritesIntoTheRedirectedDirectoryOnly()
+    {
+        var marker = $"RedirectProbe-{Guid.NewGuid():N}";
+
+        FileLogger.Info(marker);
+        FileLogger.Flush();
+
+        var redirected = Path.Combine(TestLogRedirect.Directory, "operational.log");
+        File.Exists(redirected).Should().BeTrue("the redirected directory receives the log file");
+        File.ReadAllText(redirected).Should().Contain(marker);
     }
 
     /// <summary>Reads the current operational log plus the most recent rotated segment, so a rotation
