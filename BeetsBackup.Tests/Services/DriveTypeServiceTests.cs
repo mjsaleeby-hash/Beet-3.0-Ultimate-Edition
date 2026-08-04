@@ -50,4 +50,65 @@ public class DriveTypeServiceTests
         DriveTypeService.ComputeWorkers(DriveKind.Unknown, DriveKind.Unknown).Should().Be(2,
             "Unknown should not assume SSD-style fan-out, but also shouldn't waste a real SSD with serial copy");
     }
+
+    // ============================================================
+    //  SINGLE-DRIVE READ FAN-OUT  (Wave 2.4 — folder sizing)
+    // ============================================================
+
+    /// <summary>
+    /// Folder sizing walks ONE drive, so its fan-out must come from the same table as the copy
+    /// path with that drive on both sides. Asserted against a real path without assuming which
+    /// kind this machine reports: whatever the probe says, the read count must equal the
+    /// same-drive pair decision for exactly that kind.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void GetReadWorkerCount_EqualsTheSameDrivePairDecisionForThatDrive()
+    {
+        var path = Path.GetTempPath();
+        var kind = DriveTypeService.GetDriveKind(path);
+
+        DriveTypeService.GetReadWorkerCount(path).Should().Be(
+            DriveTypeService.ComputeWorkers(kind, kind),
+            "a one-drive read and a same-drive copy must never disagree about fan-out");
+    }
+
+    /// <summary>
+    /// The specific regression Wave 2.4 exists to prevent: folder sizing used
+    /// Environment.ProcessorCount, so a spinning disk got 8-16 concurrent walkers thrashing the
+    /// head. A spinning disk must size with exactly one worker.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ReadFanOut_OnSpinningDisk_IsSerial()
+    {
+        DriveTypeService.ComputeWorkers(DriveKind.HDD, DriveKind.HDD).Should().Be(1,
+            "sizing a folder on an HDD must serialize — this is the entire point of Wave 2.4");
+        DriveTypeService.ComputeWorkers(DriveKind.Removable, DriveKind.Removable).Should().Be(1,
+            "USB sticks and SD cards serialize at the controller regardless of what we ask for");
+    }
+
+    /// <summary>
+    /// GetReadWorkerCount runs the real IOCTL probe, so it cannot assert a specific kind on an
+    /// arbitrary machine. It CAN assert the invariant every caller relies on: a usable, bounded
+    /// degree of parallelism, never zero or negative (which would throw at ParallelOptions).
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void GetReadWorkerCount_OnARealPath_ReturnsAUsableDegreeOfParallelism()
+    {
+        var n = DriveTypeService.GetReadWorkerCount(Path.GetTempPath());
+
+        n.Should().BeGreaterThan(0, "ParallelOptions rejects a MaxDegreeOfParallelism below 1");
+        n.Should().BeLessThanOrEqualTo(8, "no drive classification should exceed the SSD cap");
+    }
+
+    /// <summary>A path that classifies as nothing at all must still yield a safe fan-out rather
+    /// than throwing into the sizing pass.</summary>
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void GetReadWorkerCount_OnAnUnusablePath_StillReturnsSafeDefault()
+    {
+        DriveTypeService.GetReadWorkerCount(string.Empty).Should().BeGreaterThan(0);
+    }
 }

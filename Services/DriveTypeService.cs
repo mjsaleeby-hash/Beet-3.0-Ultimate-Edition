@@ -75,6 +75,23 @@ public static class DriveTypeService
     }
 
     /// <summary>
+    /// Returns the recommended <see cref="ParallelOptions.MaxDegreeOfParallelism"/> for a
+    /// READ-ONLY walk rooted at <paramref name="path"/> (folder sizing, recursive enumeration) —
+    /// work that touches one drive rather than a source→destination pair.
+    /// </summary>
+    /// <remarks>
+    /// Delegates to the same <see cref="ComputeWorkers"/> table as the copy path with the single
+    /// drive on both sides, so a one-drive read and a same-drive copy always agree. Prefer this
+    /// over <c>GetWorkerCount(path, path)</c> at call sites: it states that only one endpoint
+    /// exists rather than implying a copy to itself.
+    /// </remarks>
+    public static int GetReadWorkerCount(string path)
+    {
+        var kind = GetDriveKind(path);
+        return ComputeWorkers(kind, kind);
+    }
+
+    /// <summary>
     /// Pure decision table for worker concurrency given the two drive kinds. Exposed for tests.
     /// </summary>
     internal static int ComputeWorkers(DriveKind source, DriveKind dest)

@@ -1,3 +1,38 @@
+## 2026-08-04 — Wave 2.4 shipped, and the metric that verifies it was broken
+
+**Decision: implement 2.4 as planned, but also fix the telemetry field it is measured by —
+because as written, the measurement could not see the thing 2.4 changes.**
+
+The change itself is exactly the plan: `CalculateFolderSizesWithProgressAsync` takes
+`MaxDegreeOfParallelism` from `DriveTypeService` instead of `Environment.ProcessorCount`, so a
+spinning disk sizes with one walker instead of 8–16 thrashing the head. No size cache (still
+"DOUBTED" in plan §2). Two deliberate deviations:
+
+- **Added `GetReadWorkerCount(path)` instead of calling `GetWorkerCount(path, path)`.** Sizing
+  walks one drive, not a source→dest pair. The new method delegates to the same `ComputeWorkers`
+  table with that drive on both sides — identical decision, honest call site. Repackaging the
+  mechanism, not rewriting it (R5).
+- **Sized off the pane's current path, not `directories[0]`.** An empty or all-files pane has no
+  directory to classify from, and the existing telemetry already had that latent hole.
+
+**The metric was measuring the wrong thing.** `FolderSizeCompleted` reported
+`DriveInfo.DriveType`, which returns `Fixed` for **both SSD and HDD**. Verification spec §6 lists
+2.4's evidence as "FolderSizeCompleted ms HDD" — but no field in the data could separate an HDD
+run from an SSD one, so that row was unmeasurable from the day it was written. It now reports the
+`DriveKind` the fan-out decision is actually made on, plus the `workerCount` used so a report can
+confirm HDDs really serialized rather than inferring it from a label.
+
+Safe downstream: the sink serializes payloads **by name**, so the extra field is additive, and
+`PerformanceMonitor/Analysis/CohortReport.cs` reads only `directoryCount` and `elapsedMs`. The
+value change to `driveType` (`Fixed` → `SSD`/`HDD`) is a break in historical comparability, which
+is why it lands **now** — the 4.0-candidate cohort closed 7/24 and no window is open.
+
+**Expect no local speed change.** This machine classifies `C:\` as SSD, so its fan-out is
+unchanged by design. The win is on spinning and removable media; claiming a local improvement
+would be the same unverified-premise error that killed 2.3.
+
+---
+
 ## 2026-08-04 — Wave 2.3 (live-filter debounce) dropped as verified-N/A
 
 **Decision: drop Wave 2.3 entirely rather than implement it. The optimization targets a

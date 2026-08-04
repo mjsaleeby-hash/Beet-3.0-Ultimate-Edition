@@ -72,9 +72,18 @@ public sealed class BeetTelemetry : EventSource
 
     /// <summary>Emitted when a folder-size pass finishes. Measures the sizing time that
     /// Wave 2.4 (drive-aware parallelism) is meant to improve, split by drive type.</summary>
+    /// <param name="directoryCount">Directories sized in this pass — the workload denominator.</param>
+    /// <param name="driveType">The <c>DriveKind</c> the folder lives on (SSD/HDD/Network/
+    /// Removable/Unknown). This used to carry <c>DriveInfo.DriveType</c>, which reports "Fixed"
+    /// for BOTH SSD and HDD — so the "sizing ms on HDD" measure that Wave 2.4 is verified by
+    /// could not actually be isolated from the field data. DriveKind is the classification the
+    /// worker-count decision is made on, so the metric now matches the mechanism.</param>
+    /// <param name="workerCount">Fan-out actually used, so a report can confirm HDDs really did
+    /// serialize rather than inferring it from the drive label alone.</param>
+    /// <param name="elapsedMs">Wall-clock duration of the sizing pass.</param>
     [Event(5, Level = EventLevel.Informational)]
-    public void FolderSizeCompleted(int directoryCount, string driveType, double elapsedMs)
-        => WriteEvent(5, directoryCount, driveType, elapsedMs);
+    public void FolderSizeCompleted(int directoryCount, string driveType, int workerCount, double elapsedMs)
+        => WriteEvent(5, directoryCount, driveType, workerCount, elapsedMs);
 
     /// <summary>Emitted when the live filter re-runs over the panes. Measures the refresh
     /// churn that Wave 2.3 (debounce) is meant to reduce.</summary>

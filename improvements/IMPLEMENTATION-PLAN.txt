@@ -542,6 +542,12 @@ commenting standard and the dark-theme safety rule below).
      CalculateFolderSizesWithProgressAsync set MaxDegreeOfParallelism from
      DriveTypeService.GetWorkerCount(...) instead of Environment.ProcessorCount so
      HDDs serialize. Do NOT add the size cache yet (see Section 2 "DOUBTED").
+     DONE 2026-08-04. Two deviations from the text above, both deliberate:
+     (a) added DriveTypeService.GetReadWorkerCount(path) rather than calling
+         GetWorkerCount(path, path). Sizing walks ONE drive; the new method delegates
+         to the same ComputeWorkers table with that drive on both sides, so the
+         decision is identical while the call site stops implying a copy to itself.
+     (b) fixed the metric this item is verified by — see §6 note and decisions.md.
 
 2.5  Pie polish + a11y: donut-center brush = SurfaceBrush; clamp the center label
      (MaxWidth + TextTrimming); use ONE min-visible-percentage constant for both the
@@ -700,7 +706,21 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         is dead, so the views must stay. Retiring the unused property + dead predicate branch
         is folded into Wave 2.6 (de-dup/cleanup). Reopen 2.3 only if a real live-filter box
         is ever wired up, which would be a feature, not a Wave 2 behaviour-neutral change.
-  [ ] Wave 2.4  Drive-aware sizing
+  [x] Wave 2.4  Drive-aware sizing — code-complete + 4 unit/integration tests (217/217 green)
+        CalculateFolderSizesWithProgressAsync now takes MaxDegreeOfParallelism from
+        DriveTypeService.GetReadWorkerCount(pane's current path) instead of
+        Environment.ProcessorCount: HDD/Removable 1, Network 4, SSD min(8, cores), Unknown 2.
+        Sized off the pane's CURRENT PATH, not directories[0], so an empty or all-files pane
+        still classifies correctly. Behaviour-neutral on SSD (the machine this was written on
+        classifies C:\ as SSD, so the local fan-out is unchanged); the win is on spinning and
+        removable media, which stop head-thrashing under 8-16 concurrent walkers.
+        MEASUREMENT FIXED AS PART OF THIS ITEM: FolderSizeCompleted reported
+        DriveInfo.DriveType, which returns "Fixed" for BOTH SSD and HDD — so "folder sizing ms
+        on HDD" (the §6 verification for 2.4) could not be isolated from field data at all. It
+        now reports the DriveKind the fan-out decision is actually made on, plus the worker
+        count used. Additive to the JSONL (the sink serializes by payload name) and the
+        PerformanceMonitor consumer reads only directoryCount/elapsedMs, so nothing downstream
+        breaks. NOT yet deployed — rides the next deploy; needs the R7 manual pass.
   [ ] Wave 2.5  Pie polish + legend a11y + % contrast
   [ ] Wave 2.6  De-dup helpers (one commit each)
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---

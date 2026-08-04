@@ -897,9 +897,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Wave 2.4 (drive-aware parallelism), which targets HDDs specifically.
         var sizeSw = System.Diagnostics.Stopwatch.StartNew();
 
+        // Wave 2.4: pick the fan-out from the DRIVE, not the CPU. Environment.ProcessorCount
+        // sent 8-16 concurrent walkers at whatever the folder lives on; on a spinning disk that
+        // is pure head-seek thrash — the requests serialize at the platter anyway and arrive in
+        // an order that defeats readahead, so more workers made it slower, not faster. The same
+        // table the copy path uses gives HDD/Removable 1, Network 4, SSD min(8, cores), and 2
+        // for anything unclassified. Sized off the pane's current path rather than a child item
+        // so an empty or all-files pane still classifies correctly.
+        var sizingRoot = isTop ? TopCurrentPath : BottomCurrentPath;
+        var sizeWorkers = DriveTypeService.GetReadWorkerCount(sizingRoot);
+
         var parallelOptions = new ParallelOptions
         {
-            MaxDegreeOfParallelism = Environment.ProcessorCount,
+            MaxDegreeOfParallelism = sizeWorkers,
             CancellationToken = cancellationToken
         };
 
@@ -924,7 +934,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         refreshTimer.Change(Timeout.Infinite, Timeout.Infinite);
 
         sizeSw.Stop();
-        EmitFolderSizeTelemetry(directories, sizeSw.Elapsed.TotalMilliseconds);
+        EmitFolderSizeTelemetry(directories, sizingRoot, sizeWorkers, sizeSw.Elapsed.TotalMilliseconds);
 
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher == null) return;
@@ -937,25 +947,28 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Emits a folder-size telemetry event, labelled with the drive type of the folder being
+    /// Emits a folder-size telemetry event, labelled with the drive kind of the folder being
     /// sized so the verification tooling can compare HDD vs SSD sizing time (the Wave 2.4 win).
     /// Best-effort and side-effect-free.
     /// </summary>
-    private static void EmitFolderSizeTelemetry(List<FileSystemItem> directories, double elapsedMs)
+    /// <remarks>
+    /// This used to report <c>DriveInfo.DriveType</c>, which returns "Fixed" for BOTH SSD and
+    /// HDD — so the one metric Wave 2.4 is verified by ("folder sizing ms on HDD", verification
+    /// spec §6) could not be isolated from the field data at all. It now reports the same
+    /// <see cref="DriveKind"/> the worker-count decision is made on, plus the fan-out actually
+    /// used, so the measurement lines up with the mechanism it is measuring.
+    /// </remarks>
+    private static void EmitFolderSizeTelemetry(
+        List<FileSystemItem> directories, string sizingRoot, int workerCount, double elapsedMs)
     {
         try
         {
-            string driveType = "unknown";
-            try
-            {
-                var firstPath = directories.Count > 0 ? directories[0].FullPath : null;
-                var root = firstPath != null ? Path.GetPathRoot(firstPath) : null;
-                if (!string.IsNullOrEmpty(root))
-                    driveType = new DriveInfo(root).DriveType.ToString(); // Fixed / Removable / Network / ...
-            }
-            catch { /* drive may be unavailable */ }
+            // Classify the same path the worker count was derived from, so the label and the
+            // fan-out can never disagree about which drive this pass ran against.
+            var driveKind = DriveTypeService.GetDriveKind(sizingRoot).ToString();
 
-            Telemetry.BeetTelemetry.Log.FolderSizeCompleted(directories.Count, driveType, elapsedMs);
+            Telemetry.BeetTelemetry.Log.FolderSizeCompleted(
+                directories.Count, driveKind, workerCount, elapsedMs);
         }
         catch { /* telemetry is observe-only */ }
     }

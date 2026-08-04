@@ -124,7 +124,11 @@ sink is the only listener. Events (all carry a monotonic timestamp + build tag):
 
   NavigationCompleted(pane, itemCount, elapsedMs)
   SearchCompleted(matchCount, directoriesScanned, elapsedMs)
-  FolderSizeCompleted(directoryCount, driveType, elapsedMs)
+  FolderSizeCompleted(directoryCount, driveType, workerCount, elapsedMs)
+      [driveType is the DriveKind (SSD/HDD/Network/Removable/Unknown) as of 2026-08-04.
+       It previously carried DriveInfo.DriveType, which reports "Fixed" for BOTH SSD and
+       HDD — making the 2.4 row below unmeasurable. workerCount is the fan-out actually
+       used, so a report can confirm HDDs serialized instead of inferring it.]
   BackupCompleted(jobName, mode, bytesTransferred, filesCopied, filesSkipped,
                   filesFailed, durationMs, destFilesystem)
   FilterRefreshed(itemCount, elapsedMs)          [supports the debounce metric]
@@ -237,7 +241,11 @@ Every change in IMPLEMENTATION-PLAN.txt mapped to how we PROVE it moved.
  2.1   De-hardcode colors             (visual — light/dark shots) manual        n/a
  2.2   RangeObservableCollection      nav elapsedMs into 50k dir  Telemetry/S?  DOWN
  2.3   Live-filter debounce           FilterRefreshed count/burst Telemetry     DOWN
- 2.4   Drive-aware folder sizing      FolderSizeCompleted ms HDD  Telemetry     DOWN
+ 2.4   Drive-aware folder sizing      FolderSizeCompleted ms,     Telemetry     DOWN
+                                       filtered driveType==HDD                  (HDD only;
+                                       (needs the 2026-08-04 field               SSD/unknown
+                                       fix — before it, HDD could                unchanged
+                                       not be isolated from SSD)                 by design)
        Dashboard one-pass fold        UI-thread time on notify    PerfMon CPU   DOWN
  *GC counters: add EventCounters subscription (dotnet runtime counters) to PerfMon,
   OR read from the BeetTelemetry sink if we also surface a periodic GC snapshot.
