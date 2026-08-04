@@ -720,7 +720,10 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         now reports the DriveKind the fan-out decision is actually made on, plus the worker
         count used. Additive to the JSONL (the sink serializes by payload name) and the
         PerformanceMonitor consumer reads only directoryCount/elapsedMs, so nothing downstream
-        breaks. NOT yet deployed — rides the next deploy; needs the R7 manual pass.
+        breaks. DEPLOYED 2026-08-04 13:22 — Documents\BeetsBackup.exe is now
+        4.0.0+9c272ed (verified byte-identical to the publish output by hash, and 9c272ed is
+        HEAD), so this deploy also carries the two 2026-08-04 shutdown/test fixes in 2600e28.
+        Previous exe preserved as BeetsBackup.exe.bak-20260804. R7 manual pass STILL OWED.
   [ ] Wave 2.5  Pie polish + legend a11y + % contrast
   [ ] Wave 2.6  De-dup helpers (one commit each)
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
