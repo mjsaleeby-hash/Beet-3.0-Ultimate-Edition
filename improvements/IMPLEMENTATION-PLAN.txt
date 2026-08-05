@@ -554,6 +554,21 @@ commenting standard and the dark-theme safety rule below).
      render guard and IsNegligible; make legend rows focusable/keyboard-activatable;
      stop painting the legend % in the slice color (use PrimaryTextBrush) so it
      passes contrast in light mode. Code sketches in uxui-assessment.txt.
+     SCOPE ENLARGED 2026-08-05 (two findings, see §9 Wave 1.5 correction):
+     (a) 2.5 now also carries the Narrator pass Wave 1.5 never gave this control:
+         AutomationProperties.Name + FocusVisualStyle + a real focus/keyboard path
+         for the legend rows. "Make rows focusable" is not a polish tweak here — it
+         is this control's ONLY keyboard affordance, and it does not exist yet.
+     (b) WHY the legend carries so much weight: BuildPieSlices renders top-10 plus
+         "Other" (MainViewModel.cs:1948-2008) = up to 11 slices, and slice identity
+         is encoded in COLOUR ALONE. Standard part-to-whole guidance caps a pie at
+         ~6 and requires a percentage data table as the non-colour fallback. The
+         legend already IS that table (swatch + icon + name + size + %), so items
+         "focusable rows" and "stop colouring the %" are the accessibility
+         contract, not cosmetics. Weight them accordingly in review.
+     NOT IN 2.5, DELIBERATELY: cutting the slice count to ~6 or offering a stacked-
+     bar alternative is a REDESIGN, not behaviour-neutral polish. Parked in
+     notes/ideas.md for 4.0+. Do not let it expand this wave.
 
 2.6  De-dup helpers (arch D4/D6/D7/D8), each behaviour-preserving, each its own
      commit + test: ProgressPercent(result), IOExceptionClassifier
@@ -644,7 +659,23 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
   [x] Wave 1.2  FormatBytes static array
   [x] Wave 1.3  Deep-search EnumerationOptions
   [x] Wave 1.4  Pie hover-origin
-  [x] Wave 1.5  AutomationProperties.Name + FocusVisualStyle (Narrator pass)
+  [~] Wave 1.5  AutomationProperties.Name + FocusVisualStyle (Narrator pass)
+        CORRECTED 2026-08-05: this was ticked complete, but the pass only ever covered
+        MainWindow.xaml (12 AutomationProperties, 2 FocusVisualStyle). Views/
+        PieChartControl.xaml — a separate UserControl — has ZERO of either, plus no
+        Focusable, IsTabStop or KeyDown. Its legend rows are Cursor="Hand" Borders with
+        MouseEnter/MouseLeave handlers, so they ADVERTISE interactivity while being
+        mouse-only: a Border inside an ItemsControl takes no focus, has no keyboard
+        path, and exposes no automation name. Keyboard and Narrator users get an
+        affordance they cannot reach at all.
+        SAME FAILURE MODE AS 2.1 AND 2.3 — verification scoped too narrowly, then
+        ticked. 2.1's audit grepped only `#hex` and missed literal `White`; 2.3's
+        report read a setter and never grepped for a writer; this pass swept one
+        window and never asked which OTHER XAML files host interactive controls.
+        Before ticking any cross-cutting item, enumerate the full set of files it
+        must touch and check EACH — do not infer coverage from the main file.
+        REMEDIATION: folded into Wave 2.5, which is already going into this control.
+        Do not re-open 1.5 separately.
   [x] Wave 1.6  Shared IPC constants (two-instance + taskbar smoke test)
   [x] --- review/stabilize; confirm field-stable ---
         Wave 1 merged cb72bee, in the field since 2026-07-08. Field-stable CONFIRMED
@@ -725,6 +756,8 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         HEAD), so this deploy also carries the two 2026-08-04 shutdown/test fixes in 2600e28.
         Previous exe preserved as BeetsBackup.exe.bak-20260804. R7 manual pass STILL OWED.
   [ ] Wave 2.5  Pie polish + legend a11y + % contrast
+        Scope enlarged 2026-08-05 — also absorbs the PieChartControl Narrator pass
+        that Wave 1.5 missed (see the 1.5 correction above and §5 item 2.5).
   [ ] Wave 2.6  De-dup helpers (one commit each)
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
   [ ] Wave 3.*  Only on explicit go-ahead, characterization tests first.

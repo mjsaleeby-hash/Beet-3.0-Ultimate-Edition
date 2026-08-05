@@ -137,5 +137,19 @@ Discussion of features common in other backup tools that Beets Backup does not y
 - ~~**Toast notifications**~~ — **Implemented 2026-04-14.** `ToastNotifier` wraps `NotifyIcon.ShowBalloonTip`; `SchedulerService` notifies on job complete/fail.
 - ~~**Scheduler survives reboot**~~ — **Implemented 2026-04-14.** `WindowsTaskSchedulerService` wraps `schtasks.exe`; jobs registered as Windows Tasks; headless `--run-job` CLI mode; `ReconcileWindowsTasks` at startup.
 
+**Parked for 4.0+ (found during work, deliberately not folded into the current wave):**
+
+- **Rethink the pie chart's slice count / add a non-pie view** — parked 2026-08-05 while
+  scoping Wave 2.5. `BuildPieSlices` renders the top-10 largest items plus "Other"
+  (`MainViewModel.cs:1948-2008`), so up to **11 slices**, with slice identity carried by
+  **colour alone**. Standard part-to-whole guidance caps a pie at ~6 categories and warns
+  that sub-5% slices are visually indistinguishable — both true here, and the reason the
+  legend has to work so hard. Candidate directions: cap at ~6 + a fatter "Other", or offer
+  a stacked-bar / treemap view of the same data (a treemap suits nested folder sizes well).
+  **Why it is parked, not scheduled:** this is a redesign, and Wave 2 is explicitly
+  low-risk polish. Wave 2.5 fixes the legend so the current chart is *reachable and
+  readable*; changing what the chart IS needs its own decision. See
+  [Media Library compare](../improvements/MEDIA-LIBRARY-COMPARE-NOTES.txt) — same parking lot.
+
 **Explicitly out of scope:**
 - Cloud integration (user does not want this)

@@ -4,7 +4,7 @@ Focus: bug-free before feature-complete. No new features unless critical.
 
 > **Current work is NOT tracked in this file.** The active 3.0→4.0 plan and its
 > execution checklist live in `improvements/IMPLEMENTATION-PLAN.txt` (§9 is ticked
-> and records outcomes, not just checkboxes). As of 2026-08-04: Wave 1 done and
+> and records outcomes, not just checkboxes). As of 2026-08-05: Wave 1 done and
 > field-stable; Waves 2.1 and 2.2 done, deployed 7/29, and manually verified 8/4
 > (big-folder nav, deep search, selection-dependent commands, and the `v4.0.0` label
 > all confirmed). The 4.0-candidate verdict is CLOSED — 4.0 is leaner and stabler with
@@ -15,8 +15,13 @@ Focus: bug-free before feature-complete. No new features unless critical.
 > shutdown-teardown crash is FIXED; the scheduled-job double-run / phantom "Failed"
 > is DIAGNOSED-only and deferred (touches the proven scheduler core — see
 > `notes/bugs.md` + `notes/decisions.md`). Wave 2.3 (filter debounce) was DROPPED on
-> 8/4 as verified-N/A — its target property is dead code. Next code item is Wave 2.4
-> (drive-aware folder sizing). This file
+> 8/4 as verified-N/A — its target property is dead code. Wave 2.4 (drive-aware folder
+> sizing) shipped 8/4 and is deployed — expect no local speed change from it, since this
+> machine classifies `C:\` as SSD and its fan-out is unchanged by design; the win is on
+> spinning/removable media. **Next code item is Wave 2.5** (pie polish + legend a11y +
+> % contrast), then 2.6. Two things are OWED: the R7 manual click-test of 2.4, and
+> ~22,000 test-origin lines still sitting in the real `operational.log` (that one edits
+> live user data — ask before purging). This file
 > remains the roadmap for the items below, which that plan does not cover (VSS
 > elevation, launcher rename, deferred features).
 
