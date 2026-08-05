@@ -29,6 +29,7 @@
                 <TextBlock x:Name="TotalSizeText"
                            HorizontalAlignment="Center"
                            FontSize="20" FontWeight="Bold"
+                           MaxWidth="88" TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource PrimaryTextBrush}"/>
                 <TextBlock Text="total size"
                            HorizontalAlignment="Center"

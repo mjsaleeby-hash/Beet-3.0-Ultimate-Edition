@@ -91,7 +91,7 @@
     <!-- Dedicated overrides for stubborn light-mode elements -->
     <Color x:Key="ToggleTrackOffColor">#BBBBBB</Color>     <!-- toggle off-state track -->
     <Color x:Key="RingTrackColor">#D0D0D0</Color>          <!-- drive usage ring empty arc -->
-    <Color x:Key="DonutCenterColor">#F0F0ED</Color>        <!-- pie chart center hole -->
+    <Color x:Key="DonutCenterColor">#FFFFFF</Color>        <!-- pie chart center hole: matches SurfaceColor so the hole reads as a cut-out, not a disc -->
 
     <SolidColorBrush x:Key="ToggleTrackOffBrush" Color="{StaticResource ToggleTrackOffColor}"/>
     <SolidColorBrush x:Key="RingTrackBrush" Color="{StaticResource RingTrackColor}"/>
