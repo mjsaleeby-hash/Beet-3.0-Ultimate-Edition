@@ -4,6 +4,51 @@
              xmlns:h="clr-namespace:BeetsBackup.Helpers">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- A visible keyboard focus ring for legend rows. WPF draws FocusVisualStyle on
+             top of the control only when it has KEYBOARD focus, so mouse users see no
+             change and layout is unaffected.
+             NOTE: this deliberately duplicates AccentFocusVisual, which is stranded in
+             MainWindow.xaml's Window.Resources and therefore unreachable from this
+             UserControl. Promoting it to Themes/Controls.xaml (the app-wide dictionary
+             merged in App.xaml) is queued for Wave 2.6, the de-dup wave — not done here,
+             because moving a resource out of MainWindow is not this wave's risk to take. -->
+        <Style x:Key="LegendRowFocusVisual">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Rectangle Margin="-1" RadiusX="5" RadiusY="5"
+                                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                                   SnapsToDevicePixels="True"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Chrome-free button used as the legend row container. The template root is the
+             same Border the row used when it was a plain Border, so CornerRadius, Padding
+             and the hover/selection background all behave exactly as before — but the row
+             is now focusable, activates on Space/Enter, and exposes the Invoke automation
+             pattern that matches what clicking it does (navigate into that folder). -->
+        <Style x:Key="GhostRowButton" TargetType="Button">
+            <Setter Property="FocusVisualStyle" Value="{StaticResource LegendRowFocusVisual}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border CornerRadius="4"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Stretch"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource SurfaceBrush}">
@@ -58,13 +103,18 @@
                            Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,4"/>
                 <TextBlock x:Name="SubtitleText" FontSize="11"
                            Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,12"/>
-                <ItemsControl x:Name="LegendList">
+                <ItemsControl x:Name="LegendList" KeyboardNavigation.TabNavigation="Continue">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border x:Name="LegendBorder" CornerRadius="4" Padding="8,6" Margin="0,1"
-                                    Background="Transparent" Cursor="Hand"
-                                    MouseEnter="Legend_MouseEnter" MouseLeave="Legend_MouseLeave"
-                                    MouseLeftButtonUp="Legend_Click">
+                            <Button x:Name="LegendButton"
+                                    Style="{StaticResource GhostRowButton}"
+                                    Margin="0,1"
+                                    Click="Legend_Click"
+                                    MouseEnter="Legend_MouseEnter"
+                                    MouseLeave="Legend_MouseLeave"
+                                    GotFocus="Legend_GotFocus"
+                                    LostFocus="Legend_LostFocus"
+                                    AutomationProperties.Name="{Binding Announcement}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="16"/>
@@ -92,18 +142,20 @@
                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                HorizontalAlignment="Right" VerticalAlignment="Center"/>
 
+                                    <!-- Percentage uses PrimaryTextBrush, not the slice colour.
+                                         All 11 palette colours fail WCAG 4.5:1 against light's
+                                         #FFFFFF (measured 2.45-3.49); the colour association is
+                                         already carried by the swatch in column 0, so painting
+                                         the number too bought nothing and cost readability. -->
                                     <TextBlock x:Name="PctText" Grid.Column="4" FontSize="12" FontWeight="SemiBold"
                                                HorizontalAlignment="Right" VerticalAlignment="Center"
-                                               Text="{Binding Percentage, StringFormat={}{0:0.0}%}">
-                                        <TextBlock.Foreground>
-                                            <SolidColorBrush Color="{Binding FillColor}"/>
-                                        </TextBlock.Foreground>
-                                    </TextBlock>
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               Text="{Binding Percentage, StringFormat={}{0:0.0}%}"/>
                                 </Grid>
-                            </Border>
+                            </Button>
                             <DataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
-                                    <Setter TargetName="LegendBorder" Property="Background"
+                                    <Setter TargetName="LegendButton" Property="Background"
                                             Value="{DynamicResource SelectionBrush}"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsNegligible}" Value="True">

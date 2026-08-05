@@ -290,10 +290,26 @@ public partial class PieChartControl : UserControl
             SliceClicked?.Invoke(this, slice);
     }
 
-    private void Legend_Click(object sender, MouseButtonEventArgs e)
+    private void Legend_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
             SliceClicked?.Invoke(this, slice);
+    }
+
+    // Keyboard focus lights the matching wedge exactly as hover does. Without this the
+    // legend would be merely reachable by keyboard rather than usable by it — a keyboard
+    // user would have no idea which wedge the focused row corresponds to, which is the
+    // whole point of the row carrying a colour swatch.
+    private void Legend_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
+            HighlightSlice(slice.Index, true);
+    }
+
+    private void Legend_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
+            HighlightSlice(slice.Index, false);
     }
 
     private void HighlightSlice(int index, bool highlight)
