@@ -43,7 +43,7 @@
                                 Background="{TemplateBinding Background}"
                                 Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Stretch"/>
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>

@@ -256,7 +256,7 @@ public partial class PieChartControl : UserControl
     {
         if (sender is Path path && path.Tag is PieSlice slice)
         {
-            HighlightSlice(slice.Index, true);
+            SetHovered(slice.Index, true);
         }
     }
 
@@ -264,7 +264,7 @@ public partial class PieChartControl : UserControl
     {
         if (sender is Path path && path.Tag is PieSlice slice)
         {
-            HighlightSlice(slice.Index, false);
+            SetHovered(slice.Index, false);
         }
     }
 
@@ -272,7 +272,7 @@ public partial class PieChartControl : UserControl
     {
         if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
         {
-            HighlightSlice(slice.Index, true);
+            SetHovered(slice.Index, true);
         }
     }
 
@@ -280,7 +280,7 @@ public partial class PieChartControl : UserControl
     {
         if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
         {
-            HighlightSlice(slice.Index, false);
+            SetHovered(slice.Index, false);
         }
     }
 
@@ -303,16 +303,70 @@ public partial class PieChartControl : UserControl
     private void Legend_GotFocus(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
-            HighlightSlice(slice.Index, true);
+            SetFocused(slice.Index, true);
     }
 
     private void Legend_LostFocus(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
-            HighlightSlice(slice.Index, false);
+            SetFocused(slice.Index, false);
     }
 
-    private void HighlightSlice(int index, bool highlight)
+    // Hover (mouse, from either the wedge or the legend row) and keyboard focus (legend
+    // row only) are tracked as two SEPARATE inputs, each holding at most one index at a
+    // time — only one thing can be hovered or focused at once, so a plain int per source
+    // is enough; no dictionary or ref-count needed. A slice is highlighted whenever EITHER
+    // is pointing at it, and only drops when BOTH have moved off it.
+    //
+    // Before this, HighlightSlice(index, bool) wrote IsHighlighted as a single last-write-
+    // wins boolean fed by three independent enter/leave pairs (wedge hover, legend hover,
+    // legend focus). That let one source's "leave" clobber another source's still-active
+    // "enter" — e.g. Tab to a row (focus on), then wave the mouse over it and off (hover
+    // on, then hover off) dropped the highlight even though the row was still keyboard-
+    // focused. Do NOT collapse _hoveredIndex/_focusedIndex back into one boolean; that
+    // reintroduces exactly this desync. See Wave 2.5 Task 6 review, round 1.
+    private int _hoveredIndex = -1;
+    private int _focusedIndex = -1;
+
+    private void SetHovered(int index, bool active) => SetSourceIndex(ref _hoveredIndex, index, active);
+
+    private void SetFocused(int index, bool active) => SetSourceIndex(ref _focusedIndex, index, active);
+
+    // Shared plumbing for SetHovered/SetFocused. `active` true means "this index just
+    // became this source's target"; false means "this index just stopped being this
+    // source's target". The false branch only clears the field (and re-derives that
+    // index's highlight from the OTHER source) if this index is still the one the field
+    // holds — a stale Leave/LostFocus for an index that a later Enter/GotFocus already
+    // replaced must be a no-op, since WPF does not guarantee old-element-leaves-before-
+    // new-element-enters ordering when focus/hover moves directly from row A to row B.
+    private void SetSourceIndex(ref int sourceIndex, int index, bool active)
+    {
+        if (active)
+        {
+            if (sourceIndex == index)
+                return;
+
+            int previous = sourceIndex;
+            sourceIndex = index;
+
+            if (previous >= 0)
+                ApplyHighlight(previous, IsHighlighted(previous));
+            ApplyHighlight(index, true);
+        }
+        else
+        {
+            if (sourceIndex != index)
+                return;
+
+            sourceIndex = -1;
+            ApplyHighlight(index, IsHighlighted(index));
+        }
+    }
+
+    // True if either hover or focus currently claims this index.
+    private bool IsHighlighted(int index) => index == _hoveredIndex || index == _focusedIndex;
+
+    private void ApplyHighlight(int index, bool highlight)
     {
         // Update the model (drives legend highlight via DataTrigger)
         if (Slices != null && index >= 0 && index < Slices.Count)
