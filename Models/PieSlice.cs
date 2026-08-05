@@ -63,6 +63,15 @@ public sealed class PieSlice : INotifyPropertyChanged
     /// </summary>
     public bool IsRenderable => !IsNegligible;
 
+    /// <summary>
+    /// The single string a screen reader announces for this row. The legend is the
+    /// accessible representation of the donut — the chart distinguishes up to 11 slices
+    /// by colour alone — so each row has to carry name, size and share in one automation
+    /// name rather than three unrelated text fragments. The 0.0 format matches the
+    /// visible label exactly, so what is heard and what is seen never disagree.
+    /// </summary>
+    public string Announcement => $"{Name}, {SizeDisplay}, {Percentage:0.0} percent";
+
     private bool _isHighlighted;
 
     /// <summary>Whether the slice is currently highlighted via mouse hover.</summary>

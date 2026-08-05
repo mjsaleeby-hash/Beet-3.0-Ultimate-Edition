@@ -67,4 +67,43 @@ public class PieSliceTests
 
         slice.IsRenderable.Should().Be(!slice.IsNegligible);
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Announcement_CombinesNameSizeAndPercentage()
+    {
+        // One automation name per row. A screen reader reads this instead of the three
+        // separate TextBlocks, which would otherwise be announced as disconnected
+        // fragments with no relationship to each other.
+        Slice(31.7, "Documents", "4.2 GB").Announcement
+            .Should().Be("Documents, 4.2 GB, 31.7 percent");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Announcement_RoundsToOneDecimal_MatchingTheVisibleLabel()
+    {
+        // The legend renders {0:0.0}%. The announcement must agree with what is on
+        // screen, or a sighted user and a screen-reader user hear different numbers.
+        Slice(31.66, "Photos", "1.1 GB").Announcement
+            .Should().Be("Photos, 1.1 GB, 31.7 percent");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Announcement_ForOtherSlice_ReadsNaturally()
+    {
+        Slice(2.4, "Other", "312 MB").Announcement
+            .Should().Be("Other, 312 MB, 2.4 percent");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Announcement_ForNegligibleSlice_StillReportsItsSize()
+    {
+        // A negligible slice has no wedge but keeps its legend row, so it still needs a
+        // usable announcement. "0.0 percent" is honest — the size carries the detail.
+        Slice(0.004, "thumbs.db", "12 bytes").Announcement
+            .Should().Be("thumbs.db, 12 bytes, 0.0 percent");
+    }
 }
