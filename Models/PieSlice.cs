@@ -44,8 +44,24 @@ public sealed class PieSlice : INotifyPropertyChanged
     /// <summary>Whether this slice represents a directory (enables click-to-navigate).</summary>
     public bool IsDirectory { get; init; }
 
-    /// <summary>Whether this slice is too small to render visibly (less than 0.05%).</summary>
-    public bool IsNegligible => Percentage < 0.05;
+    /// <summary>
+    /// The smallest share of the total that still earns a drawn wedge.
+    /// ONE constant feeds both the render decision (<see cref="IsRenderable"/>) and the
+    /// legend's dimmed styling (<see cref="IsNegligible"/>). They were previously two
+    /// separate numbers — a 0.1-degree sweep guard (0.028%) in PieChartControl and 0.05%
+    /// here — so slices between them got a legend row with no wedge behind it.
+    /// </summary>
+    public const double MinVisiblePercentage = 0.05;
+
+    /// <summary>Whether this slice is too small to render visibly.</summary>
+    public bool IsNegligible => Percentage < MinVisiblePercentage;
+
+    /// <summary>
+    /// Whether the chart should draw a wedge for this slice. Deliberately trivial: its
+    /// value is that the render decision has exactly one home, so the control cannot
+    /// invent its own threshold again.
+    /// </summary>
+    public bool IsRenderable => !IsNegligible;
 
     private bool _isHighlighted;
 
