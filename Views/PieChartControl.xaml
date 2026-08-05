@@ -67,7 +67,13 @@
         </Grid.ColumnDefinitions>
 
         <!-- Pie chart canvas -->
-        <Grid Grid.Column="0" Width="280" Height="280" Margin="24">
+        <!-- The donut is a visual summary; the legend beside it is the accessible
+             representation, because slice identity is carried by colour alone. Naming the
+             container gives a screen reader one meaningful stop that points at the list,
+             instead of an unlabelled canvas full of anonymous shapes. -->
+        <Grid Grid.Column="0" Width="280" Height="280" Margin="24"
+              AutomationProperties.Name="Space distribution chart"
+              AutomationProperties.HelpText="Donut chart of the largest items. The same data is in the Space Distribution list, which is keyboard accessible.">
             <Canvas x:Name="PieCanvas" Width="280" Height="280"/>
             <!-- Center label -->
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
