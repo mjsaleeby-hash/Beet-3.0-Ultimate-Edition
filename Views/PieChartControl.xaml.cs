@@ -170,6 +170,15 @@ public partial class PieChartControl : UserControl
 
         foreach (var slice in slices)
         {
+            // A slice below MinVisiblePercentage draws nothing, so don't create a path
+            // for it at all. The old code returned a Data-less Path that was still added
+            // to _slicePaths, still added to the canvas, and still had three mouse
+            // handlers wired to it — so hovering that item's legend row highlighted an
+            // invisible shape. HighlightSlice looks paths up with FirstOrDefault and
+            // tolerates the absence.
+            if (!slice.IsRenderable)
+                continue;
+
             var path = CreateSlicePath(slice, cx, cy, radius, sliceBorderBrush);
             path.Tag = slice;
             path.MouseEnter += Slice_MouseEnter;
@@ -212,9 +221,6 @@ public partial class PieChartControl : UserControl
             path.Data = new EllipseGeometry(new Point(cx, cy), radius, radius);
             return path;
         }
-
-        if (slice.SweepAngle < 0.1)
-            return path;
 
         double startRad = (slice.StartAngle - 90) * Math.PI / 180.0;
         double endRad = (slice.StartAngle + slice.SweepAngle - 90) * Math.PI / 180.0;
