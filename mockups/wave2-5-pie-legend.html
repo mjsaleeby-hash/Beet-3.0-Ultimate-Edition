@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wave 2.5 — Pie legend accessibility &amp; contrast sign-off</title>
+<style>
+  /* ============================================================
+     Wave 2.5 sign-off sheet. Every colour below is the LITERAL
+     value read from Themes/Light.xaml and Themes/Dark.xaml, or
+     the measured WCAG ratio recorded in
+     docs/superpowers/specs/2026-08-05-wave-2-5-pie-a11y-design.md.
+     Nothing here is invented. This is a REVIEW ARTIFACT, not a
+     working control — no JS is used beyond one small renderer for
+     the 44 near-identical legend rows in Section 1, to keep the
+     11-colour dataset from drifting between its four copies.
+     ============================================================ */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    background: #15151c; color: #e8e8ec;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: #8a90c7; font-size: 13px; margin-bottom: 18px; max-width: 900px; line-height: 1.5; }
+
+  .callout {
+    background: #241a3a; border: 1px solid #4a3a8a; border-radius: 10px;
+    padding: 14px 18px; margin-bottom: 32px; max-width: 900px;
+    font-size: 12.5px; line-height: 1.6; color: #d8d4f0;
+  }
+  .callout b { color: #fff; }
+
+  h2 {
+    font-size: 15px; font-weight: 600; color: #fff;
+    margin: 0 0 4px; padding-top: 28px; border-top: 1px solid #2a3068;
+  }
+  h2 .n {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%; background: #7C5CFF;
+    color: #fff; font-size: 11px; font-weight: 700; margin-right: 8px;
+  }
+  .sec-note { color: #8a90c7; font-size: 12px; margin: 0 0 16px; max-width: 900px; line-height: 1.5; }
+
+  .theme-block { margin-bottom: 20px; }
+  .theme-block-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    margin-bottom: 8px; color: #8a90c7;
+  }
+  .theme-block-label .tag { font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .cols2, .cols3 { grid-template-columns: 1fr; } }
+
+  .panel-label {
+    font-size: 11.5px; font-weight: 600; margin-bottom: 6px; padding: 3px 8px;
+    border-radius: 5px; display: inline-block;
+  }
+  .panel-label.current  { background: #3a1e1e; color: #f0a0a0; }
+  .panel-label.proposed { background: #1e3a24; color: #a0e0b0; }
+
+  /* ---- App-surface theme scope (mirrors the two XAML dictionaries) ---- */
+  .theme { border-radius: 12px; padding: 14px; border: 1px solid; }
+  .theme.light {
+    --surface: #FFFFFF; --panel: #F0F0F5; --border: #DDDDE4;
+    --primary: #111111; --secondary: #555555; --selection: #E0D7FA;
+    --accent: #7C5CFF; --donut-current: #F0F0ED; --donut-proposed: #FFFFFF;
+    background: var(--surface); border-color: var(--border); color: var(--primary);
+  }
+  .theme.dark {
+    --surface: #1A2045; --panel: #121735; --border: #2A3068;
+    --primary: #E8E8EC; --secondary: #9AA1D3; --selection: #2A1E5E;
+    --accent: #7C5CFF; --donut-current: #121735; --donut-proposed: #121735;
+    background: var(--surface); border-color: var(--border); color: var(--primary);
+  }
+
+  /* ---- Legend row (mirrors Views/PieChartControl.xaml's DataTemplate,
+     column widths 16 / 20 / * / 70 / 52, Padding 8,6, Margin 0,1, CornerRadius 4) ---- */
+  .legend-list { display: flex; flex-direction: column; }
+  .legend-row {
+    display: grid; grid-template-columns: 16px 20px 1fr 70px 52px;
+    align-items: center; gap: 0; border-radius: 4px; padding: 8px 6px; margin: 1px 0;
+    position: relative;
+  }
+  .legend-row.hi { background: var(--selection); }
+  .legend-row .sw { width: 12px; height: 12px; border-radius: 2px; }
+  .legend-row .ic { font-size: 13px; }
+  .legend-row .nm {
+    font-size: 13px; color: var(--primary); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; padding-right: 6px;
+  }
+  .legend-row .sz { font-size: 12px; color: var(--secondary); text-align: right; }
+  .legend-row .pc { font-size: 12px; font-weight: 600; text-align: right; }
+  .legend-row .pc.negligible { font-weight: 400; color: var(--secondary); }
+  .legend-row .ratio {
+    font-size: 9.5px; text-align: right; grid-column: 5; margin-top: 1px;
+    font-family: Consolas, monospace;
+  }
+  .legend-row .ratio.fail { color: #f38686; }
+  .legend-row .ratio.pass { color: #7fd99a; }
+  .legend-list-wrap { display: flex; flex-direction: column; gap: 0; }
+  .legend-hdr {
+    display: grid; grid-template-columns: 16px 20px 1fr 70px 52px;
+    font-size: 9.5px; color: var(--secondary); text-transform: uppercase; letter-spacing: .06em;
+    padding: 0 6px 6px; font-weight: 600;
+  }
+  .legend-hdr span:last-child, .legend-hdr span:nth-last-child(2) { text-align: right; }
+
+  /* ---- Focus ring (2px AccentBrush, RadiusX/Y 5, inset -1px) ---- */
+  .legend-row.focused::after {
+    content: ""; position: absolute; inset: -1px; border-radius: 5px;
+    border: 2px solid var(--accent); pointer-events: none;
+  }
+
+  /* ---- Donut mini-visual ---- */
+  .donut-card { text-align: center; }
+  .donut-title { font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
+  .donut-hex { font-size: 10.5px; font-family: Consolas, monospace; color: var(--secondary); margin-bottom: 12px; }
+  .donut-wrap { position: relative; width: 140px; height: 140px; margin: 0 auto; }
+  .donut-ring {
+    width: 140px; height: 140px; border-radius: 50%;
+    background: conic-gradient(
+      #38A8EB 0deg 133.56deg, #F05C7A 133.56deg 205.56deg, #2EBD60 205.56deg 245.88deg,
+      #E89008 245.88deg 271.8deg, #9378E8 271.8deg 291.96deg, #E85C5C 291.96deg 308.16deg,
+      #289EDD 308.16deg 320.4deg, #EB822C 320.4deg 329.76deg, #22B580 329.76deg 335.88deg,
+      #D466E8 335.88deg 339.84deg, #888898 339.84deg 360deg
+    );
+  }
+  .donut-hole {
+    position: absolute; top: 27px; left: 27px; width: 86px; height: 86px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .donut-hole .tot { font-size: 15px; font-weight: 700; color: var(--primary); }
+  .donut-hole .cap { font-size: 8.5px; color: var(--secondary); margin-top: 2px; }
+  .donut-note { font-size: 11px; color: #8a90c7; margin-top: 10px; max-width: 200px; margin-left: auto; margin-right: auto; }
+
+  /* ---- Swatch table ---- */
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; max-width: 1000px; }
+  th { text-align: left; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+       color: #8a90c7; padding: 8px 10px; border-bottom: 1px solid #2a3068; font-weight: 600; }
+  td { padding: 8px 10px; border-bottom: 1px solid #1f2550; font-family: Consolas, monospace; vertical-align: middle; }
+  .sw { display: inline-block; width: 13px; height: 13px; border-radius: 3px;
+        border: 1px solid #ffffff26; vertical-align: -2px; margin-right: 7px; }
+  .note { color: #8a90c7; font-family: "Segoe UI", sans-serif; font-size: 11px; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 9px; font-size: 10px;
+           font-family: "Segoe UI", sans-serif; font-weight: 600; }
+  .badge.both  { background: #3a1e1e; color: #f0a0a0; }
+  .badge.one   { background: #2a2450; color: #b8b0f0; }
+  .badge.none  { background: #1e3a24; color: #a0e0b0; }
+</style>
+</head>
+<body>
+
+  <h1>Wave 2.5 — pie legend accessibility &amp; contrast sign-off</h1>
+  <div class="sub">
+    Reviewed <strong>before</strong> any XAML is written, per
+    <code>docs/superpowers/specs/2026-08-05-wave-2-5-pie-a11y-design.md</code>. Both themes are shown
+    side by side throughout, not behind a toggle — this sheet is for comparing them, not experiencing
+    one at a time. Data below is the top-10-plus-Other slice list an actual drive would produce; sizes,
+    names and the 11 slice colours (including the <code>Other</code> grey) are the real values already
+    in <code>MainViewModel.PieColors</code>.
+  </div>
+
+  <div class="callout">
+    <b>The one thing this sheet exists to show:</b> the legend percentage text fails 4.5:1 contrast for
+    <b>all eleven slice colours in light mode</b>, and passes for <b>all eleven in dark mode</b>, against
+    each theme's own <code>SurfaceColor</code>. The fix — painting the percentage in
+    <code>PrimaryTextBrush</code> instead of the slice colour — is a single code path, so it necessarily
+    recolours dark mode too, even though dark had nothing wrong today. Section 1 shows exactly what that
+    trade looks like in both directions before it ships.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">1</span>Legend percentage colour — current vs proposed</h2>
+  <p class="sec-note">
+    <span class="badge both">current</span> paints the percentage in the slice's own <code>FillColor</code>
+    (today's behaviour). <span class="badge none">proposed</span> paints it in <code>PrimaryTextBrush</code>
+    for every row. The ratio under each current-column percentage is its measured contrast against that
+    theme's <code>SurfaceColor</code>, from the spec's table.
+  </p>
+
+  <div class="theme-block">
+    <div class="theme-block-label">Light theme <span class="tag">— every ratio below fails 4.5:1</span></div>
+    <div class="theme light" style="padding:16px;">
+      <div class="cols2">
+        <div>
+          <div class="panel-label current">Current — percentage in slice colour</div>
+          <div class="legend-hdr"><span></span><span></span><span>Name</span><span>Size</span><span>%</span></div>
+          <div class="legend-list-wrap" id="light-current"></div>
+        </div>
+        <div>
+          <div class="panel-label proposed">Proposed — percentage in PrimaryTextBrush</div>
+          <div class="legend-hdr"><span></span><span></span><span>Name</span><span>Size</span><span>%</span></div>
+          <div class="legend-list-wrap" id="light-proposed"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="theme-block">
+    <div class="theme-block-label">Dark theme <span class="tag">— every ratio below already passes; this is the trade being asked for</span></div>
+    <div class="theme dark" style="padding:16px;">
+      <div class="cols2">
+        <div>
+          <div class="panel-label current">Current — percentage in slice colour</div>
+          <div class="legend-hdr"><span></span><span></span><span>Name</span><span>Size</span><span>%</span></div>
+          <div class="legend-list-wrap" id="dark-current"></div>
+        </div>
+        <div>
+          <div class="panel-label proposed">Proposed — percentage in PrimaryTextBrush</div>
+          <div class="legend-hdr"><span></span><span></span><span>Name</span><span>Size</span><span>%</span></div>
+          <div class="legend-list-wrap" id="dark-proposed"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">2</span>Donut centre — light gets a true cut-out, dark is untouched</h2>
+  <p class="sec-note">
+    Same 11-slice ring in all three cards so the centre hole is the only variable. Light's hole currently
+    reads as a grey-beige disc sitting on top of the white card; the proposed value matches
+    <code>SurfaceColor</code> exactly, so the ring appears to have a hole cut in it rather than a shape
+    drawn on it. Dark's hole already equals <code>PanelColor</code> and reads as a deliberate inset well —
+    shown here explicitly unchanged.
+  </p>
+  <div class="cols3">
+    <div class="theme light donut-card" style="padding:16px;">
+      <div class="donut-title">Light — current</div>
+      <div class="donut-hex">DonutCenterColor #F0F0ED</div>
+      <div class="donut-wrap">
+        <div class="donut-ring"></div>
+        <div class="donut-hole" style="background:#F0F0ED;">
+          <div class="tot">842 GB</div>
+          <div class="cap">total size</div>
+        </div>
+      </div>
+      <div class="donut-note">Grey-beige disc visibly sits on the white card — the reported bug.</div>
+    </div>
+    <div class="theme light donut-card" style="padding:16px;">
+      <div class="donut-title">Light — proposed</div>
+      <div class="donut-hex">DonutCenterColor #FFFFFF</div>
+      <div class="donut-wrap">
+        <div class="donut-ring"></div>
+        <div class="donut-hole" style="background:#FFFFFF;">
+          <div class="tot">842 GB</div>
+          <div class="cap">total size</div>
+        </div>
+      </div>
+      <div class="donut-note">Matches SurfaceColor — the ring reads as a true cut-out.</div>
+    </div>
+    <div class="theme dark donut-card" style="padding:16px;">
+      <div class="donut-title">Dark — unchanged</div>
+      <div class="donut-hex">DonutCenterColor #121735</div>
+      <div class="donut-wrap">
+        <div class="donut-ring"></div>
+        <div class="donut-hole" style="background:#121735;">
+          <div class="tot">842 GB</div>
+          <div class="cap">total size</div>
+        </div>
+      </div>
+      <div class="donut-note">Equals PanelColor — already reads as a deliberate inset well. Not touched.</div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">3</span>Legend row — keyboard focus</h2>
+  <p class="sec-note">
+    Legend rows become focusable Buttons this wave. Visible focus is a 2px <code>AccentBrush</code>
+    rectangle, <code>RadiusX</code>/<code>RadiusY</code> 5, inset -1px around the row — the same ring
+    shape in both themes, since <code>AccentColor</code> (<code>#7C5CFF</code>) is identical in both
+    dictionaries.
+  </p>
+  <div class="cols2">
+    <div class="theme light" style="padding:16px;">
+      <div class="theme-block-label">Light</div>
+      <div class="legend-list-wrap">
+        <div class="legend-row focused">
+          <div class="sw" style="background:#38A8EB"></div>
+          <div class="ic">📁</div>
+          <div class="nm">Client Backups</div>
+          <div class="sz">312.0 GB</div>
+          <div class="pc" style="color:var(--primary);">37.1%</div>
+        </div>
+      </div>
+    </div>
+    <div class="theme dark" style="padding:16px;">
+      <div class="theme-block-label">Dark</div>
+      <div class="legend-list-wrap">
+        <div class="legend-row focused">
+          <div class="sw" style="background:#38A8EB"></div>
+          <div class="ic">📁</div>
+          <div class="nm">Client Backups</div>
+          <div class="sz">312.0 GB</div>
+          <div class="pc" style="color:var(--primary);">37.1%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">4</span>Negligible row — stays dimmed regardless of the fix</h2>
+  <p class="sec-note">
+    A row below the 0.05% <code>MinVisiblePercentage</code> threshold keeps its percentage in
+    <code>SecondaryTextBrush</code> at Normal weight — this <code>DataTrigger</code> is untouched by
+    Section 1's change, it only overrides afterward. Example: a scratch-cache folder where one file
+    dominates and a leftover lock file rounds to "0.0%" but is not actually zero.
+  </p>
+  <div class="cols2">
+    <div class="theme light" style="padding:16px;">
+      <div class="theme-block-label">Light</div>
+      <div class="legend-list-wrap">
+        <div class="legend-row">
+          <div class="sw" style="background:#38A8EB"></div>
+          <div class="ic">📄</div>
+          <div class="nm">session.cache</div>
+          <div class="sz">7.08 GB</div>
+          <div class="pc" style="color:var(--primary);">99.97%</div>
+        </div>
+        <div class="legend-row">
+          <div class="sw" style="background:#F05C7A"></div>
+          <div class="ic">📄</div>
+          <div class="nm">lock.tmp</div>
+          <div class="sz">2.1 MB</div>
+          <div class="pc negligible">0.0%</div>
+        </div>
+      </div>
+    </div>
+    <div class="theme dark" style="padding:16px;">
+      <div class="theme-block-label">Dark</div>
+      <div class="legend-list-wrap">
+        <div class="legend-row">
+          <div class="sw" style="background:#38A8EB"></div>
+          <div class="ic">📄</div>
+          <div class="nm">session.cache</div>
+          <div class="sz">7.08 GB</div>
+          <div class="pc" style="color:var(--primary);">99.97%</div>
+        </div>
+        <div class="legend-row">
+          <div class="sw" style="background:#F05C7A"></div>
+          <div class="ic">📄</div>
+          <div class="nm">lock.tmp</div>
+          <div class="sz">2.1 MB</div>
+          <div class="pc negligible">0.0%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">5</span>Every token this wave touches</h2>
+  <p class="sec-note">Literal values from <code>Themes/Light.xaml</code> and <code>Themes/Dark.xaml</code>.</p>
+  <table>
+    <thead>
+      <tr><th>Token / element</th><th>Current</th><th>Proposed</th><th>Themes affected</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>DonutCenterColor (Light.xaml)</td>
+        <td><span class="sw" style="background:#F0F0ED"></span>#F0F0ED</td>
+        <td><span class="sw" style="background:#FFFFFF;border-color:#88888855;"></span>#FFFFFF</td>
+        <td><span class="badge one">Light only</span></td>
+      </tr>
+      <tr>
+        <td>DonutCenterColor (Dark.xaml)</td>
+        <td><span class="sw" style="background:#121735"></span>#121735</td>
+        <td><span class="sw" style="background:#121735"></span>#121735 <span class="note">(unchanged)</span></td>
+        <td><span class="badge none">None — shown for contrast</span></td>
+      </tr>
+      <tr>
+        <td>Legend % foreground — normal rows<br><span class="note">PieChartControl.xaml PctText</span></td>
+        <td><span class="note">per-slice FillColor</span></td>
+        <td><span class="note">PrimaryTextBrush (#111111 light / #E8E8EC dark)</span></td>
+        <td><span class="badge both">Light + Dark</span></td>
+      </tr>
+      <tr>
+        <td>Legend % foreground — negligible rows (&lt;0.05%)</td>
+        <td><span class="note">SecondaryTextBrush</span></td>
+        <td><span class="note">SecondaryTextBrush (unchanged)</span></td>
+        <td><span class="badge none">None</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <script>
+    // Single source of truth for the 11-row dataset used in Section 1, so the
+    // "current" and "proposed" copies (light + dark = 4 lists, 44 rows) cannot
+    // drift out of sync with each other or with the spec's contrast table.
+    var rows = [
+      { name: "Client Backups",                icon: "📁", size: "312.0 GB", pct: "37.1%", color: "#38A8EB", rLight: "2.64", rDark: "5.96" },
+      { name: "Photo Library 2024",            icon: "📁", size: "168.0 GB", pct: "20.0%", color: "#F05C7A", rLight: "3.22", rDark: "4.88" },
+      { name: "Wedding Footage Raw",           icon: "📁", size: "94.0 GB",  pct: "11.2%", color: "#2EBD60", rLight: "2.45", rDark: "6.41" },
+      { name: "Docker Desktop Data.vhdx",      icon: "📄", size: "61.0 GB",  pct: "7.2%",  color: "#E89008", rLight: "2.49", rDark: "6.30" },
+      { name: "Beet-3.0-Ultimate-Edition",     icon: "📁", size: "47.0 GB",  pct: "5.6%",  color: "#9378E8", rLight: "3.45", rDark: "4.56" },
+      { name: "Lossless FLAC Archive",         icon: "📁", size: "38.0 GB",  pct: "4.5%",  color: "#E85C5C", rLight: "3.43", rDark: "4.58" },
+      { name: "Downloads",                     icon: "📁", size: "29.0 GB",  pct: "3.4%",  color: "#289EDD", rLight: "2.99", rDark: "5.26" },
+      { name: "Windows11-VM.vdi",              icon: "📄", size: "22.0 GB",  pct: "2.6%",  color: "#EB822C", rLight: "2.71", rDark: "5.81" },
+      { name: "node_modules.tar.zst",          icon: "📄", size: "14.0 GB",  pct: "1.7%",  color: "#22B580", rLight: "2.63", rDark: "5.98" },
+      { name: "steamapps\\common",             icon: "📁", size: "9.1 GB",   pct: "1.1%",  color: "#D466E8", rLight: "3.06", rDark: "5.14" },
+      { name: "Other (47 more items)",         icon: "…",       size: "47.9 GB",  pct: "5.7%",  color: "#888898", rLight: "3.49", rDark: "4.51" }
+    ];
+
+    function renderList(id, theme, mode) {
+      var el = document.getElementById(id);
+      var primary = theme === "light" ? "#111111" : "#E8E8EC";
+      var html = "";
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var pctColor = mode === "current" ? r.color : primary;
+        html += '<div class="legend-row">'
+          + '<div class="sw" style="background:' + r.color + '"></div>'
+          + '<div class="ic">' + r.icon + '</div>'
+          + '<div class="nm">' + r.name + '</div>'
+          + '<div class="sz">' + r.size + '</div>'
+          + '<div class="pc" style="color:' + pctColor + '">' + r.pct + '</div>';
+        if (mode === "current") {
+          var ratio = theme === "light" ? r.rLight : r.rDark;
+          var passed = theme === "light" ? false : true; // matches spec: all fail light, all pass dark
+          html += '<div class="ratio ' + (passed ? "pass" : "fail") + '">' + ratio + ':1 ' + (passed ? "✓ AA" : "✗ AA") + '</div>';
+        }
+        html += '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    renderList("light-current", "light", "current");
+    renderList("light-proposed", "light", "proposed");
+    renderList("dark-current", "dark", "current");
+    renderList("dark-proposed", "dark", "proposed");
+  </script>
+
+</body>
+</html>
