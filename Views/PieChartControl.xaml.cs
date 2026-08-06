@@ -8,6 +8,7 @@ using BeetsBackup.Models;
 using Brush = System.Windows.Media.Brush;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using KeyboardFocusChangedEventArgs = System.Windows.Input.KeyboardFocusChangedEventArgs;
 using Brushes = System.Windows.Media.Brushes;
 using Cursors = System.Windows.Input.Cursors;
 using Point = System.Windows.Point;
@@ -127,6 +128,22 @@ public partial class PieChartControl : UserControl
 
         PieCanvas.Children.Clear();
         _slicePaths.Clear();
+
+        // Slices is REPLACED wholesale, not mutated in place — BuildPieSlices hands the
+        // control a brand-new ObservableCollection on every navigation, and the commonest
+        // trigger is clicking a legend row. A stale _hoveredIndex/_focusedIndex pointing
+        // into the OLD collection causes two distinct bugs against the new one: (1) if the
+        // cursor is still sitting over the row that triggered the navigation, the new
+        // Button's MouseEnter hits SetSourceIndex's "already this index" dedupe guard and
+        // never calls ApplyHighlight, so the row under the cursor silently fails to
+        // highlight until the user moves off and back; (2) if a focused Button was torn
+        // out of the tree without a matching LostKeyboardFocus (WPF does not guarantee one
+        // for a removed element), _focusedIndex stays stale forever and the same row index
+        // in every SUBSEQUENT chart re-highlights on a bare hover-and-leave. Reset both
+        // here — do not delete this as "redundant" with _slicePaths.Clear() above; paths
+        // and highlight sources are different state with different staleness bugs.
+        _hoveredIndex = -1;
+        _focusedIndex = -1;
 
         var slices = Slices;
         if (slices == null || slices.Count == 0)
@@ -300,13 +317,24 @@ public partial class PieChartControl : UserControl
     // legend would be merely reachable by keyboard rather than usable by it — a keyboard
     // user would have no idea which wedge the focused row corresponds to, which is the
     // whole point of the row carrying a colour swatch.
-    private void Legend_GotFocus(object sender, RoutedEventArgs e)
+    //
+    // Deliberately wired to GotKeyboardFocus/LostKeyboardFocus, NOT the plan's original
+    // GotFocus/LostFocus. GotFocus/LostFocus track LOGICAL focus, which a mouse click
+    // also grants — so clicking a legend row for a file (SliceClicked is a no-op, no
+    // rebuild) and then moving the mouse away left the row highlighted and its wedge
+    // scaled forever, with no focus ring shown (FocusVisualStyle only paints for real
+    // keyboard focus), and Alt-Tabbing away from the app never cleared it either, since
+    // logical focus is untouched by the window losing input focus. Keyboard focus does
+    // not have that problem: it is cleared to null when the app deactivates, so the
+    // highlight and the focus ring now appear and disappear together in every case,
+    // exactly as this comment claims. Overridden per Wave 2.5 whole-branch review.
+    private void Legend_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
             SetFocused(slice.Index, true);
     }
 
-    private void Legend_LostFocus(object sender, RoutedEventArgs e)
+    private void Legend_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (sender is FrameworkElement el && el.DataContext is PieSlice slice)
             SetFocused(slice.Index, false);

@@ -118,8 +118,8 @@
                                     Click="Legend_Click"
                                     MouseEnter="Legend_MouseEnter"
                                     MouseLeave="Legend_MouseLeave"
-                                    GotFocus="Legend_GotFocus"
-                                    LostFocus="Legend_LostFocus"
+                                    GotKeyboardFocus="Legend_GotKeyboardFocus"
+                                    LostKeyboardFocus="Legend_LostKeyboardFocus"
                                     AutomationProperties.Name="{Binding Announcement}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
