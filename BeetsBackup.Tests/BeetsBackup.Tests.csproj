@@ -7,6 +7,16 @@
     <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- PieSliceTests asserts Announcement strings like "Documents, 4.2 GB, 31.7 percent".
+         Announcement formats its percentage with the process's CurrentCulture (by design —
+         it must agree with the legend's XAML {0:0.0}% binding, which is equally culture-
+         bound, so what is seen and what is heard drift together on any locale). That makes
+         the "." in these test literals a hidden en-US assumption: the suite would fail on
+         any machine whose culture uses a different decimal separator (e.g. de-DE's ",").
+         Pinning this TEST project to invariant globalization fixes that without touching
+         PieSlice.Announcement or the XAML format string — production behaviour is
+         unchanged, only the test process's culture is pinned. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
