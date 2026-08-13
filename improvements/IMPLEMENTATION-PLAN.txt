@@ -841,7 +841,6 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         out of MainWindow.xaml's Window.Resources into Themes/Controls.xaml — Wave 2.5 had to
         duplicate it as LegendRowFocusVisual because it is unreachable from a UserControl,
         and that duplication is deliberate debt queued here.
-  [ ] Wave 2.6  De-dup helpers (one commit each)
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
   [ ] Wave 3.*  Only on explicit go-ahead, characterization tests first.
 
