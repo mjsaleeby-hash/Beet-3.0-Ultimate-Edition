@@ -18,9 +18,13 @@ Focus: bug-free before feature-complete. No new features unless critical.
 > 8/4 as verified-N/A — its target property is dead code. Wave 2.4 (drive-aware folder
 > sizing) shipped 8/4 and is deployed — expect no local speed change from it, since this
 > machine classifies `C:\` as SSD and its fan-out is unchanged by design; the win is on
-> spinning/removable media. **Next code item is Wave 2.5** (pie polish + legend a11y +
-> % contrast), then 2.6. Two things are OWED: the R7 manual click-test of 2.4, and
-> ~22,000 test-origin lines still sitting in the real `operational.log` (that one edits
+> spinning/removable media. Wave 2.5 (pie polish + legend a11y + % contrast) shipped
+> 8/5–8/6, was deployed 8/13 (`4.0.0+9bc26d4`) and passed its R7 manual pass the same
+> day; it also delivered the PieChartControl Narrator coverage Wave 1.5 had missed, so
+> 1.5 is now closed too. **Next code item is Wave 2.6** (de-dup helpers; it inherits
+> retiring the dead `SearchFilter` property from 2.3 and promoting `AccentFocusVisual`
+> out of `MainWindow.xaml` from 2.5). One thing is still OWED:
+> ~22,000 test-origin lines sitting in the real `operational.log` (that one edits
 > live user data — ask before purging). This file
 > remains the roadmap for the items below, which that plan does not cover (VSS
 > elevation, launcher rename, deferred features).

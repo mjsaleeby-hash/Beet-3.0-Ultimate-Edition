@@ -1,3 +1,70 @@
+## 2026-08-13 — Wave 2.5: the legend is the accessible surface, not decoration
+
+**Decision: treat the legend as the chart's accessible representation rather than as a caption
+beside it — and accept two deliberate behaviour changes to get there.** Design decisions were
+made 2026-08-05, implementation ran 08-05/06, sign-off landed 08-13.
+
+The donut distinguishes up to 11 slices **by colour alone**. That makes the legend the required
+non-colour fallback, not decoration — so it has to be reachable, operable and announceable, which
+it was not. Legend rows were `Cursor="Hand"` Borders with mouse handlers: they advertised
+interactivity while being mouse-only. A Border inside an `ItemsControl` takes no focus, has no
+keyboard path, and exposes no automation name. Rows became chrome-free `Button`s, which are
+natively focusable, activate on Space/Enter, and expose the **Invoke** pattern — the pattern that
+actually matches what a row does (navigate into that folder). Single-click behaviour is
+byte-identical, so R6 holds for the mouse path.
+
+**Two stated R6 exceptions, both signed off on the mockup before any XAML was written:**
+
+- **Wedges between 0.028% and 0.05% stop rendering.** There were two disagreeing thresholds — a
+  0.1-degree sweep guard in the control and 0.05% on the model — so slices in that band got a
+  legend row with no wedge behind it. One `MinVisiblePercentage` now feeds both, and a theory pins
+  `IsRenderable == !IsNegligible` so they cannot drift apart again.
+- **Dark-mode percentages changed colour** despite passing contrast today (4.51–6.41). Nobody
+  complained about them; the change was made anyway because keeping the slice colour in light mode
+  was untenable and two divergent rules for one TextBlock is worse than one uniform rule.
+
+**Contrast is why the percentage stopped being slice-coloured.** All 11 palette colours measured
+2.45–3.49 against light's `#FFFFFF` — every one fails WCAG AA's 4.5:1 for text. The colour
+association is already carried by the swatch in column 0, so painting the number too bought
+nothing and cost readability. Now `PrimaryTextBrush` in both themes.
+
+**Light-only donut change; dark deliberately untouched.** `DonutCenterColor` went `#F0F0ED` →
+`#FFFFFF` in `Themes/Light.xaml`. `Themes/Dark.xaml` was **not modified anywhere in this wave**
+(R4): dark's `#121735` equals its `PanelColor` and reads as an intentional inset well. Only light
+had the reported grey-beige smudge sitting on a white card.
+
+**Task 7's automation-tree question was left open by the spec and answered by measurement, not
+assertion.** The container was named first; suppression of child peers was gated behind an actual
+inspection. The note that matters for anyone revisiting it: do **not** suppress by overriding
+`OnCreateAutomationPeer` on the UserControl and filtering children by peer type —
+`ButtonAutomationPeer` derives from `UIElementAutomationPeer`, so that filter strips the legend
+buttons out of the tree and destroys the exact thing this wave built.
+
+**Deliberate duplication, queued as debt.** `LegendRowFocusVisual` duplicates `AccentFocusVisual`,
+which is stranded in `MainWindow.xaml`'s `Window.Resources` and unreachable from a UserControl.
+Promoting it to `Themes/Controls.xaml` is Wave 2.6's job — moving a resource out of MainWindow was
+not this wave's risk to take.
+
+**A whole-branch review caught three real defects after the tasks were "done"**, all in the new
+interaction code: a highlight desync between the three independent enter/leave sources, stale
+hover/focus indices surviving a chart rebuild, and rows wired to *logical* focus
+(`GotFocus`/`LostFocus`) rather than keyboard focus — which a mouse click also grants and which
+survives window deactivation, so rows stayed lit forever with no focus ring. All three were
+reachable by ordinary use and none were caught by the 230-test suite, because they live in WPF
+input routing that the suite does not cover.
+
+**Process finding, recorded because it nearly cost the sign-off.** The first reported manual pass
+came back clean — against the wrong binary. The user tested through the pinned shortcut, which
+still pointed at `4.0.0+9c272ed` from 08-04, a build predating every change above. There was no
+focus ring, no legend `Button` and no white donut hole in it to fail. The pass was discarded, the
+wave deployed (`4.0.0+9bc26d4`, verified byte-identical to the publish output by SHA256), and the
+pass redone against the real thing. **A clean manual result is only evidence if you know which
+binary produced it** — pin the version before recording an R7 pass. This is the same
+premise-before-conclusion failure as the three advisory-report items that turned out to rest on
+unchecked assumptions.
+
+---
+
 ## 2026-08-04 — Wave 2.4 shipped, and the metric that verifies it was broken
 
 **Decision: implement 2.4 as planned, but also fix the telemetry field it is measured by —

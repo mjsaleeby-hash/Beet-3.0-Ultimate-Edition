@@ -659,7 +659,12 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
   [x] Wave 1.2  FormatBytes static array
   [x] Wave 1.3  Deep-search EnumerationOptions
   [x] Wave 1.4  Pie hover-origin
-  [~] Wave 1.5  AutomationProperties.Name + FocusVisualStyle (Narrator pass)
+  [x] Wave 1.5  AutomationProperties.Name + FocusVisualStyle (Narrator pass)
+        CLOSED 2026-08-13 by Wave 2.5, which delivered the PieChartControl coverage this
+        item was missing: legend rows are now focusable Buttons with a visible focus ring
+        and one AutomationProperties.Name each, and the donut canvas has a named
+        automation stop pointing at the legend. Narrator confirmed by the user in the
+        2.5 R7 pass. The correction below stands as the record of why it was reopened.
         CORRECTED 2026-08-05: this was ticked complete, but the pass only ever covered
         MainWindow.xaml (12 AutomationProperties, 2 FocusVisualStyle). Views/
         PieChartControl.xaml — a separate UserControl — has ZERO of either, plus no
@@ -754,10 +759,88 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         breaks. DEPLOYED 2026-08-04 13:22 — Documents\BeetsBackup.exe is now
         4.0.0+9c272ed (verified byte-identical to the publish output by hash, and 9c272ed is
         HEAD), so this deploy also carries the two 2026-08-04 shutdown/test fixes in 2600e28.
-        Previous exe preserved as BeetsBackup.exe.bak-20260804. R7 manual pass STILL OWED.
-  [ ] Wave 2.5  Pie polish + legend a11y + % contrast
+        Previous exe preserved as BeetsBackup.exe.bak-20260804. R7 manual pass PARTIAL
+        2026-08-13: the user exercised the 4.0.0+9c272ed build (panes, themes, pie chart)
+        and reported no issues. Recorded as partial, not clean, because R7 also asks for a
+        small copy plus a SkipExisting re-run and those were not itemized back. Nothing in
+        2.4 is expected to be visible on this machine anyway (C:\ classifies as SSD, so the
+        fan-out is unchanged by design), so this pass is weak evidence either way. The real
+        evidence for 2.4 is the DriveKind/workerCount telemetry on spinning or removable
+        media, which no run on this hardware can supply.
+  [x] Wave 2.5  Pie polish + legend a11y + % contrast — code-complete + 13 unit tests
+        (230/230 green, up from 217)
         Scope enlarged 2026-08-05 — also absorbs the PieChartControl Narrator pass
-        that Wave 1.5 missed (see the 1.5 correction above and §5 item 2.5).
+        that Wave 1.5 missed (see the 1.5 correction above and §5 item 2.5). That pass is
+        delivered, so 1.5 is now ticked.
+        SHIPPED as 9 commits 2026-08-05/06, mockup-gated before any XAML was written:
+        ONE THRESHOLD (4087a0c). PieSlice.MinVisiblePercentage (0.05) now feeds both the
+        render decision (IsRenderable) and the legend's dimmed styling (IsNegligible). They
+        were previously two different numbers — a 0.1-degree sweep guard (0.028%) in the
+        control and 0.05% on the model — so slices between them got a legend row with no
+        wedge behind it. R6 EXCEPTION, stated in the spec: wedges between 0.028% and 0.05%
+        stop rendering. A theory pins IsRenderable == !IsNegligible so they cannot separate
+        again.
+        ONE ANNOUNCEMENT PER ROW (04bace6). PieSlice.Announcement = "name, size, N.N
+        percent", bound to AutomationProperties.Name. Previously a screen reader read three
+        unrelated TextBlocks as disconnected fragments. The 0.0 format matches the visible
+        {0:0.0}% binding, so what is heard and what is seen cannot disagree.
+        NO PHANTOM PATHS (89f682c). The render loop skips non-renderable slices outright.
+        CreateSlicePath used to return a Data-less Path that was still added to _slicePaths,
+        still added to the canvas, and still had three mouse handlers wired to it — so
+        hovering that row highlighted an invisible shape.
+        LIGHT DONUT CUT-OUT (fee21b4). DonutCenterColor #F0F0ED -> #FFFFFF in Light.xaml
+        only; Dark.xaml NOT MODIFIED ANYWHERE IN THIS WAVE (R4), since dark's #121735 equals
+        its PanelColor and reads as a deliberate inset well. Center label clamped to
+        MaxWidth 88 with CharacterEllipsis so a long total stops spilling over the wedges.
+        KEYBOARD-REACHABLE LEGEND (1bd645e). Rows became chrome-free Buttons: focusable,
+        Space/Enter-activatable, exposing the Invoke automation pattern that matches what a
+        row does (navigate into that folder). Single-click behaviour byte-identical (R6).
+        Percentage text stops being painted in the slice colour — all 11 palette colours
+        fail WCAG 4.5:1 against light's #FFFFFF (measured 2.45-3.49) and the colour
+        association is already carried by the swatch. R6 EXCEPTION: dark-mode percentages
+        change colour too, signed off on the mockup despite passing contrast today.
+        NAMED AUTOMATION STOP (0e4fb53). The canvas container carries a Name and HelpText
+        pointing at the legend.
+        THREE REVIEW FINDINGS FIXED BEFORE SIGN-OFF — the wave got a whole-branch review and
+        it earned its keep:
+          b93d74c HIGHLIGHT DESYNC. IsHighlighted was one last-write-wins boolean fed by
+          three independent enter/leave pairs (wedge hover, row hover, row focus), so any
+          source's "leave" could clobber another's still-active "enter". Now tracked as two
+          independent indices, highlighted when either claims it, cleared only when both let
+          go, with stale-leave rejection since WPF does not guarantee old-leave-before-
+          new-enter ordering.
+          10a1653 STALE INDICES + WRONG FOCUS KIND. RebuildChart cleared _slicePaths but not
+          _hoveredIndex/_focusedIndex, and BuildPieSlices hands over a brand-new collection
+          on every navigation — so indices went stale against the new collection. Separately,
+          rows were wired to GotFocus/LostFocus (LOGICAL focus, which a mouse click also
+          grants and which survives window deactivation), leaving rows highlighted forever
+          with no focus ring. Switched to GotKeyboardFocus/LostKeyboardFocus.
+          9bc26d4 CULTURE-BOUND TEST. PieSliceTests hard-codes "." as the decimal separator,
+          so the suite would fail on any non-en-US machine. Pinned via InvariantGlobalization
+          on the TEST project only — PieSlice.Announcement stays culture-bound by design, so
+          it tracks the equally culture-bound XAML format string.
+        DEPLOYED 2026-08-13 10:56 — Documents\BeetsBackup.exe is now 4.0.0+9bc26d4, verified
+        byte-identical to the publish output by SHA256 and confirmed equal to HEAD. Previous
+        exe preserved as BeetsBackup.exe.bak-20260813.
+        R7 manual pass PASSED 2026-08-13, user-run against the deployed 4.0.0+9bc26d4: all
+        eight checklist points (both themes readable, light hole indistinguishable from the
+        card, center label clamped, Tab focus ring with the matching wedge popping,
+        Enter/Space navigating as a click does, hover and click unchanged, negligible rows
+        present-but-dimmed and highlighting nothing, Narrator reading one phrase per row)
+        reported clean with no issues found.
+        PROCESS NOTE, worth more than the wave: the FIRST reported pass was discarded. The
+        user tested via the pinned shortcut, which still pointed at the 4.0.0+9c272ed build
+        from 2026-08-04 — a build predating every change above. A clean result there was
+        evidence of nothing, since no focus ring, no legend Button and no white donut hole
+        existed in it to fail. The pass was only recorded after the binary was pinned by
+        version and the deploy was done. BEFORE RECORDING ANY R7 PASS, ESTABLISH WHICH
+        BINARY WAS RUN. "Looks fine" is only evidence if you know what was running.
+  [ ] Wave 2.6  De-dup helpers (one commit each)
+        Inherits two items from earlier waves: retire the dead SearchFilter property and its
+        dead predicate branch (from 2.3, see the note above), and promote AccentFocusVisual
+        out of MainWindow.xaml's Window.Resources into Themes/Controls.xaml — Wave 2.5 had to
+        duplicate it as LegendRowFocusVisual because it is unreachable from a UserControl,
+        and that duplication is deliberate debt queued here.
   [ ] Wave 2.6  De-dup helpers (one commit each)
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
   [ ] Wave 3.*  Only on explicit go-ahead, characterization tests first.
