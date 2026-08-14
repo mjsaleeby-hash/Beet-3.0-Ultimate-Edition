@@ -85,20 +85,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _topCurrentPath = string.Empty;
     [ObservableProperty] private string _bottomCurrentPath = string.Empty;
 
-    // --- Search (live filter) ---
-    private string _searchFilter = string.Empty;
-    public string SearchFilter
-    {
-        get => _searchFilter;
-        set
-        {
-            if (SetProperty(ref _searchFilter, value))
-            {
-                _filteredTopView?.Refresh();
-                _filteredBottomView?.Refresh();
-            }
-        }
-    }
 
     /// <summary>How many results the deep-search batches up before flushing to the UI. 50 is a
     /// compromise: small enough that results start landing visibly quickly on huge trees, large
@@ -595,18 +581,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void DismissCrashBanner() => IsCrashBannerVisible = false;
 
-    /// <summary>Creates a filtered <see cref="ICollectionView"/> that live-filters by <see cref="SearchFilter"/>.</summary>
+    /// <summary>
+    /// Returns the default <see cref="ICollectionView"/> over a pane's item collection.
+    /// It no longer filters: the live-filter string this once read had no writer anywhere in
+    /// the product — the pane search boxes bind DeepSearchQuery, a different mechanism — so the
+    /// predicate returned true on every call ever made. The VIEWS themselves are load-bearing
+    /// (both panes bind them as ItemsSource), which is why this method stays rather than the
+    /// call sites binding the collections directly.
+    /// </summary>
     private ICollectionView CreateFilteredView(ObservableCollection<FileSystemItem> source)
-    {
-        var view = CollectionViewSource.GetDefaultView(source);
-        view.Filter = obj =>
-        {
-            if (string.IsNullOrEmpty(_searchFilter)) return true;
-            return obj is FileSystemItem item &&
-                   item.Name.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase);
-        };
-        return view;
-    }
+        => CollectionViewSource.GetDefaultView(source);
 
     /// <summary>Refreshes the drive list and rebuilds folder trees for both panes.</summary>
     private void LoadDrives()
