@@ -854,7 +854,24 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         spurious "-1" — GetUniqueFilePath cannot return the original path and the archive
         call site is unguarded. Cosmetic, shipping, zero test coverage over that path.
         See notes/bugs.md 2026-08-14.
-  [ ] Wave 2.6b De-dup, engine half — 2 commits, GATED
+  [~] Wave 2.6b De-dup, engine half — CODE COMPLETE + DEPLOYED, R7 MANUAL PASS STILL OWED
+        Ticked [~] not [x] deliberately: every code and review gate is closed, but the R7
+        manual smoke test has NOT been run. Do not upgrade this to [x] until it has.
+        SHIPPED: 3 code commits + 1 review-fix pair. Suite 230 -> 244 green (6 classifier
+        tests + 8 characterization tests), verified on the merged result, not just on the
+        branch. Gate answered in writing before the collapse: all 8 characterization tests
+        passed on their first run, so the off-ramp was NOT invoked.
+        DEPLOYED 2026-08-14 18:50 — Documents\BeetsBackup.exe = 4.0.0+f509682, verified
+        byte-identical to the publish output by SHA256 (1C5C3CD8E0B3905B) AND confirmed to
+        contain HEAD before anyone was asked to test it. Previous exe preserved as
+        BeetsBackup.exe.bak-20260814 (holds 4.0.0+9bc26d4).
+        R7 OWED — the 7-point pass: (1) toolbar focus ring unchanged (2) legend focus ring
+        present and visibly TIGHTER than the toolbar's — that difference is the thing the
+        style move had to preserve (3) both rings render in dark AND light (4) pane
+        navigation + deep search still populate (5) schedule a job then delete it — log
+        entry correct (6) SkipExisting copy then re-run — second run re-copies nothing
+        (7) KeepBoth copy over an existing file lands as name-1.ext. Expect NO visible
+        difference on any of the seven; that is the wave's whole claim.
         Touches TransferService, so each commit carries its own evidence.
         (1) IOExceptionClassifier over 9 raw HResult sites (6x 0x0020 sharing violation,
             3x 0x0070 disk full; site :863 alone also carries "&& !usedVss"). Unit-tested
@@ -879,6 +896,24 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         a wave already carrying two, and the two call sites are not interchangeable
         (ProcessFileWorkItem's gates on TryAdvanceReportedPercent's high-water mark, CopyItem's
         does not). Extract the computation only, in a later cleanup pass.
+        ** TRAP FOR WHOEVER DOES D4 — found by the Wave 2.6 whole-branch review. **
+        Three OTHER sites compute a DIFFERENT, 4-TERM sum that omits DiskFullErrors:
+        TransferService :326, :388, and ReportPercent (:520). Those are the compress/extract
+        paths, where DiskFullErrors is never incremented, so both formulas are correct TODAY.
+        A naive "extract the shared sum" pass that unifies all five sites WOULD change
+        reported progress. Extract the 5-term sum for its two call sites only.
+  [ ] FOLLOW-UP  Merge GetUniqueFilePathReserved with GetUniqueFolderPathReserved
+        Left by Wave 2.6b as the branch's largest remaining duplication, deliberately out of
+        scope. Both are near-duplicate counter loops, but the folder variant RETURNS THE
+        ORIGINAL path when it is free and unclaimed while the file variant never does.
+        Folding that asymmetry into NextFreePath would erode the "never returns the original"
+        invariant, which is load-bearing and pinned by
+        UniquePathCharacterizationTests.GetUniqueFilePath_OnAFreeName_STILL_AppendsDashOne.
+        Do this one behind its own characterization tests, the way 2.6b did.
+  [ ] FOLLOW-UP  Retire the now-redundant _filteredTopView/_filteredBottomView Refresh() calls
+        MainViewModel :793, :844, :1061, :1214. With no filter installed these only force a
+        redundant Reset on a view whose source already notifies. Behaviour-identical, and the
+        last mechanical trace of the live-filter feature Wave 2.6a removed.
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
   [ ] Wave 3.*  Only on explicit go-ahead, characterization tests first.
 

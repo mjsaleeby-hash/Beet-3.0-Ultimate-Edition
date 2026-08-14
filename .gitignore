@@ -27,3 +27,12 @@ Test UI/
 # NOTE: scoped to skills/ deliberately — .claude/agents/ and .claude/settings.local.json
 # ARE tracked and must stay that way.
 .claude/skills/
+
+# Throwaway git worktrees for isolated feature work (Wave 2.6 was built in one).
+# A full second checkout of the repo — untracked before this entry, so a `git add -A`
+# could have swept the whole thing in.
+.claude/worktrees/
+
+# Scratch workspace for plan-execution ledgers and review artifacts. Local bookkeeping;
+# the git history is the durable record.
+.superpowers/

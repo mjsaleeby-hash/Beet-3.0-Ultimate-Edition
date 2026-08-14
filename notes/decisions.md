@@ -37,6 +37,31 @@ changes user-visible filenames and this wave is behaviour-neutral by contract, s
 `notes/bugs.md` and the characterization tests deliberately pin the defect so a refactor cannot
 silently alter it.
 
+**Outcome, recorded 2026-08-14.** Both sub-waves shipped as designed: eleven commits, suite
+230 → 244 green, merged to `main` and deployed as `4.0.0+f509682` (SHA256-verified against the
+publish output, and confirmed to contain HEAD *before* anyone was asked to test it). The Task 7
+gate was answered in writing — all eight characterization tests passed on their first run — so
+D7's off-ramp was not invoked. **The R7 manual pass is still owed**; the checklist entry is `[~]`,
+not `[x]`, and must not be upgraded until that pass happens.
+
+**The finding worth carrying forward is about the documents, not the code.** Every defect this
+wave surfaced originated in its own planning material, and none in the implementations:
+
+- The plan said "replace exactly one line" where six needed replacing.
+- The design doc named a Win32 constant wrongly — `ERROR_HANDLE_DISK_FULL` is `0x27`, while the
+  `0x0070` being classified is `ERROR_DISK_FULL`.
+- A test-file code block omitted a `using`, so the first run was a compile error.
+- Bare line-number citations drifted +3 mid-branch, because one task expanded a comment and later
+  tasks then cited pre-shift numbers. Four separate citations were wrong by the end.
+- The premise audit itself undercounted: five uniqueness helpers, not four. A paginated grep hid
+  `GetUniqueFilePathReserved`.
+
+Four documentation-origin defects against zero implementation-origin defects, in nine commits.
+Two concrete rules follow. **Stop putting bare line numbers in checked-in prose** — name the
+method or the guard instead; the one line-number table that survived intact did so only because
+it was consumed in the same sitting it was written. And **a grep that paginates is not an audit** —
+if a search underpins a scope decision, confirm the result count is complete.
+
 ---
 
 ## 2026-08-13 — Wave 2.5: the legend is the accessible surface, not decoration

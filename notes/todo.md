@@ -21,11 +21,17 @@ Focus: bug-free before feature-complete. No new features unless critical.
 > spinning/removable media. Wave 2.5 (pie polish + legend a11y + % contrast) shipped
 > 8/5–8/6, was deployed 8/13 (`4.0.0+9bc26d4`) and passed its R7 manual pass the same
 > day; it also delivered the PieChartControl Narrator coverage Wave 1.5 had missed, so
-> 1.5 is now closed too. **Next code item is Wave 2.6** (de-dup helpers; it inherits
-> retiring the dead `SearchFilter` property from 2.3 and promoting `AccentFocusVisual`
-> out of `MainWindow.xaml` from 2.5). One thing is still OWED:
-> ~22,000 test-origin lines sitting in the real `operational.log` (that one edits
-> live user data — ask before purging). This file
+> 1.5 is now closed too. Wave 2.6 (de-dup) shipped 8/14 in two halves: 2.6a inert
+> cleanup, 2.6b the engine half. Eleven commits, suite 230 → 244 green, merged to `main`
+> and deployed as `4.0.0+f509682`. It was planned from an audit of the report's claims
+> rather than from the report — which paid for itself: the specified "collapse 4
+> uniqueness helpers to 2" would have changed where files land. **Next code item is
+> Wave 3, which remains GATED**, or the three follow-ups §9 now lists (D4's progress-percent
+> extraction, merging the two `*Reserved` helpers, and retiring the redundant `Refresh()`
+> calls). Two things are OWED: **the R7 manual pass for Wave 2.6b** — the code is deployed
+> but not yet click-tested, and §9 is `[~]` until it is — and ~22,000 test-origin lines
+> sitting in the real `operational.log` (that one edits live user data — ask before
+> purging). This file
 > remains the roadmap for the items below, which that plan does not cover (VSS
 > elevation, launcher rename, deferred features).
 
