@@ -376,7 +376,7 @@ public sealed class TransferService
                 result.AddBytesTransferred(new FileInfo(sourcePath).Length);
                 progress?.Report($"Compressed: {name}");
             }
-            catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+            catch (IOException ioEx) when (IOExceptionClassifier.IsSharingViolation(ioEx))
             {
                 result.IncrementFilesLocked();
                 result.AddFileError(sourcePath, "File is in use");
@@ -493,7 +493,7 @@ public sealed class TransferService
                     result.AddBytesTransferred(entry.Length);
                     progress?.Report($"Extracted: {entry.Name}");
                 }
-                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+                catch (IOException ioEx) when (IOExceptionClassifier.IsSharingViolation(ioEx))
                 {
                     result.IncrementFilesLocked();
                     result.AddFileError(targetPath, "File is in use");
@@ -616,14 +616,14 @@ public sealed class TransferService
                     CopyItem(file, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss, versioning);
                 }
                 catch (OperationCanceledException) { throw; }
-                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
+                catch (IOException ioEx) when (IOExceptionClassifier.IsDiskFull(ioEx))
                 {
                     result.IncrementDiskFullErrors();
                     result.AddFileError(file, "Disk full");
                     FileLogger.Error($"Disk full: {file}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(file)} — not enough space");
                 }
-                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+                catch (IOException ioEx) when (IOExceptionClassifier.IsSharingViolation(ioEx))
                 {
                     result.IncrementFilesLocked();
                     result.AddFileError(file, "File is in use");
@@ -646,14 +646,14 @@ public sealed class TransferService
                     CopyItem(dir, destSubDir, stripPermissions, mode, progress, progressPercent, result, ct, pauseToken, verifyChecksums, exclusions, throttleBytesPerSec, vss, versioning);
                 }
                 catch (OperationCanceledException) { throw; }
-                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
+                catch (IOException ioEx) when (IOExceptionClassifier.IsDiskFull(ioEx))
                 {
                     result.IncrementDiskFullErrors();
                     result.AddFileError(dir, "Disk full");
                     FileLogger.Error($"Disk full: {dir}");
                     progress?.Report($"DISK FULL: {Path.GetFileName(dir)} — not enough space");
                 }
-                catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+                catch (IOException ioEx) when (IOExceptionClassifier.IsSharingViolation(ioEx))
                 {
                     result.IncrementFilesLocked();
                     result.AddFileError(dir, "Directory is in use");
@@ -795,14 +795,14 @@ public sealed class TransferService
             }
         }
         catch (OperationCanceledException) { throw; }
-        catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0070)
+        catch (IOException ioEx) when (IOExceptionClassifier.IsDiskFull(ioEx))
         {
             result.IncrementDiskFullErrors();
             result.AddFileError(item.SourcePath, "Disk full");
             FileLogger.Error($"Disk full: {item.SourcePath}");
             progress?.Report($"DISK FULL: {name} — not enough space");
         }
-        catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020)
+        catch (IOException ioEx) when (IOExceptionClassifier.IsSharingViolation(ioEx))
         {
             result.IncrementFilesLocked();
             result.AddFileError(item.SourcePath, "File is in use");
@@ -863,7 +863,7 @@ public sealed class TransferService
 
                 return; // success
             }
-            catch (IOException ioEx) when ((ioEx.HResult & 0xFFFF) == 0x0020 && !usedVss)
+            catch (IOException ioEx) when (IOExceptionClassifier.IsSharingViolation(ioEx) && !usedVss)
             {
                 // Sharing violation — file is locked
                 if (attempt < MaxRetries)
