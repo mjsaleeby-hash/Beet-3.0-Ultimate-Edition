@@ -23,8 +23,8 @@ internal static class IOExceptionClassifier
     /// <summary>ERROR_SHARING_VIOLATION — another process holds the file open.</summary>
     private const int ErrorSharingViolation = 0x0020;
 
-    /// <summary>ERROR_HANDLE_DISK_FULL — the destination volume is out of space.</summary>
-    private const int ErrorHandleDiskFull = 0x0070;
+    /// <summary>ERROR_DISK_FULL — the destination volume is out of space.</summary>
+    private const int ErrorDiskFull = 0x0070;
 
     /// <summary>
     /// Whether this exception means the file is locked by another process. Retryable: the
@@ -38,5 +38,5 @@ internal static class IOExceptionClassifier
     /// records it and moves on rather than re-attempting a copy that cannot succeed.
     /// </summary>
     internal static bool IsDiskFull(IOException ex)
-        => (ex.HResult & Win32CodeMask) == ErrorHandleDiskFull;
+        => (ex.HResult & Win32CodeMask) == ErrorDiskFull;
 }
