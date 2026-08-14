@@ -18,11 +18,12 @@ do {
 
 It can therefore never return the original path. Its two callers differ:
 
-- `:704` (KeepBoth file case) is guarded by `if (File.Exists(destFile))` at `:673`. **Correct** —
-  it is only called when there genuinely is a collision.
-- `:247` (archive naming) is **unguarded**, so the suffix is applied unconditionally. Because the
-  timestamp has second resolution, real collisions are rare, so the suffix is essentially always
-  spurious.
+- The `KeepBoth` file case (`GetUniqueFilePath(destFile)`, currently `:707`) is guarded by the
+  `if (File.Exists(destFile))` check at the head of that file branch (currently `:676`).
+  **Correct** — it is only called when there genuinely is a collision.
+- The archive-naming call in `CompressAsync` (`GetUniqueFilePath(...)`, currently `:250`) is
+  **unguarded**, so the suffix is applied unconditionally. Because the timestamp has second
+  resolution, real collisions are rare, so the suffix is essentially always spurious.
 
 **Severity: cosmetic.** No data loss and no overwrite risk — a stray `-1` in a filename. It has
 been shipping. Two nearby comments described the intended (guarded, `" (2)"`-formatted) behaviour

@@ -5,10 +5,15 @@ theme.**
 
 All six of Wave 2.6's items were verified against the code first. Four held. **D7 — "collapse
 the 4 uniqueness helpers to 2" — was wrong in a way that would have changed where files land**,
-and that finding is the reason the audit was worth doing. The four are not four of a kind:
-`GetUniqueFolderPathReserved` returns the original path when it is free *and* unclaimed, where
-the plain variants always start at `-1`; `ReserveUniquePrefix` operates on names rather than
-paths, touches no filesystem, and uses a `" (2)"` suffix format. Target corrected to 4 → 3.
+and that finding is the reason the audit was worth doing. It was also wrong about the count: the
+file has **five** path/name-uniqueness helpers, not four — the audit itself missed
+`GetUniqueFilePathReserved`. That miss is harmless: the helper is only reached from the KeepBoth
+planning path, behind an `if (File.Exists(destFile))` guard, so it only ever runs on a genuine
+collision. None of the five are of a kind: `GetUniqueFolderPathReserved` returns the original path
+when it is free *and* unclaimed, where the plain variants always start at `-1`;
+`ReserveUniquePrefix` operates on names rather than paths, touches no filesystem, and uses a
+`" (2)"` suffix format. "4 → 3" was always a count of independent counter loops, not helpers —
+that part of the target was correct; the "four helpers" framing was not.
 
 **D8 was real but mis-shaped.** All four `BackupLogEntry` sites are in one file, in two pairs
 taking different input types, so it became three private statics rather than the public factory

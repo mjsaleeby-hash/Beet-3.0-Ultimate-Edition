@@ -859,7 +859,12 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         (1) IOExceptionClassifier over 9 raw HResult sites (6x 0x0020 sharing violation,
             3x 0x0070 disk full; site :863 alone also carries "&& !usedVss"). Unit-tested
             classifier + a site table the diff is checked against line by line.
-        (2) Uniqueness helpers 4 -> 3, with characterization tests written FIRST.
+        (2) Uniqueness counter loops 4 -> 3, with characterization tests written FIRST.
+            The file has FIVE path/name-uniqueness helpers, not four — the audit that scoped
+            this wave missed GetUniqueFilePathReserved. That miss is harmless: the helper is
+            only reached from the KeepBoth planning path, behind an
+            if (File.Exists(destFile)) guard, so it only ever runs on a genuine collision.
+            "4 -> 3" was always a count of independent counter loops, not helpers.
             NOT 4 -> 2 as the report specified: GetUniqueFolderPathReserved returns the
             original path when free AND unclaimed where the plain variants always start at
             -1, and ReserveUniquePrefix works on names not paths with a " (2)" format. The
@@ -867,11 +872,13 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         OFF-RAMP: if the GetUniqueFolderPathReserved characterization test proves awkward to
         write, that difficulty IS evidence D7 is under-tested for its risk — drop D7 the way
         2.3 was dropped and record why. Commit (1) is independent and still ships.
-        DEFERRED, not dropped: D4 ProgressPercent(result). Sound — the same 5-term sum is
-        computed at TransferService :731 and :819 — but it would be a THIRD TransferService
-        edit in a wave already carrying two, and the two call sites are not interchangeable
-        (:819 gates on TryAdvanceReportedPercent's high-water mark, :731 does not). Extract
-        the computation only, in a later cleanup pass.
+        DEFERRED, not dropped: D4 ProgressPercent(result). Sound — the same 5-term sum
+        (FilesCopied + FilesSkipped + FilesFailed + DiskFullErrors + FilesLocked) is computed
+        in both CopyItem's per-file percent block (currently TransferService :734) and
+        ProcessFileWorkItem's (currently :822) — but it would be a THIRD TransferService edit in
+        a wave already carrying two, and the two call sites are not interchangeable
+        (ProcessFileWorkItem's gates on TryAdvanceReportedPercent's high-water mark, CopyItem's
+        does not). Extract the computation only, in a later cleanup pass.
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
   [ ] Wave 3.*  Only on explicit go-ahead, characterization tests first.
 

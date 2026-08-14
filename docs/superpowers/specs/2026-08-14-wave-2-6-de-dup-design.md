@@ -21,8 +21,8 @@ design is scoped to what survived.
 | Item | Claim | Verdict |
 |---|---|---|
 | D6 | `IOExceptionClassifier` — raw HResult checks repeated | **SOUND.** 9 sites in `TransferService.cs`, no other file masks an HResult |
-| D4 | `ProgressPercent(result)` — duplicated computation | **SOUND with a caveat.** Same 5-term sum at `:731` and `:819`, but the call sites differ in what they do with it |
-| D7 | "collapse the 4 uniqueness helpers to 2" | **WRONG AS WRITTEN.** They are not 4 of a kind; 4 → 2 changes behaviour. Correct target is 4 → 3 |
+| D4 | `ProgressPercent(result)` — duplicated computation | **SOUND with a caveat.** Same 5-term sum in `CopyItem` (currently `:734`) and `ProcessFileWorkItem` (currently `:822`), but the call sites differ in what they do with it |
+| D7 | "collapse the 4 uniqueness helpers to 2" | **WRONG AS WRITTEN, on two counts.** They are not 4 of a kind, so 4 → 2 changes behaviour; and the file has **five** uniqueness helpers, not four — this audit itself missed `GetUniqueFilePathReserved`. The correct target is 4 → 3 independent **counter loops**, not a helper-method count |
 | D8 | `BackupLogEntryFactory` | **REAL, WRONG SHAPE.** 4 sites, all in one file, in two pairs taking different input types. One factory does not fit |
 | — | `SearchFilter` is dead | **CONFIRMED.** Only the definition (`MainViewModel.cs:90`) and its own doc-comment (`:598`). No writer |
 | — | `AccentFocusVisual` is duplicated by Wave 2.5 | **OVERSTATED.** Two styles with deliberately different geometry, not duplicates |
@@ -56,7 +56,7 @@ None of these can alter a byte of transfer behaviour.
 | # | Commit | Gate |
 |---|---|---|
 | 1 | Extract `IOExceptionClassifier` | Classifier unit tests + a site table the diff is checked against |
-| 2 | Collapse the uniqueness helpers 4 → 3 | Characterization tests for the three unpinned behaviours, written **first** |
+| 2 | Collapse the uniqueness counter loops 4 → 3 | Characterization tests for the three unpinned behaviours, written **first** |
 
 ## 2.6a details
 
@@ -154,8 +154,10 @@ a suffixed name.
 
 Its two callers differ:
 
-- `:704` (KeepBoth file case) is guarded by `if (File.Exists(destFile))` at `:673`. **Correct.**
-- `:247` (archive naming) is **unguarded**. Every compressed archive is therefore named
+- The `KeepBoth` file case (currently `:707`) is guarded by the `if (File.Exists(destFile))`
+  check at the head of that file branch (currently `:676`). **Correct.**
+- The archive-naming call in `CompressAsync` (currently `:250`) is **unguarded**. Every compressed
+  archive is therefore named
   `MyBackup_2026-08-14_10-30-00-1.zip` — the `-1` is always present, even on a clean destination.
   Because the timestamp has second resolution, real collisions are rare, so the suffix is
   essentially always spurious.
@@ -183,7 +185,7 @@ public static bool IsDiskFull(IOException ex)
 
 Typed to `IOException` because all nine call sites already catch it; widening to `Exception`
 would invite use where the HResult convention does not hold. The Win32 codes stay **private
-consts** — `ERROR_SHARING_VIOLATION = 0x0020`, `ERROR_HANDLE_DISK_FULL = 0x0070`. Exposing them
+consts** — `ERROR_SHARING_VIOLATION = 0x0020`, `ERROR_DISK_FULL = 0x0070`. Exposing them
 would re-create the magic-number problem one layer up.
 
 The file records why the mask exists: a Win32 error surfaces as an HRESULT of `0x8007xxxx`, so
@@ -225,14 +227,16 @@ The nine substitutions get no tests of their own. They are covered by the existi
 plus the site table; tests that merely re-assert the table would be the tautology trap caught in
 Wave 2.4.
 
-### 2. Uniqueness helpers, 4 → 3
+### 2. Uniqueness counter loops, 4 → 3
 
-The four are not four of a kind:
+The file has **five** path/name-uniqueness helpers — this audit initially missed
+`GetUniqueFilePathReserved` — and they are not five of a kind:
 
 | Helper | Line | Contract | Fate |
 |---|---|---|---|
 | `GetUniqueFilePath` | 1212 | Counter loop, `-N`, `File.Exists`, never returns original | Merge |
 | `GetUniqueFolderPath` | 1227 | Counter loop, `-N`, `Directory.Exists`, never returns original | Merge |
+| `GetUniqueFilePathReserved` | ~1592 | Counter loop, `-N`, `File.Exists` + reservation set, never returns original. Only reached from the KeepBoth planning path behind an `if (File.Exists(destFile))` guard — harmless, always called on a genuine collision | **Stays separate** |
 | `GetUniqueFolderPathReserved` | 1598 | **Returns the original when free AND unclaimed**; mutates a reservation set | **Stays separate** |
 | `ReserveUniquePrefix` | 1390 | Names not paths, no filesystem, `" (2)"` format, `"root"` fallback | **Stays untouched** |
 
@@ -253,6 +257,14 @@ it preserves "never returns the original" for both current callers.
 contract — folding it in would put a branch in the shared helper that only one caller ever takes.
 `ReserveUniquePrefix` is a different family entirely; merging it would change archive naming,
 which is user-visible.
+
+**"4 → 3" always meant counter loops, not helper methods.** Before the merge there are four
+independent counter loops (one each inside `GetUniqueFilePath`, `GetUniqueFolderPath`,
+`GetUniqueFilePathReserved`, `GetUniqueFolderPathReserved`); after, `GetUniqueFilePath` and
+`GetUniqueFolderPath` share `NextFreePath`, leaving three: `NextFreePath`,
+`GetUniqueFilePathReserved`, `GetUniqueFolderPathReserved`. The helper-method count does not drop
+to 3 — the file still has five uniqueness helpers, since `GetUniqueFilePath` and
+`GetUniqueFolderPath` survive as one-line delegations rather than disappearing.
 
 **4 → 2 as originally specified would have changed where files land.** That is the finding that
 justified this audit.
@@ -306,7 +318,8 @@ From `improvements/IMPLEMENTATION-PLAN.txt` §8. Every task inherits these.
 2. Zero visual change — both themes, toolbar focus rings and legend focus rings identical to today.
 3. `SearchFilter` gone; no reference remains outside the git history.
 4. `IOExceptionClassifier` owns all nine HResult checks; no raw mask survives in `TransferService`.
-5. Uniqueness helpers at 3, with `ReserveUniquePrefix` and `GetUniqueFolderPathReserved` intact and
+5. Uniqueness counter loops at 3 (the file's five helper methods are unchanged in count), with
+   `ReserveUniquePrefix`, `GetUniqueFilePathReserved` and `GetUniqueFolderPathReserved` intact and
    their distinct contracts documented — **or** D7 dropped with the reason recorded.
 6. The archive-naming defect is in `notes/bugs.md`, unfixed and clearly scoped.
 7. R7 pass recorded against a deployed build whose `ProductVersion` was checked first.
