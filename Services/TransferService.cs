@@ -1212,7 +1212,11 @@ public sealed class TransferService
         return SHA256.HashData(stream);
     }
 
-    private static string GetUniqueFilePath(string path)
+    // The four helpers below are internal rather than private so the characterization tests in
+    // BeetsBackup.Tests can assert their exact output strings. Testing them only through
+    // CopyAsync would leave folder naming, in-run reservation and prefix naming pinned by
+    // inference rather than by assertion.
+    internal static string GetUniqueFilePath(string path)
     {
         var dir = Path.GetDirectoryName(path)!;
         var nameNoExt = Path.GetFileNameWithoutExtension(path);
@@ -1227,7 +1231,7 @@ public sealed class TransferService
         return candidate;
     }
 
-    private static string GetUniqueFolderPath(string path)
+    internal static string GetUniqueFolderPath(string path)
     {
         var parent = Path.GetDirectoryName(path)!;
         var name = Path.GetFileName(path);
@@ -1390,7 +1394,7 @@ public sealed class TransferService
     /// ("Data (2)", "Data (3)", …) and reserves the chosen name before returning.
     /// Used to prevent duplicate top-level entries when multiple sources share the same leaf name.
     /// </summary>
-    private static string ReserveUniquePrefix(string desired, HashSet<string> used)
+    internal static string ReserveUniquePrefix(string desired, HashSet<string> used)
     {
         if (string.IsNullOrEmpty(desired)) desired = "root";
 
@@ -1598,7 +1602,7 @@ public sealed class TransferService
     /// would both observe the folder as non-existent and silently plan to write into it. The chosen
     /// path is reserved before returning so later siblings see the claim.
     /// </summary>
-    private static string GetUniqueFolderPathReserved(string path, HashSet<string> reserved)
+    internal static string GetUniqueFolderPathReserved(string path, HashSet<string> reserved)
     {
         // The original path is acceptable only if it's both absent on disk and unclaimed this pass.
         if (!Directory.Exists(path) && reserved.Add(path))
