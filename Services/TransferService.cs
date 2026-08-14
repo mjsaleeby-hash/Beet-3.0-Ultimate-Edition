@@ -1216,34 +1216,44 @@ public sealed class TransferService
     // BeetsBackup.Tests can assert their exact output strings. Testing them only through
     // CopyAsync would leave folder naming, in-run reservation and prefix naming pinned by
     // inference rather than by assertion.
-    internal static string GetUniqueFilePath(string path)
+    /// <summary>
+    /// The counter loop shared by the file and folder uniqueness helpers: append "-1", "-2", …
+    /// until <paramref name="exists"/> says the candidate is free.
+    ///
+    /// <paramref name="splitExtension"/> is NOT a stylistic parameter. Files split their name
+    /// with GetFileNameWithoutExtension + GetExtension so the counter lands before ".txt";
+    /// folders use the whole name, because a folder called "my.folder" must become
+    /// "my.folder-1" and not "my-1.folder". Merging these two loops on the file-style split
+    /// alone would silently rename every dotted folder — pinned by
+    /// GetUniqueFolderPath_DottedFolderName_KeepsTheWholeNameIntact.
+    ///
+    /// Like the two methods it replaces, this NEVER returns the original path: the candidate is
+    /// built before the first existence test. Callers that must accept an unused original guard
+    /// with their own Exists check (see :673). The archive caller does not, which is the defect
+    /// recorded in notes/bugs.md 2026-08-14 — preserved here deliberately.
+    /// </summary>
+    private static string NextFreePath(string path, Func<string, bool> exists, bool splitExtension)
     {
         var dir = Path.GetDirectoryName(path)!;
-        var nameNoExt = Path.GetFileNameWithoutExtension(path);
-        var ext = Path.GetExtension(path);
+        var stem = splitExtension ? Path.GetFileNameWithoutExtension(path) : Path.GetFileName(path);
+        var ext = splitExtension ? Path.GetExtension(path) : string.Empty;
+
         int counter = 1;
         string candidate;
         do
         {
-            candidate = Path.Combine(dir, $"{nameNoExt}-{counter}{ext}");
+            candidate = Path.Combine(dir, $"{stem}-{counter}{ext}");
             counter++;
-        } while (File.Exists(candidate));
+        } while (exists(candidate));
+
         return candidate;
     }
 
+    internal static string GetUniqueFilePath(string path)
+        => NextFreePath(path, File.Exists, splitExtension: true);
+
     internal static string GetUniqueFolderPath(string path)
-    {
-        var parent = Path.GetDirectoryName(path)!;
-        var name = Path.GetFileName(path);
-        int counter = 1;
-        string candidate;
-        do
-        {
-            candidate = Path.Combine(parent, $"{name}-{counter}");
-            counter++;
-        } while (Directory.Exists(candidate));
-        return candidate;
-    }
+        => NextFreePath(path, Directory.Exists, splitExtension: false);
 
     /// <summary>
     /// Estimate-based free-space pre-check used by the Compress and Move paths (which don't build an
