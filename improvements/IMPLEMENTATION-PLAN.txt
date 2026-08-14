@@ -835,12 +835,43 @@ R7. EVERY PR records a manual smoke test: launch app, navigate panes, run a smal
         existed in it to fail. The pass was only recorded after the binary was pinned by
         version and the deploy was done. BEFORE RECORDING ANY R7 PASS, ESTABLISH WHICH
         BINARY WAS RUN. "Looks fine" is only evidence if you know what was running.
-  [ ] Wave 2.6  De-dup helpers (one commit each)
-        Inherits two items from earlier waves: retire the dead SearchFilter property and its
-        dead predicate branch (from 2.3, see the note above), and promote AccentFocusVisual
-        out of MainWindow.xaml's Window.Resources into Themes/Controls.xaml — Wave 2.5 had to
-        duplicate it as LegendRowFocusVisual because it is unreachable from a UserControl,
-        and that duplication is deliberate debt queued here.
+  [x] Wave 2.6a De-dup, inert half — 5 commits, no behaviour reachable from the UI
+        Planned from an AUDIT, not from the report: all six claimed items were checked
+        against the code first, because improvements/ reports have been wrong on premise
+        three times. Four held, one (D7) was wrong in a way that would have changed where
+        files land, one (D8) was real but mis-shaped. Design:
+        docs/superpowers/specs/2026-08-14-wave-2-6-de-dup-design.md
+        SHIPPED: dead SearchFilter retired (no writer existed; CreateFilteredView survives
+        as a pass-through because the VIEWS are load-bearing pane ItemsSources); both focus
+        rings moved to Themes/Controls.xaml with geometries verbatim (they are NOT
+        duplicates — -2/9 wraps CornerRadius 8, -1/5 wraps CornerRadius 4 — so Wave 2.5's
+        "deliberately duplicates" comment was corrected too); four BackupLogEntry
+        constructions collapsed to three private statics inside SchedulerService (all
+        callers are in that one file, so a public factory would have had one consumer);
+        two comments corrected that documented a " (2)" suffix format the code never
+        produced. ZERO visual change; no theme token touched (R4).
+        FOUND WHILE AUDITING, logged not fixed: every compressed archive carries a
+        spurious "-1" — GetUniqueFilePath cannot return the original path and the archive
+        call site is unguarded. Cosmetic, shipping, zero test coverage over that path.
+        See notes/bugs.md 2026-08-14.
+  [ ] Wave 2.6b De-dup, engine half — 2 commits, GATED
+        Touches TransferService, so each commit carries its own evidence.
+        (1) IOExceptionClassifier over 9 raw HResult sites (6x 0x0020 sharing violation,
+            3x 0x0070 disk full; site :863 alone also carries "&& !usedVss"). Unit-tested
+            classifier + a site table the diff is checked against line by line.
+        (2) Uniqueness helpers 4 -> 3, with characterization tests written FIRST.
+            NOT 4 -> 2 as the report specified: GetUniqueFolderPathReserved returns the
+            original path when free AND unclaimed where the plain variants always start at
+            -1, and ReserveUniquePrefix works on names not paths with a " (2)" format. The
+            specified collapse would have changed where files land.
+        OFF-RAMP: if the GetUniqueFolderPathReserved characterization test proves awkward to
+        write, that difficulty IS evidence D7 is under-tested for its risk — drop D7 the way
+        2.3 was dropped and record why. Commit (1) is independent and still ships.
+        DEFERRED, not dropped: D4 ProgressPercent(result). Sound — the same 5-term sum is
+        computed at TransferService :731 and :819 — but it would be a THIRD TransferService
+        edit in a wave already carrying two, and the two call sites are not interchangeable
+        (:819 gates on TryAdvanceReportedPercent's high-water mark, :731 does not). Extract
+        the computation only, in a later cleanup pass.
   [ ] --- decide whether to invest in Wave 3; meet the entry bar first ---
   [ ] Wave 3.*  Only on explicit go-ahead, characterization tests first.
 

@@ -1,3 +1,44 @@
+## 2026-08-14 — Every compressed archive gets a spurious "-1" suffix
+
+**Status: OPEN — logged, deliberately not fixed in Wave 2.6.**
+
+**Symptom:** a compressed backup lands as `MyBackup_2026-08-14_10-30-00-1.zip`. The `-1` is
+always present, even when no file of that name exists in the destination.
+
+**Root cause:** `TransferService.GetUniqueFilePath` builds its candidate *before* testing
+existence:
+
+```csharp
+int counter = 1;
+do {
+    candidate = Path.Combine(dir, $"{nameNoExt}-{counter}{ext}");
+    counter++;
+} while (File.Exists(candidate));
+```
+
+It can therefore never return the original path. Its two callers differ:
+
+- `:704` (KeepBoth file case) is guarded by `if (File.Exists(destFile))` at `:673`. **Correct** —
+  it is only called when there genuinely is a collision.
+- `:247` (archive naming) is **unguarded**, so the suffix is applied unconditionally. Because the
+  timestamp has second resolution, real collisions are rare, so the suffix is essentially always
+  spurious.
+
+**Severity: cosmetic.** No data loss and no overwrite risk — a stray `-1` in a filename. It has
+been shipping. Two nearby comments described the intended (guarded, `" (2)"`-formatted) behaviour
+rather than the actual behaviour; those were corrected in Wave 2.6a without touching the code.
+
+**Coverage gap:** there are **no tests over the compress path at all**. The only `Compress` match
+in the suite is an unrelated `DiskSpaceService.Preview` test.
+
+**Why not fixed here:** changing archive filenames is user-visible, and Wave 2.6 is
+behaviour-neutral by contract (R6, no stated exceptions). Wave 2.6b's characterization tests
+deliberately **pin this defect** so a later refactor cannot change it by accident. Fixing it is
+its own decision: the fix is a `File.Exists` guard at the call site, or making the helper return
+the original when free — the latter would also change the KeepBoth path and needs more care.
+
+---
+
 ## 2026-08-04 — Every clean shutdown aborted service disposal partway through
 
 **Status: FIXED** (`SchedulerService.Dispose`) — found while checking whether Beet was still

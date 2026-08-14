@@ -1,3 +1,39 @@
+## 2026-08-14 — Wave 2.6 planned from an audit, and split at a hard gate
+
+**Decision: check every claim before planning, then split the wave by risk rather than by
+theme.**
+
+All six of Wave 2.6's items were verified against the code first. Four held. **D7 — "collapse
+the 4 uniqueness helpers to 2" — was wrong in a way that would have changed where files land**,
+and that finding is the reason the audit was worth doing. The four are not four of a kind:
+`GetUniqueFolderPathReserved` returns the original path when it is free *and* unclaimed, where
+the plain variants always start at `-1`; `ReserveUniquePrefix` operates on names rather than
+paths, touches no filesystem, and uses a `" (2)"` suffix format. Target corrected to 4 → 3.
+
+**D8 was real but mis-shaped.** All four `BackupLogEntry` sites are in one file, in two pairs
+taking different input types, so it became three private statics rather than the public factory
+the report proposed — a public type with one consumer is indirection, not de-duplication.
+
+**The `AccentFocusVisual` item turned out not to be duplication at all.** The two focus-visual
+styles differ in geometry, each tuned to the corner radius it wraps, and WPF cannot parameterize
+a `FocusVisualStyle` against the focused element's `CornerRadius`. Both moved to
+`Themes/Controls.xaml` with values verbatim; the claim of duplication — which this project wrote
+itself during Wave 2.5 — was corrected in the comment.
+
+**The split.** 2.6a's five commits cannot alter transfer behaviour and ship independently.
+2.6b's two touch `TransferService` for no user-visible gain, which is the same argument that
+gates Wave 3 and defers the double-run fix — so each carries its own evidence, and D7 has a
+written off-ramp that drops it rather than pushing through if its characterization test proves
+hard to write. Difficulty writing a test for a behaviour IS evidence about that behaviour's
+risk.
+
+**One defect logged, not fixed.** Every compressed archive carries a spurious `-1`. Fixing it
+changes user-visible filenames and this wave is behaviour-neutral by contract, so it went to
+`notes/bugs.md` and the characterization tests deliberately pin the defect so a refactor cannot
+silently alter it.
+
+---
+
 ## 2026-08-13 — Wave 2.5: the legend is the accessible surface, not decoration
 
 **Decision: treat the legend as the chart's accessible representation rather than as a caption
