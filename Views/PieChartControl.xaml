@@ -5,26 +5,6 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
-        <!-- A visible keyboard focus ring for legend rows. WPF draws FocusVisualStyle on
-             top of the control only when it has KEYBOARD focus, so mouse users see no
-             change and layout is unaffected.
-             NOTE: this deliberately duplicates AccentFocusVisual, which is stranded in
-             MainWindow.xaml's Window.Resources and therefore unreachable from this
-             UserControl. Promoting it to Themes/Controls.xaml (the app-wide dictionary
-             merged in App.xaml) is queued for Wave 2.6, the de-dup wave — not done here,
-             because moving a resource out of MainWindow is not this wave's risk to take. -->
-        <Style x:Key="LegendRowFocusVisual">
-            <Setter Property="Control.Template">
-                <Setter.Value>
-                    <ControlTemplate>
-                        <Rectangle Margin="-1" RadiusX="5" RadiusY="5"
-                                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
-                                   SnapsToDevicePixels="True"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <!-- Chrome-free button used as the legend row container. The template root is the
              same Border the row used when it was a plain Border, so CornerRadius, Padding
              and the hover/selection background all behave exactly as before — but the row

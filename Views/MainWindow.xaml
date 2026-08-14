@@ -180,23 +180,6 @@
             </Setter>
         </Style>
 
-        <!-- A clearly-visible keyboard focus ring. WPF draws a control's
-             FocusVisualStyle on top of the control when it has KEYBOARD focus, so
-             this does not affect mouse users or change layout. Applied to the base
-             ToolbarButton style below, so every derived button (Accent/Danger/Icon/
-             Nav) gets a visible focus indicator for keyboard users. -->
-        <Style x:Key="AccentFocusVisual">
-            <Setter Property="Control.Template">
-                <Setter.Value>
-                    <ControlTemplate>
-                        <Rectangle Margin="-2" RadiusX="9" RadiusY="9"
-                                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
-                                   SnapsToDevicePixels="True"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <!-- ================================================================
              TOOLBAR BUTTON: CornerRadius 8, transparent bg, pill hover
              Sized to match header.png reference (~38px tall, generous padding)

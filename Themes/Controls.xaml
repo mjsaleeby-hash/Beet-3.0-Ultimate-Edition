@@ -118,4 +118,47 @@
         <Setter Property="Margin" Value="0,0,8,0"/>
     </Style>
 
+    <!-- ================================================================
+         KEYBOARD FOCUS RINGS
+         WPF draws a FocusVisualStyle over a control only when it has
+         KEYBOARD focus, so mouse users see no change and layout is
+         unaffected. These live here rather than in a window or a control
+         because BOTH a Window (MainWindow) and a UserControl
+         (PieChartControl) need them, and a Window.Resources entry is
+         unreachable from a UserControl.
+
+         They are NOT duplicates of each other, despite sharing a template
+         shape. The geometry of each is tuned to the corner radius it wraps,
+         and WPF gives no clean way to parameterize a FocusVisualStyle
+         against the focused element's CornerRadius. Keep them separate.
+         ================================================================ -->
+
+    <!-- Ring for CornerRadius-8 controls: the toolbar buttons and everything
+         derived from ToolbarButton (Accent/Danger/Icon/Nav). -->
+    <Style x:Key="AccentFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="-2" RadiusX="9" RadiusY="9"
+                               Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                               SnapsToDevicePixels="True"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Ring for CornerRadius-4 controls: the pie chart's legend rows. Tighter
+         margin and radius so the ring hugs a smaller corner. -->
+    <Style x:Key="LegendRowFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="-1" RadiusX="5" RadiusY="5"
+                               Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                               SnapsToDevicePixels="True"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>
