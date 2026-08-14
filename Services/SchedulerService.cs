@@ -302,16 +302,8 @@ public sealed class SchedulerService : IDisposable
         if (job != null)
         {
             FileLogger.Info($"Skipped missed job: '{job.Name}' — next run advanced to {job.NextRun:g}");
-            _log.Add(new BackupLogEntry
-            {
-                JobId = job.Id,
-                JobName = job.Name,
-                SourcePath = string.Join("; ", job.SourcePaths),
-                DestinationPath = job.DestinationPath,
-                Status = BackupStatus.Skipped,
-                Timestamp = DateTime.Now,
-                Message = $"Missed backup skipped by user. Next run: {job.NextRun:g}"
-            });
+            _log.Add(PlaceholderFor(job, BackupStatus.Skipped,
+                $"Missed backup skipped by user. Next run: {job.NextRun:g}"));
         }
 
         JobsChanged?.Invoke();
@@ -326,16 +318,8 @@ public sealed class SchedulerService : IDisposable
             SaveJobs();
         }
 
-        _log.Add(new BackupLogEntry
-        {
-            JobId = job.Id,
-            JobName = job.Name,
-            SourcePath = string.Join("; ", job.SourcePaths),
-            DestinationPath = job.DestinationPath,
-            Status = BackupStatus.Scheduled,
-            Timestamp = DateTime.Now,
-            Message = $"Scheduled for {job.NextRun:g}{(job.IsRecurring ? $", recurring {job.RecurInterval}" : "")}"
-        });
+        _log.Add(PlaceholderFor(job, BackupStatus.Scheduled,
+            $"Scheduled for {job.NextRun:g}{(job.IsRecurring ? $", recurring {job.RecurInterval}" : "")}"));
 
         // Best-effort: also register with Windows Task Scheduler so the job fires even when
         // the app isn't running. Failures are non-fatal — the in-process timer is still active.
@@ -502,18 +486,7 @@ public sealed class SchedulerService : IDisposable
         // under the process that's actually doing the work.
         _log.RemoveScheduledPlaceholdersForJob(snapshot.Id);
 
-        var logEntry = new BackupLogEntry
-        {
-            JobId = snapshot.Id,
-            JobName = snapshot.Name,
-            SourcePath = string.Join("; ", snapshot.SourcePaths),
-            DestinationPath = snapshot.DestinationPath,
-            SourcePaths = new List<string>(snapshot.SourcePaths),
-            StripPermissions = snapshot.StripPermissions,
-            TransferMode = snapshot.TransferMode,
-            Status = BackupStatus.Running,
-            Message = "Estimating size..."
-        };
+        var logEntry = RunningFor(snapshot);
         _log.Add(logEntry);
         FileLogger.Info($"Scheduled job started: '{snapshot.Name}' — {string.Join("; ", snapshot.SourcePaths)} → {snapshot.DestinationPath}");
 
@@ -658,6 +631,59 @@ public sealed class SchedulerService : IDisposable
         catch { /* telemetry is observe-only */ }
     }
 
+    /// <summary>
+    /// A log entry that records something ABOUT a job without a transfer running — the
+    /// "Scheduled" and "Skipped" markers. Sets Timestamp explicitly because these are
+    /// point-in-time notes rather than the start of a run.
+    /// </summary>
+    private static BackupLogEntry PlaceholderFor(ScheduledJob job, BackupStatus status, string message) => new()
+    {
+        JobId = job.Id,
+        JobName = job.Name,
+        SourcePath = string.Join("; ", job.SourcePaths),
+        DestinationPath = job.DestinationPath,
+        Status = status,
+        Timestamp = DateTime.Now,
+        Message = message
+    };
+
+    /// <summary>
+    /// The entry that fronts an actual run. Carries the transfer inputs (SourcePaths,
+    /// StripPermissions, TransferMode) because the run is driven from this entry, and
+    /// deliberately does NOT set Timestamp — the entry's own default stands, matching the
+    /// behaviour before these helpers existed.
+    /// </summary>
+    private static BackupLogEntry RunningFor(ScheduledJob job) => new()
+    {
+        JobId = job.Id,
+        JobName = job.Name,
+        SourcePath = string.Join("; ", job.SourcePaths),
+        DestinationPath = job.DestinationPath,
+        SourcePaths = new List<string>(job.SourcePaths),
+        StripPermissions = job.StripPermissions,
+        TransferMode = job.TransferMode,
+        Status = BackupStatus.Running,
+        Message = "Estimating size..."
+    };
+
+    /// <summary>
+    /// A fresh Running entry cloned from a FAILED one, for the retry path. Takes its inputs
+    /// from the failed entry rather than from a job, because a retry can outlive edits to the
+    /// job that spawned it — the retry must repeat what actually ran.
+    /// </summary>
+    private static BackupLogEntry RetryOf(BackupLogEntry failed) => new()
+    {
+        JobId = failed.JobId,
+        JobName = failed.JobName + " (retry)",
+        SourcePath = failed.SourcePath,
+        DestinationPath = failed.DestinationPath,
+        SourcePaths = new List<string>(failed.SourcePaths),
+        StripPermissions = failed.StripPermissions,
+        TransferMode = failed.TransferMode,
+        Status = BackupStatus.Running,
+        Message = "Retrying transfer..."
+    };
+
     private static ScheduledJob SnapshotJob(ScheduledJob job)
     {
         // Routes through ScheduledJob.CopyFieldsFrom so adding a new persisted property to
@@ -739,18 +765,7 @@ public sealed class SchedulerService : IDisposable
             return;
         }
 
-        var logEntry = new BackupLogEntry
-        {
-            JobId = failedEntry.JobId,
-            JobName = failedEntry.JobName + " (retry)",
-            SourcePath = failedEntry.SourcePath,
-            DestinationPath = failedEntry.DestinationPath,
-            SourcePaths = new List<string>(failedEntry.SourcePaths),
-            StripPermissions = failedEntry.StripPermissions,
-            TransferMode = failedEntry.TransferMode,
-            Status = BackupStatus.Running,
-            Message = "Retrying transfer..."
-        };
+        var logEntry = RetryOf(failedEntry);
         _log.Add(logEntry);
         FileLogger.Info($"Retry started: '{logEntry.JobName}' — {logEntry.SourcePath} → {logEntry.DestinationPath}");
 
