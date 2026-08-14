@@ -23,8 +23,10 @@ public static class NameSanitizer
 
     /// <summary>
     /// Builds a timestamped <c>.zip</c> archive filename from a job name —
-    /// <c>"MyBackup_2026-05-20_11-37-04.zip"</c>. Second resolution; collisions inside
-    /// the same second produce <c>" (2)"</c> suffixes via TransferService.GetUniqueFilePath.
+    /// <c>"MyBackup_2026-05-20_11-37-04.zip"</c>. Second resolution.
+    /// The caller passes this through <c>TransferService.GetUniqueFilePath</c>, which appends a
+    /// <c>-1</c>, <c>-2</c>, … suffix. Note that it appends one UNCONDITIONALLY, so the archive
+    /// that actually lands is always suffixed — see the archive-naming entry in notes/bugs.md.
     /// </summary>
     public static string BuildArchiveName(string jobName)
     {

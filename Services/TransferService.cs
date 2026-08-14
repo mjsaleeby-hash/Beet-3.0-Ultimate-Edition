@@ -242,8 +242,11 @@ public sealed class TransferService
             using var _awake = PowerManagement.KeepSystemAwake();
             Directory.CreateDirectory(destinationDir);
 
-            // Disambiguate if a prior archive with this exact name already exists — never silently
-            // clobber user data. Counter suffix: "name.zip" → "name (2).zip" → "name (3).zip" …
+            // Disambiguate against a prior archive of the same name — never silently clobber user
+            // data. NOTE: GetUniqueFilePath appends its counter unconditionally, so this produces
+            // "name-1.zip" even when "name.zip" is free. That is a known defect, recorded in
+            // notes/bugs.md; it is deliberately NOT fixed here because changing archive filenames
+            // is user-visible and Wave 2.6 is behaviour-neutral by contract.
             var archivePath = GetUniqueFilePath(Path.Combine(destinationDir, archiveName));
 
             // Rough free-space check based on uncompressed size (conservative — real archive will be
