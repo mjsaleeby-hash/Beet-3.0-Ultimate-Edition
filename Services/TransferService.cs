@@ -1212,10 +1212,6 @@ public sealed class TransferService
         return SHA256.HashData(stream);
     }
 
-    // The four helpers below are internal rather than private so the characterization tests in
-    // BeetsBackup.Tests can assert their exact output strings. Testing them only through
-    // CopyAsync would leave folder naming, in-run reservation and prefix naming pinned by
-    // inference rather than by assertion.
     /// <summary>
     /// The counter loop shared by the file and folder uniqueness helpers: append "-1", "-2", …
     /// until <paramref name="exists"/> says the candidate is free.
@@ -1229,8 +1225,9 @@ public sealed class TransferService
     ///
     /// Like the two methods it replaces, this NEVER returns the original path: the candidate is
     /// built before the first existence test. Callers that must accept an unused original guard
-    /// with their own Exists check (see :673). The archive caller does not, which is the defect
-    /// recorded in notes/bugs.md 2026-08-14 — preserved here deliberately.
+    /// with their own Exists check — the `if (File.Exists(destFile))` guard at the head of the
+    /// file branch (:676), which the KeepBoth case sits behind. The archive caller does not,
+    /// which is the defect recorded in notes/bugs.md 2026-08-14 — preserved here deliberately.
     /// </summary>
     private static string NextFreePath(string path, Func<string, bool> exists, bool splitExtension)
     {
@@ -1249,6 +1246,10 @@ public sealed class TransferService
         return candidate;
     }
 
+    // The four helpers marked internal in this file are exposed that way — rather than private —
+    // so the characterization tests in BeetsBackup.Tests can assert their exact output strings.
+    // Testing them only through CopyAsync would leave folder naming, in-run reservation and
+    // prefix naming pinned by inference rather than by assertion.
     internal static string GetUniqueFilePath(string path)
         => NextFreePath(path, File.Exists, splitExtension: true);
 

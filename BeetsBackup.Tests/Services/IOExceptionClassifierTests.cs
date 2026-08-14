@@ -32,7 +32,7 @@ public class IOExceptionClassifierTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void IsDiskFull_Win32HandleDiskFull_IsTrue()
+    public void IsDiskFull_Win32DiskFull_IsTrue()
     {
         IOExceptionClassifier.IsDiskFull(WithHResult(unchecked((int)0x80070070)))
             .Should().BeTrue();

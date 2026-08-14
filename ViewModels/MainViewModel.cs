@@ -71,7 +71,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public RangeObservableCollection<FileSystemItem> TopPaneItems { get; } = new();
     public RangeObservableCollection<FileSystemItem> BottomPaneItems { get; } = new();
 
-    // Filtered views for search
+    // Default ICollectionViews over the pane collections — both panes bind these as ItemsSource.
     private ICollectionView? _filteredTopView;
     private ICollectionView? _filteredBottomView;
     public ICollectionView FilteredTopPaneItems => _filteredTopView ??= CreateFilteredView(TopPaneItems);
@@ -84,7 +84,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private string _topCurrentPath = string.Empty;
     [ObservableProperty] private string _bottomCurrentPath = string.Empty;
-
 
     /// <summary>How many results the deep-search batches up before flushing to the UI. 50 is a
     /// compromise: small enough that results start landing visibly quickly on huge trees, large
