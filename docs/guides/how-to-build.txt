@@ -4,11 +4,23 @@ HOW TO BUILD BeetsBackup.exe FROM SOURCE
 This guide walks you through building the BeetsBackup executable from the
 downloaded project files using PowerShell. No Visual Studio or VS Code required.
 
+(This file is kept byte-identical to docs\guides\how-to-build.txt. If you edit
+one, copy it over the other.)
+
 
 WHAT YOU NEED
 -------------
-- Windows 10 or later (64-bit)
-- The .NET 8 SDK (free download from Microsoft)
+- Windows 10 version 1607 or later, or Windows 11 (64-bit)
+- The .NET 8 SDK, version 8.0.419 or newer (free download from Microsoft)
+
+IMPORTANT: the project pins its SDK in global.json:
+
+   "version": "8.0.419", "rollForward": "latestFeature"
+
+That means the build requires an 8.0 SDK at 8.0.419 or newer. A .NET 9 or
+.NET 10 SDK on its own will NOT work -- the build stops before it starts with
+a "compatible .NET SDK was not found" error. Installing the .NET 8 SDK
+alongside a newer one is fine; they coexist.
 
 
 STEP 1: INSTALL THE .NET 8 SDK
@@ -18,16 +30,25 @@ STEP 1: INSTALL THE .NET 8 SDK
    https://dotnet.microsoft.com/download/dotnet/8.0
 
 2. Under the SDK column, click the Windows x64 installer to download it.
+   Make sure the version is 8.0.419 or higher.
 
 3. Run the installer and follow the prompts. Accept the defaults.
 
 4. When it finishes, close and reopen any PowerShell windows so the new
    commands are available.
 
+5. To confirm the SDK is installed, type:
+
+      dotnet --list-sdks
+
+   You should see a line beginning with 8.0.4 (or higher).
+
 
 STEP 2: DOWNLOAD THE PROJECT
 -----------------------------
-1. Go to the GitHub repository page for Beet's Backup.
+1. Go to the GitHub repository page for Beet's Backup:
+
+   https://github.com/mjsaleeby-hash/Beet-3.0-Ultimate-Edition
 
 2. Click the green "Code" button, then click "Download ZIP".
 
@@ -39,6 +60,9 @@ STEP 2: DOWNLOAD THE PROJECT
 5. Extract it to your Downloads folder. You should now have a folder like:
 
    C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main
+
+   (If you have git installed you can clone instead:
+    git clone https://github.com/mjsaleeby-hash/Beet-3.0-Ultimate-Edition.git)
 
 
 STEP 3: OPEN POWERSHELL
@@ -88,6 +112,14 @@ When it finishes, you should see a message like:
 
    BeetsBackup -> C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main\bin\Release\net8.0-windows\win-x64\publish\
 
+NOTE: Build the .csproj, not the .sln. The solution also contains a test
+project and a work-in-progress launcher stub that you do not need in order to
+run the app.
+
+NOTE: You do not need to pass any extra flags. Every publish setting the app
+needs -- self-contained, single file, win-x64, ReadyToRun, compression -- is
+already declared inside BeetsBackup.csproj.
+
 
 STEP 6: FIND YOUR EXECUTABLE
 -----------------------------
@@ -106,9 +138,15 @@ To find it using File Explorer:
 
 3. You should see BeetsBackup.exe in that folder.
 
-A second copy is also placed one level above the project folder:
+A second copy of BeetsBackup.exe, along with the user guide PDF
+(beetsbackup_user_guide.pdf), is also placed one level above the project
+folder:
 
    C:\Users\Downloads\BeetsBackup.exe
+   C:\Users\Downloads\beetsbackup_user_guide.pdf
+
+This happens automatically -- a post-publish step in the project file copies
+both there.
 
 
 COPY IT TO YOUR DESKTOP (OPTIONAL)
@@ -130,6 +168,20 @@ STEP 7: RUN IT
 Double-click BeetsBackup.exe to launch the application. No installer or
 additional setup is needed -- everything is bundled into that single file.
 
+Windows will show a User Account Control (UAC) prompt asking for administrator
+permission. Click YES. This is expected: Beet's Backup needs administrator
+rights to use Volume Shadow Copy, which is how it backs up files that are
+currently open or locked by another program.
+
+
+RUNNING THE TESTS (OPTIONAL)
+-----------------------------
+If you want to confirm the code is healthy before or after making changes:
+
+   dotnet test BeetsBackup.Tests\BeetsBackup.Tests.csproj
+
+The suite takes about a minute. All 244 tests should pass.
+
 
 TROUBLESHOOTING
 ---------------
@@ -138,6 +190,12 @@ TROUBLESHOOTING
    The .NET SDK was not installed correctly, or PowerShell was not restarted
    after installation. Close PowerShell, reopen it, and try again. If it
    still doesn't work, reinstall the .NET 8 SDK.
+
+"A compatible .NET SDK was not found" / "requested SDK version 8.0.419"
+   You either have no .NET 8 SDK installed, or the one you have is older than
+   8.0.419. Run "dotnet --list-sdks" to see what is installed, then install
+   the current .NET 8 SDK from the link in Step 1. Having .NET 9 or 10
+   installed does not satisfy this requirement.
 
 "The term 'cd' could not be found" or path errors
    Make sure the folder path is correct. Open File Explorer, navigate to the
@@ -148,10 +206,20 @@ Build errors about missing files
    extracting. Windows lets you browse ZIP files without extracting, but the
    build requires all files to be fully extracted.
 
+"Windows protected your PC" (SmartScreen) when you run the exe
+   This appears for any downloaded or freshly built executable that is not
+   code-signed. Click "More info", then "Run anyway".
+
+The build succeeds but the exe won't start
+   Check that you are on 64-bit Windows 10 1607 or later. The build targets
+   win-x64 only; there is no 32-bit or ARM build.
+
 
 QUICK REFERENCE (ALL COMMANDS)
 ------------------------------
 
    cd C:\Users\Downloads\Beet-3.0-Ultimate-Edition-main
+   dotnet --list-sdks
    dotnet publish BeetsBackup.csproj -c Release
+   dotnet test BeetsBackup.Tests\BeetsBackup.Tests.csproj
    copy bin\Release\net8.0-windows\win-x64\publish\BeetsBackup.exe "$HOME\Desktop\"

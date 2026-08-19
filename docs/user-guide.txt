@@ -1,6 +1,6 @@
 ================================================================================
   BEET'S BACKUP — USER GUIDE
-  Version 3.0
+  Version 4.0
   Beet Software
 ================================================================================
 
@@ -73,9 +73,10 @@ Why is this required?
   administrator privileges to create shadow copies. Without this, those files
   would be skipped or produce errors during backup.
 
-After you confirm the UAC prompt, the app will open normally. On subsequent
-launches you will see the UAC prompt once per session — this is expected and
-normal behavior for a backup application.
+After you confirm the UAC prompt, the app will open normally. The prompt
+appears every time you launch Beet's Backup by hand, not just the first time.
+This is expected and normal behavior for a backup application, and there is
+no way to turn it off — the app cannot do its job without elevation.
 
 If you have "Launch at Startup" enabled (see Section 19), the app will start
 automatically when you log in with no UAC prompt, because it uses a Windows
@@ -86,36 +87,55 @@ Task Scheduler entry that runs elevated silently at login.
   3. MAIN WINDOW LAYOUT
 ================================================================================
 
-The main window is divided into three areas:
+The main window is laid out top to bottom like this:
 
-  TOP — Status Banner
-    A colored bar showing whether your data is protected or at risk. It also
-    shows last backup time, next scheduled backup, and total drive usage.
-    See Section 4 for details.
+  Crash recovery banner (only after an unclean shutdown)
+    An amber bar offering to export diagnostics. See Section 21.
 
-  MIDDLE — Dashboard Cards
-    Four information cards side by side:
-      - Storage: total, used, and free space across all drives
-      - Schedule: next scheduled backup time
-      - What's Included: source folders from your active backup jobs
-      - Recent Backups: the last few completed backups with size/status
+  Command bar
+    The main toolbar. See below.
 
-  BOTTOM — File Browser
-    A dual-pane file manager. Both panes are independent and can browse
-    different drives or folders simultaneously. See Section 5.
+  Update banner (only when a newer release is available)
+    See Section 20.
 
-Along the top of the file browser is a toolbar row with:
-  - Drive selector (top and bottom panes)
+  Main area
+    LEFT — Drive sidebar
+      One tile per connected drive with a usage ring, plus a
+      TOTAL CAPACITY tile showing used and free space across all drives.
+
+    RIGHT — Status banner, dashboard cards, and the file browser.
+      See Section 4 for the dashboard and Section 5 for the browser.
+
+  Status bar
+    Transfer progress, ETA, and any scheduler error messages.
+
+--- THE COMMAND BAR ---
+
+  Back up now ....... run every enabled backup job immediately
+  Pause / Resume .... pause or resume the transfer in progress
+  Stop .............. cancel the transfer in progress
+  Split Pane ........ show or hide the second pane
+  Schedule .......... open the schedule dialog
+  Backup Wizard ..... open the guided setup wizard
+  Jobs .............. manage your backup jobs
+  Log ............... open the backup history
+  Options ........... open the Options menu (see Section 19)
+  Theme ............. switch between dark and light
+  Visual / List ..... switch the file list to the donut chart and back
+
+The transfer toggles (Strip Permissions, Verify Checksums, Throttle) and
+Archive Now live inside the Options menu, not on the command bar itself.
+
+--- EACH PANE'S NAVIGATION BAR ---
+
   - Navigation buttons: Back, Forward, Up
-  - Address bar showing the current path
-  - Quick Filter search box
-  - Deep Search button
+  - Address bar showing the current path (read-only)
+  - Deep Search box with a magnifying-glass button
+  - Quick Filter box
   - Visual Mode (pie chart) toggle
-  - Split Pane button
-  - Toolbar action buttons: Archive, Copy, Move (between panes)
-  - Transfer option toggles: Strip Permissions, Verify Checksums, Throttle
+  - Refresh
 
-Below the toolbar is the file list, showing Name, Type, Size, and
+Below the navigation bar is the file list, showing Name, Type, Size, and
 Date Modified for each item.
 
 
@@ -127,43 +147,45 @@ Date Modified for each item.
 
 The colored banner at the very top of the window shows your backup health.
 
-  GREEN — "Protected"
-    Your most recent backup completed successfully within the last 7 days.
+  GREEN — "Protected" (shield icon)
+    Your most recent backup finished with status "Complete" within the last
+    7 days.
 
-  AMBER/RED — "At Risk"
-    Either no backup has completed successfully, or the most recent completed
-    backup was more than 7 days ago.
+  CRIMSON — "At Risk" (warning triangle)
+    Either no backup has ever completed, or the most recent completed backup
+    was more than 7 days ago, or the last run failed or was cancelled.
 
 The banner also displays:
-  - Last backup: how long ago the last backup ran (e.g. "Today, 2:45 PM")
+  - Last backup: when the last backup ran (e.g. "Today, 2:45 PM")
   - Next backup: when the next scheduled job will run
-  - Used / Free: aggregate disk usage across all drives
+  - View details: opens the backup log
 
 --- DASHBOARD CARDS ---
 
-Storage Card:
-  Shows the total capacity, used space, and free space for all drives
-  currently connected to your computer. The values update automatically
-  when drives are added or removed.
+Three cards sit below the status banner.
 
-Schedule Card:
-  Shows the next scheduled backup time and recurrence (e.g. "Every day at
-  9:00 AM"). If no backup jobs are configured, it shows "No schedule
-  configured."
+PROTECTION SUMMARY:
+  - Files backed up: total files copied across all time
+  - Total size: total data transferred across all time
+  - Backups run: total number of backup runs
+  - Data verified: shows "Healthy" when nothing has failed verification
 
-What's Included Card:
-  Lists the source folders from all enabled backup jobs. Each entry shows
-  the folder name, the job it belongs to, and the full path on hover.
+BACKUP SCHEDULE:
+  Shows the next scheduled backup time and its recurrence. If no backup
+  jobs are configured, it says so.
 
-Recent Backups Card:
-  Shows the last 4 completed (or failed) backup runs with their job name,
-  timestamp, and the amount of data transferred. Click "View all" (the log
-  button in the toolbar) to see the full history.
+RECENT BACKUPS:
+  Shows the most recent completed or failed runs with their job name,
+  timestamp, size, and status. Use the Log button in the toolbar to see
+  the full history.
 
-Stats (bottom of dashboard):
-  - Backups Run: total number of successful backups
-  - Files Copied: total files copied across all time
-  - Data Transferred: total bytes transferred across all time
+--- DRIVE CAPACITY ---
+
+Aggregate storage is shown in the drive sidebar on the left, not on a
+dashboard card. Each drive gets a tile with a usage ring, and the
+TOTAL CAPACITY tile at the bottom shows used and free space across every
+connected drive. The values refresh when drives are added or removed, or
+when you click the refresh button in the DRIVES header.
 
 
 ================================================================================
@@ -186,8 +208,9 @@ To go up one level: click the Up arrow button, or press Backspace.
 To go back: click the Back arrow (or use the back/forward buttons).
 To go forward: click the Forward arrow.
 
-The address bar shows the current full path. You can click it, type a path
-directly, and press Enter to navigate to that location.
+The address bar shows the current full path. It is read-only — use the drive
+selector, the folder tree, or double-click your way into a folder to move
+around.
 
 --- FOLDER TREE ---
 
@@ -230,17 +253,23 @@ items. Hold Shift and click to select a range.
 
 To copy selected items from one pane to the other:
   1. Select one or more items in the source pane.
-  2. Click the Copy button in the toolbar (arrow pointing down = top to bottom,
-     arrow pointing up = bottom to top).
+  2. Right-click the selection and choose "Copy to Bottom" (from the top
+     pane) or "Copy to Top" (from the bottom pane). You can also drag the
+     selection to the other pane instead.
   3. A Transfer Mode dialog will appear. Choose how to handle conflicts
      (see Section 7 for Transfer Mode descriptions).
   4. Click OK. The copy starts immediately with a progress bar and ETA.
 
 --- MOVING FILES ---
 
-The Move operation works identically to Copy, but removes the originals
-from the source after a successful transfer. The source folder view is
-refreshed automatically when the move completes.
+Right-click the selection and choose "Cut to Bottom" or "Cut to Top". A move
+works identically to a copy, but removes the originals from the source after
+a successful transfer — and only then. If any file fails to copy, the
+originals are left alone. The source folder view refreshes automatically when
+the move completes.
+
+There is no clipboard-style Paste step: Copy and Cut send the files directly
+to the other pane.
 
 --- PAUSING AND STOPPING A TRANSFER ---
 
@@ -251,13 +280,14 @@ While a copy or move is in progress, two buttons appear in the status area:
 --- DELETING FILES ---
 
 Right-click a file or folder and choose Delete, or select the item and press
-the Delete key. The item is permanently deleted (does not go to the Recycle
-Bin). You will not be asked to confirm — use this carefully.
+the Delete key. The item is sent to the Windows Recycle Bin, so a mistaken
+delete can be undone by restoring it from there. Windows shows its own error
+dialog if the item cannot be removed.
 
 --- RENAMING FILES ---
 
-Right-click a file or folder and choose Rename. An inline editor appears.
-Type the new name and press Enter, or press Escape to cancel.
+Right-click a file or folder and choose Rename. A small dialog opens with the
+current name. Type the new name and confirm, or cancel to leave it unchanged.
 
 
 ================================================================================
@@ -308,7 +338,8 @@ already exist at the destination:
 
   Keep both
     If a file already exists, the incoming copy is renamed with a counter
-    suffix (e.g. "report (2).pdf") so both versions are kept.
+    suffix (e.g. "report-1.pdf", then "report-2.pdf") so both versions are
+    kept. Folders are renamed the same way ("Photos-1").
 
   Replace with newer version
     A file is replaced only if the source version is newer (based on the
@@ -400,7 +431,11 @@ again to return to the normal list view.
     navigated to the folder, Beet's Backup may still be computing sizes in
     the background. The chart updates progressively as sizes are calculated.
   - Only items with a known size greater than zero appear in the chart.
-  - Click a slice in the legend to navigate to that item.
+  - Click a slice, or its legend row, to navigate to that item.
+  - The legend is keyboard accessible: each row is a button, so Tab moves
+    from one row to the next and Enter or Space activates it. The focused
+    row is highlighted along with its slice, and a screen reader announces
+    the item name, size, and percentage as one phrase.
 
 
 ================================================================================
@@ -414,7 +449,7 @@ Archive Now compresses one or more files or folders into a single timestamped
 
   1. Select one or more files or folders in the top pane.
      (If nothing is selected, the entire current folder is archived.)
-  2. Click the Archive button in the toolbar.
+  2. Open the Options menu in the toolbar and click "Archive Now".
   3. A folder picker dialog opens. Choose where to save the archive.
   4. Beet's Backup creates a file named:
        archive_YYYY-MM-DD_HH-mm-ss.zip
@@ -428,17 +463,17 @@ any other transfer.
 Extracts a .zip archive into a new folder next to the archive file.
 
   1. Select a .zip file in either pane.
-  2. Right-click and choose "Extract Here", or use the Extract Here button.
+  2. Right-click it and choose "Extract Here".
   3. A new folder is created with the same name as the archive (without .zip).
      If a folder with that name already exists, a counter is appended
-     (e.g. "archive (2)").
+     (e.g. "archive-1").
 
 --- EXTRACT TO... ---
 
 Extracts a .zip archive into a folder you choose.
 
   1. Select a .zip file in either pane.
-  2. Right-click and choose "Extract To...", or use the Extract To button.
+  2. Right-click it and choose "Extract To...".
   3. A folder picker dialog opens. Choose the destination folder.
   4. Files are extracted into that folder. Existing files are not overwritten
      (they are skipped).
@@ -500,15 +535,23 @@ along the top of the dialog.
   For recurring jobs:
     - Choose a job name (this is how the job appears in the log and job list).
     - Choose the start date and time.
-    - Choose the recurrence: Hourly (every 1, 2, 4, 6, 8, or 12 hours),
-      Daily, or Weekly.
+    - Choose the recurrence: Every 6 Hours, Every 12 Hours, Daily, Weekly,
+      or Monthly (30 days).
 
 --- STEP 3: SOURCE — What to back up ---
 
-Add one or more source locations:
-  - Click "Add Folder" to browse for a folder to include.
-  - Click "Add Drive" to include an entire drive (e.g. all of C:\).
-  - Click the X next to a path to remove it.
+Choose one of three source modes:
+
+  Quick Pick
+    Tick the common Windows folders you want included: Documents, Pictures
+    and Videos, Desktop, and Downloads (Downloads is unticked by default).
+
+  Entire Drive (the default)
+    Pick one drive from the list; the whole drive root is backed up.
+
+  Custom
+    Add specific folders with the folder browser. Add as many as you like,
+    and remove any of them from the list.
 
 Multiple source paths are supported — they are all backed up to the same
 destination folder.
@@ -531,7 +574,7 @@ Choose what happens when a file at the destination already exists:
 
   Keep both
     Both the old and new versions are kept. The incoming file is renamed
-    with a counter suffix.
+    with a counter suffix ("report-1.pdf").
 
   Replace with newer version
     Files are replaced only when the source is newer. Older files at the
@@ -708,9 +751,9 @@ background so scheduled backups can fire on time.
 --- TRAY ICON ---
 
 Right-click the tray icon for a context menu:
-  - Show: brings the main window back to the foreground
-  - Exit: shuts down Beet's Backup completely (scheduled tasks will still
-    fire via Windows Task Scheduler even after Exit)
+  - Show Beet's Backup: brings the main window back to the foreground
+  - Quit: shuts down Beet's Backup completely (scheduled tasks will still
+    fire via Windows Task Scheduler even after Quit)
 
 Double-click the tray icon to show the main window.
 
@@ -735,7 +778,22 @@ you double-click the tray icon.
   19. OPTIONS AND SETTINGS
 ================================================================================
 
-Options are accessible from the toolbar or the system tray context menu.
+Click the "Options" button in the toolbar to open the Options menu. It stays
+open until you move the mouse away from it, so you can flip several settings
+in one visit. It contains:
+
+  Remove Permissions ............ strip NTFS permissions from copied files
+  Verify Checksums .............. SHA-256 check after every copy
+  Throttle (10 MB/s) ............ cap manual transfer speed
+  Archive Now ................... zip the current selection
+  Launch at Startup ............. start automatically at login
+  Start Minimized to Tray ....... start silently to the tray at login
+  Check for Updates ............. check the release feed immediately
+  Export Diagnostics for Support  save a support bundle to your Desktop
+  View User Guide (FAQ) ......... open this guide as a PDF
+
+The theme toggle and the Visual/List toggle are separate buttons on the
+toolbar itself, not entries in this menu.
 
 --- DARK MODE / LIGHT MODE ---
 
@@ -776,7 +834,7 @@ toolbar.
   - Click "Skip this version" to dismiss the banner. That version will not
     be flagged again; only newer releases will show the notification.
 
-To check for updates manually, click "Check for Updates" in the Help menu.
+To check for updates manually, click "Check for Updates" in the Options menu.
 
 The update check is read-only — it only queries the version number and release
 URL. It does not download or install anything automatically.
@@ -804,8 +862,10 @@ of the window with the timestamp of the interrupted session.
 
 --- EXPORTING DIAGNOSTICS MANUALLY ---
 
-You can export a diagnostics bundle at any time from the Help menu, even
-without a crash. This is useful for general troubleshooting.
+You can export a diagnostics bundle at any time from the Options menu
+("Export Diagnostics for Support..."), even without a crash. This is useful
+for general troubleshooting. The bundle is saved to your Desktop as
+BeetsBackup-Diagnostics-<date>-<time>.zip.
 
 --- LOG FILE LOCATION ---
 
@@ -856,19 +916,31 @@ the Backup Wizard (Step 6 — Options).
 
 --- HOW IT WORKS ---
 
-Before overwriting a file at the destination, the existing copy is moved to
-a hidden ".versions" folder inside the destination directory:
+Before overwriting a file at the destination, the existing copy is moved into
+a hidden ".versions" folder at the destination root. The folder structure
+underneath mirrors the destination layout, and each archived copy carries the
+date and time it was archived:
 
   Destination\
-    my-document.docx              (current version)
+    Work\
+      my-document.docx                             (current version)
     .versions\
-      my-document.docx.1          (most recent previous version)
-      my-document.docx.2          (older version)
-      my-document.docx.3          (oldest kept version)
+      Work\
+        my-document__2026-08-18_09-14-02.docx      (most recent previous)
+        my-document__2026-08-11_17-40-55.docx      (older)
+        my-document__2026-08-04_08-02-31.docx      (oldest kept)
 
-Version numbers go from 1 (newest previous) to N (oldest). When the maximum
-number of versions is reached, the oldest version is permanently deleted to
-make room for the new one.
+If two versions of the same file are archived within the same second, a
+counter is appended to keep them distinct.
+
+When the maximum number of versions is reached, the oldest version is
+permanently deleted to make room for the new one. Age is judged by the
+timestamp in the filename, not the file's own modified date — so backing up
+an old file after a new one cannot cause the wrong version to be discarded.
+
+If the archive step fails for any reason (destination full, file locked), the
+overwrite is skipped instead: Beet's Backup will never destroy the existing
+copy when it could not protect it first.
 
 --- CONFIGURATION ---
 
@@ -877,16 +949,24 @@ make room for the new one.
 
 --- RECOVERING A PREVIOUS VERSION ---
 
-  1. Navigate to the destination folder in the file browser.
-  2. The .versions folder is hidden by default. Enable "Show hidden files"
-     (right-click in the file list) to see it.
-  3. Open .versions and find the file you want to restore.
-  4. Copy or move it back to the destination folder (renaming it as needed).
+  1. Navigate to the destination folder in the file browser and find the
+     file you want to roll back.
+  2. Right-click it and choose "Previous Versions...".
+  3. The dialog lists every archived copy of that file, newest first, with
+     the date and time it was archived and its size.
+  4. Double-click an entry to restore it over the current file. The copy you
+     are replacing is archived first, so a restore can itself be undone.
+  5. To discard an archived copy you no longer want, select it and use the
+     Delete button. This does not touch the live file.
+
+You do not need to browse the hidden .versions folder by hand — the dialog
+finds it for you by walking up from the file you right-clicked.
 
 --- LIMITATIONS ---
 
-  - Versioning is not compatible with compression (.zip mode). If you enable
-    both in the wizard, compression takes priority.
+  - Versioning is not compatible with compression (.zip mode). The wizard
+    enforces this: switching one on switches the other off, so whichever you
+    turn on last is the one that applies.
   - The .versions folder counts toward the destination drive's used space.
     Make sure you have enough room for the versions you want to keep.
 
@@ -937,18 +1017,25 @@ make room for the new one.
   1. Copy the BeetsBackup.exe to the new PC and run it.
   2. On the old PC, find the app data at:
        C:\Users\<your name>\AppData\Local\Beet's Backup\
-  3. Copy the jobs.json and settings.json files to the same location on
-     the new PC (create the folder if it doesn't exist).
-  4. Your backup jobs and settings will be restored on first launch.
+  3. Copy scheduled_jobs.json and settings.json to the same location on
+     the new PC (create the folder if it doesn't exist). Bring
+     backup_log.json too if you want your backup history to come with you.
+  4. Your backup jobs and settings will be restored on first launch. Open
+     each job once and save it so its Windows Task Scheduler entry is
+     registered on the new machine.
 
 --- WHERE ARE MY FILES STORED? ---
 
   Executable:        wherever you saved BeetsBackup.exe
-  Settings & jobs:   C:\Users\<your name>\AppData\Local\Beet's Backup\
-  Operational log:   C:\Users\<your name>\AppData\Local\Beet's Backup\operational.log
+  App data folder:   C:\Users\<your name>\AppData\Local\Beet's Backup\
+                       settings.json         preferences
+                       scheduled_jobs.json   your backup jobs
+                       backup_log.json       backup history
+                       operational.log       activity log
+                       crash_dump.log        crash reports
   Scheduled tasks:   Windows Task Scheduler under "BeetsBackup_*" entries
 
 ================================================================================
-  END OF GUIDE — Beet's Backup v3.0
+  END OF GUIDE — Beet's Backup v4.0
   Copyright 2026 Beet Software. All rights reserved.
 ================================================================================

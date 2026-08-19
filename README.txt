@@ -1,174 +1,166 @@
-# Beet's Backup
+================================================================================
+  BEET'S BACKUP
+  Version 4.0.0
+  Beet Software
+================================================================================
 
-A lightweight, portable dual-pane file manager built for backup workflows on Windows. Ships as a single `.exe` with no installer required.
+NOTE ON THIS FILE
+-----------------
+This is the plain-text summary, for reading without a Markdown viewer.
+README.md is the CANONICAL, full reference — features, project structure,
+tech stack, and data locations are documented there in full. If the two ever
+disagree, README.md is correct.
 
-Built with WPF and .NET 8, Beet's Backup is designed strictly for managing and transferring files — not launching them. It gives you side-by-side drive browsing, scheduled backups, checksum verification, and a full transfer log, all in one self-contained executable.
 
----
+WHAT IT IS
+----------
+A lightweight, portable dual-pane file manager and backup tool for Windows.
+Ships as a single .exe with no installer required.
 
-## Features
+Built with WPF and .NET 8. Beet's Backup is designed strictly for managing,
+backing up, and transferring files -- not launching them. It provides a
+backup-health dashboard, side-by-side drive browsing, scheduled backups that
+run through Windows Task Scheduler, SHA-256 checksum verification, file
+versioning, and a full transfer log, all in one self-contained executable.
 
-### File Management
 
-- **Dual-pane file browser** with independent drive selection (SOURCE / DESTINATION)
-- **Single-pane mode** with full drag-and-drop support
-- **Drive browser** with circular usage rings showing used, total, and free space per drive
-- **Copy, cut, paste, delete** via right-click context menus
-- **Open in Explorer** — right-click any file or folder to open its location in Windows Explorer (folders open directly; files are pre-selected in Explorer); also works on search results, making it easy to jump to a file found deep in the directory tree
-- **Drag-and-drop transfers** in both single and split pane modes
-- **File and folder rename** via right-click context menu
-- **Back / forward / up navigation** with full history tracking for both panes
-- **Deep recursive file search** — press Enter or click the magnifying glass in the top nav bar to search the current folder tree recursively; extension-aware (`.exe` matches by extension, `exe` matches by name substring); results populate inline with a cancel button to return to normal view; live status messages report search progress and result count
-- **Search path column** — a Path column appears automatically in search results showing the parent directory of each matching file, making it easy to locate results without navigating manually
-- **Search and filter** textbox provides a secondary live filter on top of search results or the current folder listing
-- **Bottom pane navigation bar** — split pane mode includes a dedicated full-width nav bar between the two halves with Back, Forward, Up, and path display, symmetric with the top nav bar
-- **Async folder size calculation** with progress indicators; Refresh button reloads pane contents and recalculates folder sizes
-- **Hidden file support** — visible, transferable, and attributes preserved
-- **GridSplitter resizable panes** for flexible layout
-- **No file launching** — double-clicking a file shows a reminder that this is a backup tool, not a file explorer
+WHAT IT DOES (SUMMARY)
+----------------------
+Dashboard
+  - Protected / At Risk status banner (green requires a successful backup
+    within the last 7 days)
+  - Protection Summary, Backup Schedule, and Recent Backups cards
+  - Drive sidebar with usage rings and a Total Capacity tile
+  - Crash recovery banner with one-click diagnostics export
 
-### Transfers
+File management
+  - Dual-pane browser, single-pane mode, drag-and-drop, split pane
+  - Right-click menu: Open in Explorer, Copy to Bottom / Top, Cut to
+    Bottom / Top, Rename, Delete (to the Recycle Bin), Previous Versions,
+    Extract Here, Extract To. Copy and Cut transfer straight to the other
+    pane -- there is no clipboard paste step and no New Folder command.
+  - Deep recursive search with a Path column, plus a live secondary filter
+  - Previous Versions -- browse and restore archived copies of any file
+  - Open in Explorer; async folder sizing; long path support
+  - Files cannot be opened or launched from inside the app, by design
 
-- **Transfer mode selection:** Skip Existing, Keep Both, Replace, or Mirror (Sync)
-- **Mirror mode** — copies new/changed files then deletes destination files not present in source; shows a prominent confirmation warning before proceeding
-- **NTFS permission stripping** — Remove Permissions checkbox strips ACLs so files work cleanly on other machines
-- **SHA-256 checksum verification** — Verify Checksums checkbox confirms integrity after every copy
-- **Pause, resume, and stop** controls during active transfers
-- **Transfer throttling** — "Limit Speed" toolbar toggle caps bandwidth at 10 MB/s (bound to `ThrottleTransfer` in `MainViewModel`); scheduled jobs additionally support a per-job speed picker (1–100 MB/s) in the schedule dialog
-- **VSS Shadow Copy fallback** — locked or in-use files (e.g. open Outlook PSTs, live database files) are retried 3 times with 500 ms delays; if still inaccessible, a Volume Shadow Copy snapshot is created via P/Invoke to `vssapi.dll` (no external packages) so the file can be read without interrupting the owning process; snapshots are cached per volume for the duration of the transfer session and cleaned up automatically afterward; the transfer summary reports how many files were copied via shadow copy
-- **Insufficient disk space detection** with a warning before transfer begins
-- **Overall progress bar with ETA** displayed in the status bar
+Transfers
+  - Modes: Skip Existing, Keep Both, Replace, Mirror (Sync)
+  - Keep Both writes "name-1.ext", "name-2.ext", ...
+  - Mirror deletes destination extras to the Recycle Bin, with a confirmation
+    warning and an empty-source safety guard
+  - NTFS permission stripping; SHA-256 verification; pause / resume / stop
+  - 10 MB/s throttle toggle; per-job speed limit of 1-100 MB/s
+  - VSS shadow copy fallback for locked / in-use files
+  - Pre-flight disk space preview (Sufficient / Tight / Insufficient / Unknown)
+  - Archive Now (create a zip); Extract Here / Extract To... (zip-slip safe)
 
-### Scheduled Backups
+Backup wizard
+  - 7 guided steps (6 when running immediately): Type, When, Source,
+    Destination, Mode, Options, Review
 
-- **One-time or recurring** schedules (Daily, Weekly, Every 6 Hours, Every 12 Hours)
-- **Jobs persist to disk** and survive app restarts
-- **Missed backup detection** — on startup, detects jobs that were missed while the app was closed and prompts to run them immediately or skip
-- **Runs in the background** via a `PeriodicTimer` while the app is open
-- **Scheduler errors surfaced in status bar** — job failures and scheduler loop errors are reported immediately in the main window status bar
-- **Per-job settings** for transfer mode, permission stripping, checksum verification, and exclusion filters
-- **Exclusion filters** — skip files by extension pattern (e.g. `*.tmp`, `*.log`) or exact name (e.g. `Thumbs.db`, `node_modules`)
-- **Backup size estimation** — "Estimate Size" button calculates total source size and file count respecting active filters; auto-runs at job start
-- **Pause / resume** for running scheduled jobs via the log dialog
+Scheduled backups
+  - One-time or recurring: Every 6 Hours, Every 12 Hours, Daily, Weekly,
+    Monthly
+  - Registered with Windows Task Scheduler as "BeetsBackup_{guid}" so backups
+    run even when the app is closed
+  - Headless CLI mode: BeetsBackup.exe --run-job {guid}
+  - Missed backup detection on startup; toast notifications on completion
+  - Per-job versioning (hidden .versions folder, timestamped copies) and
+    compression (single timestamped .zip); the two are mutually exclusive
+  - Exclusion filters by extension pattern or exact name
 
-### Backup Log
+Backup log
+  - Persistent JSON history with per-file error reasons, retry, CSV export
 
-- **Persistent JSON log** of all backup operations
-- **Real-time progress bars** for currently running jobs
-- **Color-coded status** indicators: Scheduled, Running, Complete, Failed
-- **Detailed stats** including file counts, bytes transferred, and failure count
-- **Per-file error tracking** — each failed file records its path and reason (disk full, locked, checksum mismatch, etc.), capped at 200 entries per job
-- **"View Errors" button** — enabled when the selected log entry has file errors; shows a list of all failed files with reasons
-- **Pause button** for running jobs, always visible in the log dialog
-- **Retry button** for failed jobs
-- **Export to CSV** for external reporting
-- **"Open Log Folder" button** — opens `%LocalAppData%\Beet's Backup\` in Explorer for direct access to log files
-- **Clear log** to reset history
+UI
+  - Dark and light themes
+  - Unified command bar: Back up now, Pause, Stop, Split Pane, Schedule,
+    Backup Wizard, Jobs, Log, Options, Theme, Visual/List
+  - Options menu: Remove Permissions, Verify Checksums, Throttle (10 MB/s),
+    Archive Now, Launch at Startup, Start Minimized to Tray,
+    Check for Updates, Export Diagnostics for Support..., View User Guide (FAQ)
+  - Donut chart "visual mode" of the largest items in a folder, with a
+    keyboard-accessible legend
+  - System tray, single-instance enforcement, GitHub Releases update checker
 
-### UI / UX
 
-- **Dark and light theme** toggle
-- **Simple / Advanced toolbar mode** — a persistent toggle switch on the toolbar switches between two toolbar layouts; Simple mode surfaces five buttons (Visual, Theme, Split Pane, Refresh, Backup Wizard) for a clean, uncluttered interface; Advanced mode shows the full toolbar with schedule, jobs, log, options, pause/stop, and the permissions/checksums/throttle toggles; the selected mode is persisted in settings across restarts
-- **Backup Wizard** — visible in Simple toolbar mode only; styled with an electric purple "blacklight" badge (matching the SOURCE/DESTINATION label design); placeholder for a guided backup setup flow (full implementation planned)
-- **Update checker** — `UpdateService` queries the GitHub Releases API on startup; if a newer version is found, an accent-colored banner appears in the status bar with **Download** and **Dismiss** buttons; "Check for Updates" is also available in the Options menu; skipped versions are persisted to settings so dismissed releases are not surfaced again
-- **Launch at Startup** — Options menu toggle that creates or removes a Windows startup folder shortcut (with the `--startup` flag); when the shortcut fires at login the app hides directly to the system tray unless missed backups require attention, in which case the window opens at normal size
-- **Data Distribution Visual Mode** — toolbar button toggles between List view and a donut pie chart of the top 10 largest items in the current folder; color-coded with 10 distinct colors plus a muted "Other" slice; legend shows item name, icon, size, and percentage; hovering a slice highlights the matching legend entry and vice versa; chart auto-rebuilds when folder size calculations complete; works in both single-pane and split-pane modes
-- **Custom logo** with gradient "Beet's Backup" branding
-- **Navigation bars** — top pane nav bar with back, forward, up, path display, search, and refresh; bottom pane nav bar in split mode with symmetric back, forward, up, and path display
-- **Restructured split pane layout** — top half (source tree + file list), full-width bottom nav bar, bottom half (destination tree + file list)
-- **Themed toolbar** with all primary controls
-- **System tray support** — closing or minimizing the window hides the app to the system tray rather than quitting; the tray icon right-click menu provides Show/Hide and Quit options; the app can only be fully exited through the tray menu
-- **Single-instance enforcement** — launching a second copy signals the already-running instance to show its window (bringing it to the foreground if it was hidden in the tray), then exits cleanly
-- **Smart startup behavior** — launching manually always shows the window; launching via the Windows startup shortcut (with the `--startup` flag) hides directly to tray so the app stays out of the way until needed
-- **Light mode polish** — warmer gray tones throughout the light theme; dedicated brush resource keys for toggle controls, drive usage rings, and the donut chart center fill, ensuring crisp rendering in both themes
+REQUIREMENTS
+------------
+  Operating system    Windows 10 version 1607 or later, or Windows 11 (x64)
+  .NET runtime        Not required -- .NET 8 is bundled in the self-contained
+                      exe
+  Administrator       Required. The manifest requests requireAdministrator, so
+                      Windows shows a UAC prompt at launch. VSS shadow copies
+                      of locked files need it.
 
----
 
-## Requirements
+INSTALLING
+----------
+Option A -- download the executable
 
-- **OS:** Windows 10 or later (x64)
-- **.NET 8.0** — included automatically in the self-contained build
+  1. Download BeetsBackup.exe from the repository root (or the Releases page
+     if one is published).
+  2. Run it and accept the UAC prompt. No installer, no dependencies.
 
----
+Option B -- build from source
 
-## Installation
+  1. Install the .NET 8 SDK:
+     https://dotnet.microsoft.com/download/dotnet/8.0
 
-### Option A: Download the executable
+     global.json pins the SDK to 8.0.419 with rollForward "latestFeature",
+     so you need an 8.0 SDK at 8.0.419 or newer. A .NET 9 or 10 SDK on its
+     own will NOT satisfy it.
 
-1. Download `BeetsBackup.exe` from the repository root (or the [Releases](../../releases) page if available).
-2. Run it. No installer, no dependencies, no setup.
+  2. Clone the repository:
 
-### Option B: Build from source
+       git clone https://github.com/mjsaleeby-hash/Beet-3.0-Ultimate-Edition.git
+       cd Beet-3.0-Ultimate-Edition
 
-1. Install the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-2. Clone the repository:
-   ```bash
-   git clone https://github.com/adam1767/Test-2.0.git
-   cd Test-2.0
-   ```
-3. Publish a self-contained single-file build:
-   ```bash
-   dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-   ```
+  3. Publish. Every publish setting (single file, self-contained, win-x64,
+     ReadyToRun, compression) already lives in the .csproj, so no extra flags
+     are needed:
 
----
+       dotnet publish BeetsBackup.csproj -c Release
 
-## Usage
+  The exe lands in bin\Release\net8.0-windows\win-x64\publish\, and a
+  post-publish target also copies BeetsBackup.exe and the user-guide PDF one
+  level ABOVE the repository folder.
 
-1. **Launch** `BeetsBackup.exe`.
-2. **Select a drive** from the sidebar to browse its contents.
-3. **Enable split mode** to open a second pane and select a destination drive.
-4. **Navigate** using back, forward, and up buttons or by double-clicking folders.
-5. **Search recursively** by typing a term in the search box on the top nav bar and pressing Enter or clicking the magnifying glass. A **Path** column appears automatically in results showing each file's parent directory. Use the "X" button to cancel and return to the folder view. Right-click any result and choose **"Open in Explorer"** to jump directly to its location. The filter textbox applies a secondary live filter on top of any search results.
-6. **Transfer files** between panes using toolbar buttons, the right-click context menu, or drag-and-drop.
-7. **Choose a transfer mode** (Skip Existing, Keep Both, Replace, or Mirror) before starting a transfer. Mirror mode will delete destination files not in the source — confirm the warning before proceeding.
-8. **Enable checksum verification** or **permission stripping** via the toolbar checkboxes as needed (visible in Advanced toolbar mode).
-9. **Monitor progress** in the status bar, and use pause, resume, or stop controls during transfers. Enable the **"Limit Speed"** toolbar toggle to cap bandwidth at 10 MB/s when transfers should not saturate the drive. Locked files are handled automatically via a VSS Shadow Copy fallback — no action required; the transfer summary reports how many files required it.
-10. **Schedule backups** through the schedule dialog — set a source folder, destination folder, frequency, transfer mode, permission options, checksum verification, and exclusion filters. Use "Estimate Size" to preview how much data will be transferred.
-11. **Review backup history** in the log dialog to see past and active operations. Use **"View Errors"** on any entry with failures to see which files failed and why. Use **"Open Log Folder"** for direct access to all log files. Export to CSV if needed.
+  For a step-by-step walkthrough aimed at non-developers, read
+  "READ THIS FIRST. HOW TO BUILD.txt" in the repository root.
 
-> **Tip:** The app must remain running for scheduled backups to execute. Enable **"Launch at Startup"** in the Options menu to have the app start automatically at login — it will hide to the system tray so it stays out of the way, and will open normally if any scheduled backups were missed. To fully quit the app, right-click the tray icon and choose **Quit** — closing the window only hides it.
+Running the tests
 
----
+    dotnet test BeetsBackup.Tests/BeetsBackup.Tests.csproj
 
-## Project Structure
+  244 tests, all passing as of 2026-08-18.
 
-```
-├── Views/               UI (MainWindow, PieChartControl, dialogs: Schedule, Jobs, Log, Rename, TransferMode, UpdateBanner)
-├── ViewModels/          Presentation logic (MVVM)
-├── Models/              Data types (FileSystemItem, DriveItem, ScheduledJob, TransferResult, FileError, PieSlice, etc.)
-├── Services/            Core logic
-│   ├── FileSystemService    Drive & file enumeration, rename, timestamp-preserving copy
-│   ├── TransferService      Copy/move with dedup, permission stripping, checksum verification, per-file error tracking, VSS fallback
-│   ├── VssService           P/Invoke wrapper for vssapi.dll — creates and caches per-volume shadow copy snapshots, cleans up after transfer
-│   ├── SchedulerService     Periodic backup job runner with disk persistence and SchedulerError event
-│   ├── BackupLogService     JSON-based backup history with debounced saves
-│   ├── FileLogger           Operational log + crash dump writer (LogDirectory: %LocalAppData%\Beet's Backup\)
-│   ├── SettingsService      User preferences, dark/light mode flag, toolbar mode, Launch at Startup shortcut management, skip-version persistence
-│   ├── UpdateService        GitHub Releases API update checker with banner notification and skip-version support
-│   └── ThemeService         Light/dark mode (Light.xaml & Dark.xaml; dedicated brush keys for toggles, rings, donut center)
-├── Helpers/             Value converters for WPF bindings
-├── Themes/              Light.xaml & Dark.xaml resource dictionaries
-├── Assets/              App icon & logo
-├── BeetsBackup.Tests/   xUnit test project (132 tests)
-└── mockups/             HTML design mockups (data-distribution-chart.html, etc.)
-```
 
----
+WHERE YOUR DATA LIVES
+---------------------
+Everything the app writes is in one folder:
 
-## Tech Stack
+    %LocalAppData%\Beet's Backup\
 
-| Component         | Technology                                  |
-|-------------------|---------------------------------------------|
-| Framework         | .NET 8.0 (WPF, Windows Desktop)             |
-| Language          | C#                                           |
-| Architecture      | MVVM                                         |
-| MVVM Toolkit      | CommunityToolkit.Mvvm                        |
-| DI Container      | Microsoft.Extensions.DependencyInjection     |
-| Publish Target    | Single-file, self-contained (win-x64)        |
+    operational.log       Timestamped activity log, rotated at 10 MB
+    crash_dump.log        Unhandled-exception reports
+    backup_log.json       Backup history (max 500 entries)
+    settings.json         Theme, startup options, skipped update version
+    scheduled_jobs.json   All configured backup jobs
 
----
+Scheduled tasks appear in Windows Task Scheduler as "BeetsBackup_*".
 
-## License
 
+MORE DOCUMENTATION
+------------------
+  README.md                        Full reference (canonical)
+  READ THIS FIRST. HOW TO BUILD.txt  Step-by-step build walkthrough
+  docs\user-guide.txt              End-user guide (also shipped as a PDF)
+  docs\support-reference.md        Reference for support agents
+  PerformanceMonitor\README.md     External performance monitoring tool
+
+
+LICENSE
+-------
 This project is provided as-is for personal use.

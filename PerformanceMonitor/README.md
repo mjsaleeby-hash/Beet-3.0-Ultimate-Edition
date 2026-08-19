@@ -7,12 +7,14 @@ External performance monitoring tool for **Beet's Backup**. Runs alongside the m
 ```
 PerformanceMonitor/
 ├── BeetsBackup.PerfMon.csproj     # standalone .NET 8 console project
-├── Program.cs                     # entry point (monitor | analyze | help)
-├── Services/                      # process watcher, sampler, log writer, WMI collector
+├── Program.cs                     # entry point (monitor | analyze | cohort | help)
+├── Services/                      # process watcher, sampler, log writer, system context,
+│                                  #   and ingestors for Beet's backup log, telemetry, event log
 ├── Models/                        # PerformanceSample, SystemInfo, SessionMetadata
-├── Analysis/                      # log analyzer (percentiles, trends, outliers)
+├── Analysis/                      # log analyzer (percentiles, trends, outliers),
+│                                  #   cohort windows and A/B cohort report
 ├── logs/                          # session_<timestamp>_<pid>.jsonl files
-└── audit/                         # windows-expert audit reports + trend reports
+└── audit/                         # windows-expert audit reports, trend + cohort reports
 ```
 
 ## Build
@@ -52,6 +54,16 @@ Reads every `session_*.jsonl` and produces:
 - **Cross-session trends** — first vs latest session comparison, with warnings if working set or handle count has grown significantly over time (leak detection).
 
 The report is printed to stdout and saved to `audit/trend_report_<timestamp>.md`.
+
+### A/B compare two builds
+
+```bash
+BeetsBackup.PerfMon.exe cohort
+```
+
+Buckets every session into a cohort — preferring the `BuildTag` Beet stamps on its own telemetry (`3.0-baseline` vs `4.0-candidate`), falling back to the date windows declared in `Analysis/CohortWindows.cs` — and prints a side-by-side comparison of resource use, throughput, and backup outcomes. Saved to `audit/cohort_report_<timestamp>.md`.
+
+> **Note:** both cohort windows for the 3.0 → 4.0 comparison are CLOSED. Re-running `cohort` reproduces that analysis; the durable, annotated conclusion — including which results are trustworthy and which are not — lives in [`improvements/4.0-CANDIDATE-VERDICT.txt`](../improvements/4.0-CANDIDATE-VERDICT.txt). Read the verdict before quoting any number from a regenerated report.
 
 ## Log format
 

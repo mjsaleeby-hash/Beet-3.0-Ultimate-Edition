@@ -2,7 +2,7 @@
 
 **Purpose:** This document is the authoritative reference for an AI support agent answering customer emails about Beet's Backup. Every feature, setting, behavior, file path, and known quirk is documented here. When a user asks a question, locate the relevant section and paraphrase the answer in a friendly, plain-English tone.
 
-**Last updated:** 2026-04-14
+**Last updated:** 2026-08-18 — app version 4.0.0
 
 ---
 
@@ -25,7 +25,9 @@
 
 ---
 
-> **What's new in this version:** Windows Task Scheduler integration (scheduled backups now survive reboots), headless CLI mode (`--run-job`), Previous Versions recovery, ZIP extraction, pre-flight disk space preview, toast notifications, file versioning and compression settings in the wizard and schedule dialog, and a new transfer progress dialog.
+> **What's new in this version:** the app now **always runs elevated** (UAC prompt at every launch — see Section 2), a **backup-health dashboard** with a Protected / At Risk banner replaces the plain file-browser home screen (Section 4), **Launch at Startup** now uses an elevated Windows scheduled task instead of a Startup-folder shortcut (Section 9), and the Options menu gained **Start Minimized to Tray**, **Export Diagnostics for Support…**, and **View User Guide (FAQ)**. A **crash recovery banner** appears after an unclean shutdown (Section 12).
+>
+> **Carried over from the previous version:** Windows Task Scheduler integration (scheduled backups survive reboots), headless CLI mode (`--run-job`), Previous Versions recovery, ZIP extraction, pre-flight disk space preview, toast notifications, file versioning and compression settings, and the transfer progress dialog.
 
 ---
 
@@ -54,11 +56,13 @@
 
 | Requirement | Details |
 |-------------|---------|
-| **Operating System** | Windows 10 or later (64-bit / x64 only) |
+| **Operating System** | Windows 10 version 1607 or later, or Windows 11 (64-bit / x64 only) |
 | **.NET Runtime** | Not required — .NET 8 is bundled inside the `.exe` (self-contained build) |
 | **Disk space** | Minimal for the app itself; destination drive must have enough space for the files being backed up |
-| **Administrator rights** | Not required for most operations. Required only for the VSS Shadow Copy fallback (locked file handling). If VSS fails, try running as Administrator. |
+| **Administrator rights** | **Always required.** The app manifest requests `requireAdministrator`, so Windows shows a UAC prompt every time the app is launched. This is deliberate: VSS shadow copies (how locked files get backed up) cannot be created without elevation. There is no non-elevated mode. |
 | **Internet connection** | Not required. Used only for optional update checks (GitHub Releases API). |
+
+**If a user asks "why does it ask for admin every time?"** — answer: Beet's Backup needs Windows Volume Shadow Copy to back up files that other programs have open (Outlook data files, databases, browser profiles). Windows only grants shadow copies to elevated programs, so the app requests elevation at launch rather than failing halfway through a backup. Enabling **Launch at Startup** avoids the prompt at login, because the startup entry is an elevated scheduled task.
 
 ---
 
@@ -71,6 +75,7 @@ Beet's Backup requires no installation. The steps are:
 1. Download `BeetsBackup.exe`.
 2. Save it anywhere you like (Desktop, Documents, a USB drive, etc.).
 3. Double-click to run it. Windows may show a SmartScreen prompt the first time — click **More info** then **Run anyway**.
+4. Accept the **User Account Control (UAC)** prompt. This appears on every launch, not just the first (see Section 2).
 
 No installer, no registry changes, no dependencies.
 
@@ -78,7 +83,9 @@ No installer, no registry changes, no dependencies.
 
 On first launch the app opens directly to the main window in **dark mode**. No setup wizard is required to start browsing files.
 
-To start a guided backup setup, click the **Backup Wizard** button in the toolbar (next to the Schedule button).
+The top of the window shows the **protection status banner**. With no backups yet it reads **At Risk** — this is expected, not an error, and turns green once a backup completes.
+
+To start a guided backup setup, click the **Backup Wizard** button in the toolbar (next to the Schedule button), or click **Back up now** — with no jobs configured, that opens the wizard too.
 
 ### System tray behavior
 
@@ -92,30 +99,64 @@ If you try to launch a second copy of the app, the already-running instance will
 
 ## 4. User Interface Guide
 
+### Window layout, top to bottom
+
+1. **Crash recovery banner** (only after an unclean shutdown) — see Section 12.
+2. **Command bar** — the toolbar (below).
+3. **Update banner** (only when a newer release exists) — see Section 13.
+4. **Main area** — drive sidebar on the left; status banner, dashboard cards, and the file browser on the right.
+5. **Status bar** — transfer progress, ETA, and scheduler error messages.
+
+### Dashboard
+
+The dashboard sits above the file browser and answers "is my data safe?" at a glance.
+
+**Protection status banner:**
+- **Green — "Protected"**: the most recent *terminal* backup finished with status `Complete` within the last 7 days.
+- **Crimson — "At Risk"**: no backup has ever completed, or the last completed backup is older than 7 days, or the last run failed or was cancelled.
+- The banner also shows **Last backup**, **Next backup**, and a **View details** button that opens the log.
+- Common support question: *"I just ran a backup and it still says At Risk."* → the run did not reach `Complete`. Open the Log dialog and check the status and error list for that entry.
+
+**Cards:**
+- **Protection Summary** — files backed up, total size, backups run, and a verification health indicator, aggregated across all history.
+- **Backup Schedule** — the next scheduled run and its recurrence.
+- **Recent Backups** — the most recent runs with job name, timestamp, size, and status.
+
+**Drive sidebar:**
+- A tile per connected drive with a circular usage ring and a used-percentage badge.
+- A **Total Capacity** footer tile with aggregate used and free space across all drives.
+- A refresh button in the DRIVES header re-scans connected drives.
+
 ### Toolbar
 
-The toolbar shows all controls at all times. There is no mode toggle.
+The toolbar shows all controls at all times. There is no Simple/Advanced mode toggle.
 
-**Command bar buttons:**
-- **Visual** — toggle the donut pie chart view
-- **Theme** — switch between dark and light themes
+**Command bar buttons (left to right):**
+- **Back up now** — runs every *enabled* backup job immediately, one after another. If no enabled job exists, this opens the Backup Wizard instead.
+- **Pause / Resume** and **Stop** — controls for the active transfer
 - **Split Pane** — open or close the second file pane
-- **Refresh** — reload the current folder and recalculate folder sizes
-- **Backup Wizard** — open the step-by-step backup setup wizard (purple badge button); sits next to Schedule
 - **Schedule** — open the schedule dialog to create/edit backup jobs
-- **Jobs** — view scheduled jobs
+- **Backup Wizard** — open the step-by-step backup setup wizard (purple badge button)
+- **Jobs** — view and manage scheduled jobs
 - **Log** — view backup history
-- **Options** — open the Options popup (see below)
-- **Pause / Stop** — controls for active transfers
+- **Options ▾** — open the Options popup (see below)
+- **Theme** — switch between dark and light themes
+- **Visual / List** — toggle the donut chart view
 
-**Options popup** (stays open when clicked):
+Refresh lives in the DRIVES header in the sidebar and in each pane's navigation bar, not on the command bar.
+
+**Options popup** (stays open until the mouse leaves it):
 - **Remove Permissions** — strip NTFS ACLs on copy
 - **Verify Checksums** — SHA-256 integrity check after every copy
-- **Limit Speed** — cap transfer bandwidth at 10 MB/s
-- **Archive Now** — immediately archive the current selection
-- **Launch at Startup** — create or remove the Windows startup shortcut
-- **Theme** — toggle dark/light theme
+- **Throttle (10 MB/s)** — cap manual transfer bandwidth
+- **Archive Now** — zip the current selection (or the whole current folder if nothing is selected)
+- **Launch at Startup** — register or remove the elevated ONLOGON scheduled task (Section 9)
+- **Start Minimized to Tray** — auto-start goes straight to the tray with no window
 - **Check for Updates** — run an immediate update check
+- **Export Diagnostics for Support…** — write a support bundle to the Desktop (Section 12)
+- **View User Guide (FAQ)** — open the bundled user-guide PDF
+
+The theme toggle is a command bar button, *not* an entry in this popup.
 
 ### Dual-pane file browser
 
@@ -130,7 +171,8 @@ The main window is divided into **top pane** (source) and **bottom pane** (desti
 
 - **Double-click a folder** to navigate into it.
 - **Back / Forward / Up** buttons in the nav bar.
-- **Path bar** — the current folder path is displayed; can be edited directly.
+- **Path bar** — displays the current folder path. It is **read-only**: users cannot type a path into it to jump somewhere. Navigate with the drive sidebar, the folder tree, or by double-clicking folders.
+- **Folder tree** — a collapsible tree on the left of each pane; sub-folders load lazily as they are expanded.
 - **Hidden files** are visible and behave normally.
 
 ### Search
@@ -202,7 +244,7 @@ Click the **Theme** button on the toolbar (or use **Options > Theme**) to toggle
 
 ### Creating new folders
 
-- Right-click in an empty area of the file list and choose **New Folder**.
+- **Not supported.** There is no "New Folder" command in Beet's Backup. Users who need a new destination folder should create it in Windows Explorer (right-click a folder > **Open in Explorer**), or type a subfolder name in the wizard's Destination step, which creates it as part of the backup.
 
 ### Open in Explorer
 
@@ -444,7 +486,7 @@ When the app starts, it checks whether any scheduled jobs were due to run while 
 - A **Missed Backups dialog** opens automatically.
 - The user can choose **Run All Now** to execute all missed jobs immediately, or **Skip** to dismiss them (the jobs will reschedule to their next due time).
 
-If the app was launched via the Windows startup shortcut (`--startup` flag) and there are missed backups, the main window opens at full size (rather than hiding to tray) to ensure the dialog is visible.
+If the app was launched by the startup task (`--startup` flag) and there are missed backups, the main window opens at full size (rather than hiding to tray) to ensure the dialog is visible — even when Start Minimized to Tray is on.
 
 ### Viewing and managing jobs
 
@@ -465,10 +507,18 @@ Settings are accessed via the **Options** popup in the toolbar. All settings per
 
 ### Launch at Startup
 
-- **What it does:** Creates a Windows shortcut in the startup folder so the app launches automatically every time Windows starts.
-- **How it works:** The shortcut uses a `--startup` flag. When the app sees this flag, it launches silently to the system tray (no window shown), unless there are missed backups.
-- **To enable/disable:** Options popup > Launch at Startup toggle. Or in the wizard if prompted.
-- **Shortcut location:** `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Beet's Backup.lnk`
+- **What it does:** Starts the app automatically when the user logs in to Windows.
+- **How it works:** Enabling the toggle registers an **ONLOGON Windows scheduled task** that launches the app with a `--startup` flag. Because the task runs elevated, **no UAC prompt appears at login** — this is the main reason it is a scheduled task and not a Startup-folder shortcut.
+- **Migration note:** earlier versions used a Startup-folder shortcut at `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Beet's Backup.lnk`. On first run the app deletes that shortcut and registers the scheduled task instead. If a user reports "two copies start at login", check whether a stale shortcut survived and delete it manually.
+- **To enable/disable:** Options popup > Launch at Startup toggle. Disabling it unregisters the task.
+- **Where to verify:** Task Scheduler (`taskschd.msc`) — look for the Beet's Backup startup task alongside the `BeetsBackup_*` job tasks.
+
+### Start Minimized to Tray
+
+- **What it does:** when the app is launched by the startup task (`--startup`), it goes straight to the system tray with no window shown.
+- Only affects auto-start launches — starting the app by hand always shows the window.
+- **Exception:** if missed backups are detected at startup, the window opens at normal size anyway so the Missed Backups dialog is visible.
+- **To enable/disable:** Options popup > Start Minimized to Tray toggle. Pair it with Launch at Startup.
 
 ### Theme preference
 
@@ -477,7 +527,7 @@ Settings are accessed via the **Options** popup in the toolbar. All settings per
 
 ### Toolbar layout
 
-The toolbar always shows all controls. There is no Simple/Advanced mode toggle. The Options popup (stays open) provides quick access to per-transfer settings: Remove Permissions, Verify Checksums, Limit Speed, and Archive Now, as well as Launch at Startup, theme switching, and update checks.
+The toolbar always shows all controls. There is no Simple/Advanced mode toggle. See Section 4 for the full command bar and Options popup contents.
 
 ### Check for Updates
 
@@ -504,7 +554,7 @@ The toolbar always shows all controls. There is no Simple/Advanced mode toggle. 
 
 **No action is required from the user.** This happens transparently.
 
-**If VSS fails:** VSS may require administrator rights on some Windows configurations. Try right-clicking `BeetsBackup.exe` and choosing **Run as administrator**. Any VSS errors are recorded in `operational.log`.
+**If VSS fails:** the app already runs elevated, so "run as administrator" is not the fix. Genuine causes are: the volume is not local NTFS (network shares and FAT32 do not support VSS), the Volume Shadow Copy service is disabled in `services.msc`, or there is no free space for a snapshot on the source volume. Any VSS errors are recorded in `operational.log`.
 
 ### SHA-256 Checksum Verification
 
@@ -562,10 +612,11 @@ Triggered automatically when Estimate Size runs and on the wizard summary page.
 
 Versioning protects files from being silently overwritten during backups.
 
-- When enabled on a job, any file that would be overwritten is first copied to a versioned archive folder with a timestamp in the filename.
+- When enabled on a job, any file that would be overwritten is first moved into a hidden `.versions\` folder at the destination root, under a path that mirrors its position in the destination tree, and renamed `name__yyyy-MM-dd_HH-mm-ss.ext`. Two versions archived within the same second get a numeric counter appended.
+- Pruning judges age by the **timestamp in the filename**, not the file's modified date — so backing up an older-dated file after a newer one cannot cause the wrong copy to be discarded.
 - The **Max Versions** setting (default: 5) controls how many archived copies are kept per file. Older versions beyond the limit are pruned automatically.
 - Versioning and Compression are mutually exclusive — enabling one disables the other.
-- To browse and recover archived versions: right-click any file > **Previous Versions…**. The dialog shows all archived copies with timestamps and sizes. Double-click to restore, or select and delete to remove a specific version.
+- To browse and recover archived versions: right-click any file > **Previous Versions…**. The dialog shows all archived copies with timestamps and sizes. Double-click to restore, or select and delete to remove a specific version. Restoring archives the current copy first, so a restore can itself be undone. Users do not need to find the hidden `.versions` folder themselves — the dialog locates it by walking up from the file they right-clicked.
 - If archiving fails for any reason (e.g. destination disk full), the overwrite is **skipped** rather than proceeding unprotected.
 
 ### Compression
@@ -590,8 +641,8 @@ Versioning protects files from being silently overwritten during backups.
 **Most likely cause:** The app is already running in the system tray.
 
 - Look for the Beet's Backup icon in the system tray (bottom-right of the taskbar, near the clock). You may need to click the up arrow to see hidden tray icons.
-- Click the tray icon to show the window, or right-click it and choose **Show**.
-- If the app is definitely not running, try right-clicking `BeetsBackup.exe` and selecting **Run as administrator**.
+- Click the tray icon to show the window, or right-click it and choose **Show Beet's Backup**.
+- If the app is definitely not running, check whether a UAC prompt is waiting behind another window or was dismissed. The app requests elevation at launch and will not start if the prompt is declined.
 
 ### "I see a Windows SmartScreen warning"
 
@@ -603,8 +654,9 @@ Scheduled backups are registered with **Windows Task Scheduler**, so they should
 
 1. **The job is disabled** — check the Jobs dialog (toolbar > Jobs) to confirm the job is enabled.
 2. **Windows Task Scheduler is disabled or the task was deleted** — open Task Scheduler (`taskschd.msc`) and look for a task named `BeetsBackup_...`. If missing, open the app and edit/re-save the job to re-register it.
-3. **Insufficient permissions for headless run** — if the task requires elevation that Windows Task Scheduler can't provide silently, the headless run may be blocked. Try running the app as administrator once to let it re-register the task.
-4. **Operational log** — check `operational.log` in `%LOCALAPPDATA%\Beet's Backup\` for any error messages around the scheduled time.
+3. **The computer was off or asleep** — Task Scheduler cannot fire a task on a powered-down machine. The missed run is caught at next launch instead.
+4. **The task exists but its last result is non-zero** — open the task in `taskschd.msc` and read "Last Run Result": `1` means the job ID in the task no longer matches a saved job (re-save the job to re-register it), `2` means the job ran and failed (check the Log dialog).
+5. **Operational log** — check `operational.log` in `%LOCALAPPDATA%\Beet's Backup\` for any error messages around the scheduled time.
 
 When the app starts after a missed backup, it will show a **Missed Backups dialog** offering to run them immediately.
 
@@ -616,10 +668,10 @@ This means the app was closed while the backup was actively running. The log mar
 
 Several reasons a file might be skipped or fail:
 
-- **File is locked/in use:** The app retries 3 times and then tries VSS Shadow Copy. If VSS also fails (requires admin rights), the file is recorded as locked. The solution is to run the app as administrator, or close the program using that file.
+- **File is locked/in use:** The app retries 3 times and then tries VSS Shadow Copy. If VSS also fails, the file is recorded as locked. The app is already elevated, so the remaining fix is to close the program holding the file, or move the source to a local NTFS volume where VSS can work.
 - **Disk full:** The destination drive ran out of space mid-transfer. The log records "Disk full" errors for affected files. Free up space on the destination and retry.
 - **Checksum mismatch:** If Verify Checksums is enabled and a mismatch is found, the file is flagged as failed. This indicates a read error or hardware issue. Retry the transfer; if it persists, check the source drive's health.
-- **Access denied:** The app does not have permission to read the source file. Run as administrator.
+- **Access denied:** The app cannot read the source file even when elevated. This is rare and usually means a protected system file or a file with an ACL that denies Administrators outright.
 
 To see the full list of which files failed and why: open the **Log** dialog, select the entry, and click **View Errors**.
 
@@ -697,7 +749,7 @@ C:\Users\YourName\AppData\Local\Beet's Backup\
 - **When to send to support:** If a backup job shows unexpected results and the in-app log view is not sufficient detail.
 
 #### `settings.json`
-- **What it contains:** User preferences — dark/light mode, Launch at Startup flag, and the version tag for any dismissed update notification.
+- **What it contains:** User preferences — dark/light mode, Launch at Startup flag, Start Minimized to Tray flag, and the version tag for any dismissed update notification.
 - **Format:** JSON. Can be deleted to reset all settings to defaults (the app will recreate it on next launch).
 - **When to send to support:** If settings appear to not be saving or are behaving unexpectedly.
 
@@ -708,11 +760,38 @@ C:\Users\YourName\AppData\Local\Beet's Backup\
 
 ---
 
+### Crash recovery banner
+
+If the previous session ended uncleanly — a crash, a power loss, or a forced close — the next launch shows an amber warning banner at the very top of the window with the timestamp of the interrupted session. It offers two buttons:
+
+- **Export Diagnostics** — builds the support bundle described below.
+- **Dismiss** — closes the banner.
+
+The banner is one-shot: it clears itself after an export or a dismiss and does not reappear until the next unclean shutdown. Ask users reporting a crash to click **Export Diagnostics** on this banner before doing anything else.
+
+---
+
+### Diagnostics bundle (the fastest way to get logs)
+
+**Options ▸ Export Diagnostics for Support…** (or the button on the crash recovery banner) writes a single zip to the user's **Desktop**:
+
+```
+BeetsBackup-Diagnostics-<yyyyMMdd>-<HHmmss>.zip
+```
+
+It contains `operational.log`, `crash_dump.log`, `settings.json`, `backup_log.json`, and a system-information summary. This is available at any time, not just after a crash.
+
+**Always ask for this file first** — it is one attachment and it covers every log below.
+
+---
+
 ### How to send logs to support
 
-**Preferred:** Open the Log folder (see above) and attach the relevant files to your support email. For crashes, always include `crash_dump.log`. For unexpected behavior, include `operational.log`.
+**Preferred:** Ask the user for the diagnostics zip from their Desktop (see above).
 
-**Alternative:** Open the file in Notepad, select all (`Ctrl+A`), copy (`Ctrl+C`), and paste into the email body.
+**Manual alternative:** Open the Log folder (see above) and attach the relevant files. For crashes, always include `crash_dump.log`. For unexpected behavior, include `operational.log`.
+
+**Last resort:** Open the file in Notepad, select all (`Ctrl+A`), copy (`Ctrl+C`), and paste into the email body.
 
 ---
 
